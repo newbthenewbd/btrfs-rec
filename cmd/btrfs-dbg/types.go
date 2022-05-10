@@ -1,14 +1,29 @@
 package main
 
 import (
+	"encoding/hex"
+	"strings"
+
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 )
 
 type (
 	PhysicalAddr int64
 	LogicalAddr  int64
+	ObjID        int64
 	UUID         [16]byte
 )
+
+func (uuid UUID) String() string {
+	str := hex.EncodeToString(uuid[:])
+	return strings.Join([]string{
+		str[:8],
+		str[8:12],
+		str[12:16],
+		str[16:20],
+		str[20:32],
+	}, "-")
+}
 
 type Superblock struct {
 	Checksum   [0x20]byte   `bin:"off=0,  siz=20, desc=Checksum of everything past this field (from 20 to 1000)"`
@@ -48,10 +63,13 @@ type Superblock struct {
 	Label              [0x100]byte `bin:"off=12b, siz=100, desc=label (may not contain '/' or '\\')"`
 	CacheGeneration    uint64      `bin:"off=22b, siz=8,   desc=cache_generation"`
 	UUIDTreeGeneration uint64      `bin:"off=233, siz=8,   desc=uuid_tree_generation"`
-	Reserved           [0xf0]byte  `bin:"off=23b, siz=f0,  desc=reserved /* future expansion */"`
-	SysChunkArray      [0x800]byte `bin:"off=32b, siz=800, desc=sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical. "`
-	SuperRoots         [0x2a0]byte `bin:"off=b2b, siz=2a0, desc=Contain super_roots (4 btrfs_root_backup)"`
-	Unused             [0x235]byte `bin:"off=dcb, siz=235, desc=current unused"`
+
+	Reserved [0xf0]byte `bin:"off=23b, siz=f0,  desc=reserved /* future expansion */"`
+
+	TODOSysChunkArray [0x800]byte `bin:"off=32b, siz=800, desc=sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical. "`
+	TODOSuperRoots    [0x2a0]byte `bin:"off=b2b, siz=2a0, desc=Contain super_roots (4 btrfs_root_backup)"`
+
+	Unused [0x235]byte `bin:"off=dcb, siz=235, desc=current unused"`
 
 	binstruct.End `bin:"off=1000"`
 }
@@ -77,4 +95,26 @@ type DevItem struct {
 	FSUUID  UUID `bin:"off=52,   siz=10,         desc=FS UUID"`
 
 	binstruct.End `bin:"off=62"`
+}
+
+type ChunkItem struct {
+	// Maps logical address to physical.
+	Size           uint64 `bin:"off=0,  siz=8, desc=size of chunk (bytes)"`
+	Root           ObjID  `bin:"off=8,  siz=8, desc=root referencing this chunk (2)"`
+	StripeLen      uint64 `bin:"off=10, siz=8, desc=stripe length"`
+	Type           uint64 `bin:"off=18, siz=8, desc=type (same as flags for block group?)"`
+	IOOptimalAlign uint32 `bin:"off=20, siz=4, desc=optimal io alignment"`
+	IOOptimalWidth uint32 `bin:"off=24, siz=4, desc=optimal io width"`
+	IoMinSize      uint32 `bin:"off=28, siz=4, desc=minimal io size (sector size)"`
+	NumStripes     uint16 `bin:"off=2c, siz=2, desc=number of stripes"`
+	SubStripes     uint16 `bin:"off=2e, siz=2, desc=sub stripes"`
+	binstruct.End  `bin:"off=30"`
+}
+
+type ChunkItemStripe struct {
+	// Stripes follow (for each number of stripes):
+	DeviceID      ObjID  `bin:"off=0,  siz=8,  desc=device id"`
+	Offset        uint64 `bin:"off=8,  siz=8,  desc=offset"`
+	DeviceUUID    UUID   `bin:"off=10, siz=10, desc=device UUID"`
+	binstruct.End `bin:"off=20"`
 }

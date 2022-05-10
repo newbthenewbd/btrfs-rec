@@ -21,12 +21,14 @@ func getHandler(typ reflect.Type) (handler, error) {
 	return h, nil
 }
 
-func Unmarshal(dat []byte, dst interface{}) error {
-	_dst := reflect.ValueOf(dst)
-	if _dst.Kind() != reflect.Ptr {
-		return fmt.Errorf("not a pointer: %v", _dst.Type())
+func Unmarshal(dat []byte, dstPtr interface{}) error {
+	_dstPtr := reflect.ValueOf(dstPtr)
+	if _dstPtr.Kind() != reflect.Ptr {
+		return fmt.Errorf("not a pointer: %v", _dstPtr.Type())
 	}
-	handler, err := getHandler(_dst.Type().Elem())
+
+	dst := _dstPtr.Elem()
+	handler, err := getHandler(dst.Type())
 	if err != nil {
 		return err
 	}
@@ -35,7 +37,7 @@ func Unmarshal(dat []byte, dst interface{}) error {
 			handler.Size(), len(dat))
 	}
 	val := handler.Unmarshal(dat[:handler.Size()])
-	_dst.Elem().Set(reflect.ValueOf(val))
+	dst.Set(reflect.ValueOf(val).Convert(dst.Type()))
 	return nil
 }
 

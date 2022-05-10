@@ -16,18 +16,20 @@ type structHandler struct {
 }
 
 type structField struct {
+	typ reflect.Type
 	tag
 	handler
 	name string
 }
 
 func (sh structHandler) Unmarshal(dat []byte) interface{} {
-	val := reflect.Zero(sh.typ)
+	val := reflect.New(sh.typ).Elem()
 	for i, field := range sh.fields {
 		if field.skip {
 			continue
 		}
-		val.Field(i).Set(reflect.ValueOf(field.Unmarshal(dat[field.off:])))
+		fieldVal := field.Unmarshal(dat[field.off:])
+		val.Field(i).Set(reflect.ValueOf(fieldVal).Convert(field.typ))
 	}
 	return val.Interface()
 }
@@ -96,6 +98,7 @@ func genStructHandler(structInfo reflect.Type) (handler, error) {
 		curOffset += fieldTag.siz
 
 		ret.fields = append(ret.fields, structField{
+			typ:     fieldInfo.Type,
 			tag:     fieldTag,
 			handler: fieldHandler,
 			name:    fieldInfo.Name,

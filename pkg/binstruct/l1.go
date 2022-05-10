@@ -136,10 +136,10 @@ func genHandler(typ reflect.Type) (handler, error) {
 		}
 		return primitive{
 			unmarshal: func(dat []byte) interface{} {
-				val := reflect.Zero(typ)
+				val := reflect.New(typ).Elem()
 				for i := 0; i < typ.Len(); i++ {
-					fmt.Printf("%v[%d]: %v\n", typ, i, val.Index(i))
-					val.Index(i).Set(reflect.ValueOf(inner.Unmarshal(dat[i*int(inner.Size()):])))
+					fieldVal := inner.Unmarshal(dat[i*int(inner.Size()):])
+					val.Index(i).Set(reflect.ValueOf(fieldVal).Convert(typ.Elem()))
 				}
 				return val.Interface()
 			},
