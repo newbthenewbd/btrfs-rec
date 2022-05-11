@@ -1,10 +1,6 @@
-package main
+package btrfs
 
 import (
-	"encoding/binary"
-	"encoding/hex"
-	"hash/crc32"
-	"strings"
 	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
@@ -14,27 +10,7 @@ type (
 	PhysicalAddr int64
 	LogicalAddr  int64
 	ObjID        int64
-	CSum         [0x20]byte
-	UUID         [16]byte
 )
-
-func (uuid UUID) String() string {
-	str := hex.EncodeToString(uuid[:])
-	return strings.Join([]string{
-		str[:8],
-		str[8:12],
-		str[12:16],
-		str[16:20],
-		str[20:32],
-	}, "-")
-}
-
-func crc32c(data []byte) CSum {
-	sum := crc32.Update(0xFFFFFFFF, crc32.MakeTable(0x1EDC6F41), data)
-	var buf CSum
-	binary.LittleEndian.PutUint32(buf[:], sum)
-	return buf
-}
 
 type Key struct {
 	ObjectID      ObjID  `bin:"off=0, siz=8, desc=Object ID. Each tree has its own set of Object IDs."`
@@ -107,7 +83,7 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 	if err != nil {
 		return CSum{}, err
 	}
-	return crc32c(data[0x20:]), nil
+	return CRC32c(data[0x20:]), nil
 }
 
 type DevItem struct {
