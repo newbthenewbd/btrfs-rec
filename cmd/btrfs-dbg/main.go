@@ -42,12 +42,18 @@ func Main(imgfilename string) (err error) {
 	spew := spew.NewDefaultConfig()
 	spew.DisablePointerAddresses = true
 
-	spew.Dump(superblocks[0].Data)
 	sum, err := superblocks[0].Data.CalculateChecksum()
 	if err != nil {
 		return err
 	}
-	fmt.Printf("calculated sum: %x\n", sum)
+	fmt.Printf("superblock checksum: %x\n", sum)
+	spew.Dump(superblocks[0].Data)
+
+	syschunks, err := superblocks[0].Data.ParseSysChunkArray()
+	if err != nil {
+		return err
+	}
+	spew.Dump(syschunks)
 
 	return nil
 }

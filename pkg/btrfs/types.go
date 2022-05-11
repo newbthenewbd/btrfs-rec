@@ -70,8 +70,8 @@ type Superblock struct {
 
 	Reserved [0xf0]byte `bin:"off=23b, siz=f0,  desc=reserved /* future expansion */"`
 
-	TODOSysChunkArray [0x800]byte `bin:"off=32b, siz=800, desc=sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical. "`
-	TODOSuperRoots    [0x2a0]byte `bin:"off=b2b, siz=2a0, desc=Contain super_roots (4 btrfs_root_backup)"`
+	SysChunkArray  [0x800]byte `bin:"off=32b, siz=800, desc=sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical. "`
+	TODOSuperRoots [0x2a0]byte `bin:"off=b2b, siz=2a0, desc=Contain super_roots (4 btrfs_root_backup)"`
 
 	Unused [0x235]byte `bin:"off=dcb, siz=235, desc=current unused"`
 
@@ -84,6 +84,36 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 		return CSum{}, err
 	}
 	return CRC32c(data[0x20:]), nil
+}
+
+type SysChunk struct {
+	Key           `bin:"off=0, siz=11"`
+	ChunkItem     `bin:"off=11, siz=30"`
+	binstruct.End `bin:"off=41"`
+}
+
+func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
+	dat := sb.SysChunkArray[:sb.SysChunkArraySize]
+	var ret []SysChunk
+	for len(dat) > 0 {
+		var pair SysChunk
+		if err := binstruct.Unmarshal(dat, &pair); err != nil {
+			return nil, err
+		}
+		dat = dat[0x41:]
+
+		for i := 0; i < int(pair.ChunkItem.NumStripes); i++ {
+			var stripe ChunkItemStripe
+			if err := binstruct.Unmarshal(dat, &stripe); err != nil {
+				return nil, err
+			}
+			pair.ChunkItem.Stripes = append(pair.ChunkItem.Stripes, stripe)
+			dat = dat[0x20:]
+		}
+
+		ret = append(ret, pair)
+	}
+	return ret, nil
 }
 
 type DevItem struct {
@@ -121,6 +151,7 @@ type ChunkItem struct {
 	NumStripes     uint16 `bin:"off=2c, siz=2, desc=number of stripes"`
 	SubStripes     uint16 `bin:"off=2e, siz=2, desc=sub stripes"`
 	binstruct.End  `bin:"off=30"`
+	Stripes        []ChunkItemStripe `bin:"-"`
 }
 
 type ChunkItemStripe struct {
