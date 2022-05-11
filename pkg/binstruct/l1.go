@@ -6,10 +6,33 @@ import (
 	"reflect"
 )
 
+type Marshaler interface {
+	MarshalBinary() []byte
+	UnmarshalBinary([]byte)
+	BinarySize() int64
+}
+
 type handler interface {
 	Unmarshal(dat []byte) interface{}
 	Marshal(val interface{}) []byte
 	Size() int64
+}
+
+type extHandler struct {
+	typ reflect.Type
+}
+
+func (_ extHandler) Marshal(val interface{}) []byte {
+	return val.(Marshaler).MarshalBinary()
+}
+func (e extHandler) Unmarshal(dat []byte) interface{} {
+	val := reflect.New(e.typ).Elem().Interface().(Marshaler)
+	val.UnmarshalBinary(dat)
+	return val
+}
+func (e extHandler) Size() int64 {
+	val := reflect.New(e.typ).Elem().Interface().(Marshaler)
+	return val.BinarySize()
 }
 
 type primitive struct {
@@ -24,7 +47,17 @@ func (p primitive) Size() int64                      { return p.size }
 
 var _ handler = primitive{}
 
+func convert[T any](in interface{}) T {
+	var dstTyp T
+	return reflect.ValueOf(in).Convert(reflect.TypeOf(dstTyp)).Interface().(T)
+}
+
 func genHandler(typ reflect.Type) (handler, error) {
+	if _, ok := reflect.New(typ).Elem().Interface().(Marshaler); ok {
+		return extHandler{
+			typ: typ,
+		}, nil
+	}
 	switch typ.Kind() {
 	case reflect.Invalid: // invalid
 		return nil, fmt.Errorf("unsupported kind: %s: %v", typ.Kind(), typ)
@@ -41,7 +74,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 	case reflect.Uint8:
 		return primitive{
 			unmarshal: func(dat []byte) interface{} { return dat[0] },
-			marshal:   func(val interface{}) []byte { return []byte{val.(uint8)} },
+			marshal:   func(val interface{}) []byte { return []byte{convert[uint8](val)} },
 			size:      1,
 		}, nil
 	case reflect.Uint16:
@@ -49,7 +82,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return binary.LittleEndian.Uint16(dat) },
 			marshal: func(val interface{}) []byte {
 				var buf [2]byte
-				binary.LittleEndian.PutUint16(buf[:], val.(uint16))
+				binary.LittleEndian.PutUint16(buf[:], convert[uint16](val))
 				return buf[:]
 			},
 			size: 2,
@@ -59,7 +92,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return binary.LittleEndian.Uint32(dat) },
 			marshal: func(val interface{}) []byte {
 				var buf [4]byte
-				binary.LittleEndian.PutUint32(buf[:], val.(uint32))
+				binary.LittleEndian.PutUint32(buf[:], convert[uint32](val))
 				return buf[:]
 			},
 			size: 4,
@@ -69,7 +102,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return binary.LittleEndian.Uint64(dat) },
 			marshal: func(val interface{}) []byte {
 				var buf [8]byte
-				binary.LittleEndian.PutUint64(buf[:], val.(uint64))
+				binary.LittleEndian.PutUint64(buf[:], convert[uint64](val))
 				return buf[:]
 			},
 			size: 8,
@@ -79,7 +112,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 	case reflect.Int8:
 		return primitive{
 			unmarshal: func(dat []byte) interface{} { return int8(dat[0]) },
-			marshal:   func(val interface{}) []byte { return []byte{uint8(val.(int8))} },
+			marshal:   func(val interface{}) []byte { return []byte{uint8(convert[int8](val))}},
 			size:      1,
 		}, nil
 	case reflect.Int16:
@@ -87,7 +120,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return int16(binary.LittleEndian.Uint16(dat)) },
 			marshal: func(val interface{}) []byte {
 				var buf [2]byte
-				binary.LittleEndian.PutUint16(buf[:], uint16(val.(int16)))
+				binary.LittleEndian.PutUint16(buf[:], uint16(convert[int16](val)))
 				return buf[:]
 			},
 			size: 2,
@@ -97,7 +130,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return int32(binary.LittleEndian.Uint32(dat)) },
 			marshal: func(val interface{}) []byte {
 				var buf [4]byte
-				binary.LittleEndian.PutUint32(buf[:], uint32(val.(int32)))
+				binary.LittleEndian.PutUint32(buf[:], uint32(convert[int32](val)))
 				return buf[:]
 			},
 			size: 4,
@@ -107,7 +140,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 			unmarshal: func(dat []byte) interface{} { return int64(binary.LittleEndian.Uint64(dat)) },
 			marshal: func(val interface{}) []byte {
 				var buf [8]byte
-				binary.LittleEndian.PutUint64(buf[:], uint64(val.(int64)))
+				binary.LittleEndian.PutUint64(buf[:], uint64(convert[int64](val)))
 				return buf[:]
 			},
 			size: 8,

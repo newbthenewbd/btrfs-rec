@@ -10,6 +10,7 @@ import (
 
 func TestSmoke(t *testing.T) {
 	type UUID [16]byte
+	type PhysicalAddr int64
 	type DevItem struct {
 		DeviceID uint64 `bin:"off=0,    siz=8,  desc=device id"`
 
@@ -33,17 +34,23 @@ func TestSmoke(t *testing.T) {
 		binstruct.End `bin:"off=62"`
 	}
 	type TestType struct {
-		Magic [5]byte `bin:"off=0,siz=5"`
-		Dev   DevItem `bin:"off=5,siz=62"`
+		Magic [5]byte      `bin:"off=0,siz=5"`
+		Dev   DevItem      `bin:"off=5,siz=62"`
+		Addr  PhysicalAddr `bin:"off=67, siz=8"`
 
-		binstruct.End `bin:"off=67"`
+		binstruct.End `bin:"off=6F"`
 	}
 
 	input := TestType{}
 	copy(input.Magic[:], "mAgIc")
 	input.Dev.DeviceID = 12
+	input.Addr = 0xBEEF
 
 	bs, err := binstruct.Marshal(input)
 	assert.NoError(t, err)
-	assert.True(t, len(bs) == 0x67, "len(bs)=0x%x", len(bs))
+	assert.True(t, len(bs) == 0x6F, "len(bs)=0x%x", len(bs))
+
+	var output TestType
+	assert.NoError(t, binstruct.Unmarshal(bs, &output))
+	assert.Equal(t, input, output)
 }

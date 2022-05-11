@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/hex"
+	"hash/crc32"
 	"strings"
+	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 )
@@ -11,6 +14,7 @@ type (
 	PhysicalAddr int64
 	LogicalAddr  int64
 	ObjID        int64
+	CSum         [0x20]byte
 	UUID         [16]byte
 )
 
@@ -25,8 +29,32 @@ func (uuid UUID) String() string {
 	}, "-")
 }
 
+func crc32c(data []byte) CSum {
+	sum := crc32.Update(0xFFFFFFFF, crc32.MakeTable(0x1EDC6F41), data)
+	var buf CSum
+	binary.LittleEndian.PutUint32(buf[:], sum)
+	return buf
+}
+
+type Key struct {
+	ObjectID      ObjID  `bin:"off=0, siz=8, desc=Object ID. Each tree has its own set of Object IDs."`
+	ItemType      uint8  `bin:"off=8, siz=1, desc=Item type."`
+	Offset        uint64 `bin:"off=9, siz=8, desc=Offset. The meaning depends on the item type."`
+	binstruct.End `bin:"off=11"`
+}
+
+type Time struct {
+	Sec           int64  `bin:"off=0, siz=8, desc=Number of seconds since 1970-01-01T00:00:00Z."`
+	NSec          uint64 `bin:"off=8, siz=4, desc=Number of nanoseconds since the beginning of the second."`
+	binstruct.End `bin:"off=c"`
+}
+
+func (t Time) ToStd() time.Time {
+	return time.Unix(t.Sec, int64(t.NSec))
+}
+
 type Superblock struct {
-	Checksum   [0x20]byte   `bin:"off=0,  siz=20, desc=Checksum of everything past this field (from 20 to 1000)"`
+	Checksum   CSum         `bin:"off=0,  siz=20, desc=Checksum of everything past this field (from 20 to 1000)"`
 	FSUUID     UUID         `bin:"off=20, siz=10, desc=FS UUID"`
 	Self       PhysicalAddr `bin:"off=30, siz=8,  desc=physical address of this block (different for mirrors)"`
 	Flags      uint64       `bin:"off=38, siz=8,  desc=flags"`
@@ -72,6 +100,14 @@ type Superblock struct {
 	Unused [0x235]byte `bin:"off=dcb, siz=235, desc=current unused"`
 
 	binstruct.End `bin:"off=1000"`
+}
+
+func (sb Superblock) CalculateChecksum() (CSum, error) {
+	data, err := binstruct.Marshal(sb)
+	if err != nil {
+		return CSum{}, err
+	}
+	return crc32c(data[0x20:]), nil
 }
 
 type DevItem struct {

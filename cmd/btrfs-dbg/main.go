@@ -43,6 +43,11 @@ func Main(imgfilename string) (err error) {
 	spew.DisablePointerAddresses = true
 
 	spew.Dump(superblocks[0].data)
+	sum, err := superblocks[0].data.CalculateChecksum()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("calculated sum: %x\n", sum)
 
 	return nil
 }
