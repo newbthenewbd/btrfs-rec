@@ -117,9 +117,8 @@ func genStructHandler(structInfo reflect.Type) (handler, error) {
 type tag struct {
 	skip bool
 
-	off  int64
-	siz  int64
-	desc string
+	off int64
+	siz int64
 }
 
 func parseStructTag(str string) (tag, error) {
@@ -151,8 +150,8 @@ func parseStructTag(str string) (tag, error) {
 				return tag{}, err
 			}
 			ret.siz = vint
-		case "desc":
-			ret.desc = val
+		default:
+			return tag{}, fmt.Errorf("unrecognized option %q", key)
 		}
 	}
 	return ret, nil

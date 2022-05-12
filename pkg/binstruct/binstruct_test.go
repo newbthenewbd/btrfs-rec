@@ -12,24 +12,24 @@ func TestSmoke(t *testing.T) {
 	type UUID [16]byte
 	type PhysicalAddr int64
 	type DevItem struct {
-		DeviceID uint64 `bin:"off=0,    siz=8,  desc=device id"`
+		DeviceID uint64 `bin:"off=0,    siz=8"` // device id
 
-		NumBytes     uint64 `bin:"off=8,    siz=8,  desc=number of bytes"`
-		NumBytesUsed uint64 `bin:"off=10,   siz=8,  desc=number of bytes used"`
+		NumBytes     uint64 `bin:"off=8,    siz=8"` // number of bytes
+		NumBytesUsed uint64 `bin:"off=10,   siz=8"` // number of bytes used
 
-		IOOptimalAlign uint32 `bin:"off=18,   siz=4,  desc=optimal I/O align"`
-		IOOptimalWidth uint32 `bin:"off=1c,   siz=4,  desc=optimal I/O width"`
-		IOMinSize      uint32 `bin:"off=20,   siz=4,  desc=minimal I/O size (sector size)"`
+		IOOptimalAlign uint32 `bin:"off=18,   siz=4"` // optimal I/O align
+		IOOptimalWidth uint32 `bin:"off=1c,   siz=4"` // optimal I/O width
+		IOMinSize      uint32 `bin:"off=20,   siz=4"` // minimal I/O size (sector size)
 
-		Type        uint64 `bin:"off=24,   siz=8,  desc=type"`
-		Generation  uint64 `bin:"off=2c,   siz=8,  desc=generation"`
-		StartOffset uint64 `bin:"off=34,   siz=8,  desc=start offset"`
-		DevGroup    uint32 `bin:"off=3c,   siz=4,  desc=dev group"`
-		SeekSpeed   uint8  `bin:"off=40,   siz=1,  desc=seek speed"`
-		Bandwidth   uint8  `bin:"off=41,   siz=1,  desc=bandwidth"`
+		Type        uint64 `bin:"off=24,   siz=8"` // type
+		Generation  uint64 `bin:"off=2c,   siz=8"` // generation
+		StartOffset uint64 `bin:"off=34,   siz=8"` // start offset
+		DevGroup    uint32 `bin:"off=3c,   siz=4"` // dev group
+		SeekSpeed   uint8  `bin:"off=40,   siz=1"` // seek speed
+		Bandwidth   uint8  `bin:"off=41,   siz=1"` // bandwidth
 
-		DevUUID UUID `bin:"off=42,   siz=10,         desc=device UUID"`
-		FSUUID  UUID `bin:"off=52,   siz=10,         desc=FS UUID"`
+		DevUUID UUID `bin:"off=42,   siz=10"` // device UUID
+		FSUUID  UUID `bin:"off=52,   siz=10"` // FS UUID
 
 		binstruct.End `bin:"off=62"`
 	}
