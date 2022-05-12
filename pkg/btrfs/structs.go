@@ -9,6 +9,7 @@ import (
 type (
 	PhysicalAddr int64
 	LogicalAddr  int64
+	Generation   uint64
 )
 
 type Key struct {
@@ -34,7 +35,7 @@ type Superblock struct {
 	Self       PhysicalAddr `bin:"off=30, siz=8"`  // physical address of this block (different for mirrors)
 	Flags      uint64       `bin:"off=38, siz=8"`  // flags
 	Magic      [8]byte      `bin:"off=40, siz=8"`  // magic ('_BHRfS_M')
-	Generation uint64       `bin:"off=48, siz=8"`  // generation
+	Generation Generation   `bin:"off=48, siz=8"`
 
 	RootTree  LogicalAddr `bin:"off=50, siz=8"` // logical address of the root tree root
 	ChunkTree LogicalAddr `bin:"off=58, siz=8"` // logical address of the chunk tree root
@@ -46,13 +47,13 @@ type Superblock struct {
 	RootDirObjectID ObjID  `bin:"off=80, siz=8"` // root_dir_objectid (usually 6)
 	NumDevices      uint64 `bin:"off=88, siz=8"` // num_devices
 
-	SectorSize        uint32 `bin:"off=90, siz=4"` // sectorsize
-	NodeSize          uint32 `bin:"off=94, siz=4"` // nodesize
-	LeafSize          uint32 `bin:"off=98, siz=4"` // leafsize
-	StripeSize        uint32 `bin:"off=9c, siz=4"` // stripesize
-	SysChunkArraySize uint32 `bin:"off=a0, siz=4"` // sys_chunk_array_size
+	SectorSize        uint32 `bin:"off=90, siz=4"`
+	NodeSize          uint32 `bin:"off=94, siz=4"`
+	LeafSize          uint32 `bin:"off=98, siz=4"` // unused; must be the same as NodeSize
+	StripeSize        uint32 `bin:"off=9c, siz=4"`
+	SysChunkArraySize uint32 `bin:"off=a0, siz=4"`
 
-	ChunkRootGeneration uint64        `bin:"off=a4, siz=8"` // chunk_root_generation
+	ChunkRootGeneration Generation    `bin:"off=a4, siz=8"`
 	CompatFlags         uint64        `bin:"off=ac, siz=8"` // compat_flags
 	CompatROFlags       uint64        `bin:"off=b4, siz=8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
 	IncompatFlags       IncompatFlags `bin:"off=bc, siz=8"` // incompat_flags - only implementations that support the flags can use the filesystem
@@ -64,8 +65,8 @@ type Superblock struct {
 
 	DevItem            DevItem     `bin:"off=c9,  siz=62"`  // DEV_ITEM data for this device
 	Label              [0x100]byte `bin:"off=12b, siz=100"` // label (may not contain '/' or '\\')
-	CacheGeneration    uint64      `bin:"off=22b, siz=8"`   // cache_generation
-	UUIDTreeGeneration uint64      `bin:"off=233, siz=8"`   // uuid_tree_generation
+	CacheGeneration    Generation  `bin:"off=22b, siz=8"`
+	UUIDTreeGeneration uint64      `bin:"off=233, siz=8"` // uuid_tree_generation
 
 	// FeatureIncompatMetadataUUID
 	MetadataUUID UUID `bin:"off=23b, siz=10"`
@@ -74,14 +75,14 @@ type Superblock struct {
 	NumGlobalRoots uint64 `bin:"off=24b, siz=8"`
 
 	// FeatureIncompatExtentTreeV2
-	BlockGroupRoot           uint64 `bin:"off=253, siz=8"`
-	BlockGroupRootGeneration uint64 `bin:"off=25b, siz=8"`
-	BlockGroupRootLevel      uint8  `bin:"off=263, siz=1"`
+	BlockGroupRoot           ObjID      `bin:"off=253, siz=8"`
+	BlockGroupRootGeneration Generation `bin:"off=25b, siz=8"`
+	BlockGroupRootLevel      uint8      `bin:"off=263, siz=1"`
 
 	Reserved [199]byte `bin:"off=264, siz=c7"` // future expansion
 
-	SysChunkArray  [0x800]byte `bin:"off=32b, siz=800"` // sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical.
-	TODOSuperRoots [0x2a0]byte `bin:"off=b2b, siz=2a0"` // Contain super_roots (4 btrfs_root_backup)
+	SysChunkArray [0x800]byte   `bin:"off=32b, siz=800"` // sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical.
+	SuperRoots    [4]RootBackup `bin:"off=b2b, siz=2a0"`
 
 	// Padded to 4096 bytes
 	Padding       [565]byte `bin:"off=dcb, siz=235"`
@@ -133,14 +134,50 @@ func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
 	return ret, nil
 }
 
+type RootBackup struct {
+	TreeRoot    ObjID      `bin:"off=0, siz=8"`
+	TreeRootGen Generation `bin:"off=8, siz=8"`
+
+	ChunkRoot    ObjID      `bin:"off=10, siz=8"`
+	ChunkRootGen Generation `bin:"off=18, siz=8"`
+
+	ExtentRoot    ObjID      `bin:"off=20, siz=8"`
+	ExtentRootGen Generation `bin:"off=28, siz=8"`
+
+	FSRoot    ObjID      `bin:"off=30, siz=8"`
+	FSRootGen Generation `bin:"off=38, siz=8"`
+
+	DevRoot    ObjID      `bin:"off=40, siz=8"`
+	DevRootGen Generation `bin:"off=48, siz=8"`
+
+	ChecksumRoot    ObjID      `bin:"off=50, siz=8"`
+	ChecksumRootGen Generation `bin:"off=58, siz=8"`
+
+	TotalBytes uint64 `bin:"off=60, siz=8"`
+	BytesUsed  uint64 `bin:"off=68, siz=8"`
+	NumDevices uint64 `bin:"off=70, siz=8"`
+
+	Unused [8 * 4]byte `bin:"off=78, siz=20"`
+
+	TreeRootLevel     uint8 `bin:"off=98, siz=1"`
+	ChunkRootLevel    uint8 `bin:"off=99, siz=1"`
+	ExtentRootLevel   uint8 `bin:"off=9a, siz=1"`
+	FSRootLevel       uint8 `bin:"off=9b, siz=1"`
+	DevRootLevel      uint8 `bin:"off=9c, siz=1"`
+	ChecksumRootLevel uint8 `bin:"off=9d, siz=1"`
+
+	Padding       [10]byte `bin:"off=9e, siz=a"`
+	binstruct.End `bin:"off=a8"`
+}
+
 type NodeHeader struct {
 	Checksum      CSum        `bin:"off=0,  siz=20"` // Checksum of everything after this field (from 20 to the end of the node)
 	MetadataUUID  UUID        `bin:"off=20, siz=10"` // FS UUID
 	Addr          LogicalAddr `bin:"off=30, siz=8"`  // Logical address of this node
 	Flags         uint64      `bin:"off=38, siz=8"`  // Flags
 	ChunkTreeUUID UUID        `bin:"off=40, siz=10"` // Chunk tree UUID
-	Generation    uint64      `bin:"off=50, siz=8"`  // Generation
-	OwnerTree     TreeObjID   `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
+	Generation    Generation  `bin:"off=50, siz=8"`  // Generation
+	Owner         TreeObjID   `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
 	NumItems      uint32      `bin:"off=60, siz=4"`  // Number of items
 	Level         uint8       `bin:"off=64, siz=1"`  // Level (0 for leaf nodes)
 	binstruct.End `bin:"off=65"`
@@ -152,9 +189,9 @@ type InternalNode struct {
 }
 
 type KeyPointer struct {
-	Key           Key    `bin:"off=0, siz=11"`
-	BlockNumber   uint64 `bin:"off=11, siz=8"`
-	Generation    uint64 `bin:"off=19, siz=8"`
+	Key           Key        `bin:"off=0, siz=11"`
+	BlockNumber   uint64     `bin:"off=11, siz=8"`
+	Generation    Generation `bin:"off=19, siz=8"`
 	binstruct.End `bin:"off=21"`
 }
 
@@ -180,12 +217,12 @@ type DevItem struct {
 	IOOptimalWidth uint32 `bin:"off=1c,   siz=4"` // optimal I/O width
 	IOMinSize      uint32 `bin:"off=20,   siz=4"` // minimal I/O size (sector size)
 
-	Type        uint64 `bin:"off=24,   siz=8"` // type
-	Generation  uint64 `bin:"off=2c,   siz=8"` // generation
-	StartOffset uint64 `bin:"off=34,   siz=8"` // start offset
-	DevGroup    uint32 `bin:"off=3c,   siz=4"` // dev group
-	SeekSpeed   uint8  `bin:"off=40,   siz=1"` // seek speed
-	Bandwidth   uint8  `bin:"off=41,   siz=1"` // bandwidth
+	Type        uint64     `bin:"off=24,   siz=8"` // type
+	Generation  Generation `bin:"off=2c,   siz=8"` // generation
+	StartOffset uint64     `bin:"off=34,   siz=8"` // start offset
+	DevGroup    uint32     `bin:"off=3c,   siz=4"` // dev group
+	SeekSpeed   uint8      `bin:"off=40,   siz=1"` // seek speed
+	Bandwidth   uint8      `bin:"off=41,   siz=1"` // bandwidth
 
 	DevUUID UUID `bin:"off=42,   siz=10"` // device UUID
 	FSUUID  UUID `bin:"off=52,   siz=10"` // FS UUID

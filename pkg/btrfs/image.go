@@ -85,7 +85,7 @@ func (img *Img) ScanForNodes(sb Superblock) error {
 	}
 
 	nodeBuf := make([]byte, sb.NodeSize)
-	for pos := int64(0); pos < devSize; pos += int64(sb.SectorSize) {
+	for pos := int64(0); pos+int64(sb.SectorSize) <= devSize; pos += int64(sb.SectorSize) {
 		if inSlice(pos, superblockAddrs) {
 			fmt.Printf("sector@%d is a superblock\n", pos)
 			continue
@@ -106,8 +106,8 @@ func (img *Img) ScanForNodes(sb Superblock) error {
 			continue
 		}
 
-		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner_tree=%v level=%d\n",
-			pos, pos, nodeHeader.Addr, nodeHeader.Generation, nodeHeader.OwnerTree, nodeHeader.Level)
+		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",
+			pos, pos, nodeHeader.Addr, nodeHeader.Generation, nodeHeader.Owner, nodeHeader.Level)
 
 		pos += int64(sb.NodeSize) - int64(sb.SectorSize)
 	}
