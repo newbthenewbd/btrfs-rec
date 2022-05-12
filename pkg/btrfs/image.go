@@ -37,14 +37,14 @@ func (r *Ref[T]) Read() error {
 	return binstruct.Unmarshal(buf, &r.Data)
 }
 
+var superblockAddrs = []int64{
+	0x00_0001_0000, // 64KiB
+	0x00_0400_0000, // 64MiB
+	0x40_0000_0000, // 256GiB
+}
+
 func (img *Img) Superblocks() ([]Ref[Superblock], error) {
 	const superblockSize = 0x1000
-
-	var superblockAddrs = []int64{
-		0x00_0001_0000, // 64KiB
-		0x00_0400_0000, // 64MiB
-		0x40_0000_0000, // 256GiB
-	}
 
 	sz, err := img.Size()
 	if err != nil {
@@ -68,4 +68,49 @@ func (img *Img) Superblocks() ([]Ref[Superblock], error) {
 		return nil, fmt.Errorf("no superblocks")
 	}
 	return ret, nil
+}
+
+// ScanForNodes mimics btrfs-progs
+// cmds/rescue-chunk-recover.c:scan_one_device(), except it doesn't do
+// anything but log when it finds a node.
+func (img *Img) ScanForNodes(sb Superblock) error {
+	devSize, err := img.Size()
+	if err != nil {
+		return err
+	}
+
+	if sb.NodeSize < sb.SectorSize {
+		return fmt.Errorf("node_size(%d) < sector_size(%d)",
+			sb.NodeSize, sb.SectorSize)
+	}
+
+	nodeBuf := make([]byte, sb.NodeSize)
+	for pos := int64(0); pos < devSize; pos += int64(sb.SectorSize) {
+		if inSlice(pos, superblockAddrs) {
+			fmt.Printf("sector@%d is a superblock\n", pos)
+			continue
+		}
+		if _, err := img.ReadAt(nodeBuf, pos); err != nil {
+			return fmt.Errorf("sector@%d: %w", pos, err)
+		}
+		var nodeHeader NodeHeader
+		if err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
+			return fmt.Errorf("sector@%d: %w", pos, err)
+		}
+		if !nodeHeader.MetadataUUID.Equal(sb.EffectiveMetadataUUID()) {
+			//fmt.Printf("sector@%d does not look like a node\n", pos)
+			continue
+		}
+		if !nodeHeader.Checksum.Equal(CRC32c(nodeBuf[0x20:])) {
+			fmt.Printf("sector@%d looks like a node but is corrupt (checksum doesn't match)\n", pos)
+			continue
+		}
+
+		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner_tree=%v level=%d\n",
+			pos, pos, nodeHeader.Addr, nodeHeader.Generation, nodeHeader.OwnerTree, nodeHeader.Level)
+
+		pos += int64(sb.NodeSize) - int64(sb.SectorSize)
+	}
+
+	return nil
 }

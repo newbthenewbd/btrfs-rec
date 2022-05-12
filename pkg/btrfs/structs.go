@@ -9,7 +9,6 @@ import (
 type (
 	PhysicalAddr int64
 	LogicalAddr  int64
-	ObjID        int64
 )
 
 type Key struct {
@@ -44,7 +43,7 @@ type Superblock struct {
 	LogRootTransID  uint64 `bin:"off=68, siz=8"` // log_root_transid
 	TotalBytes      uint64 `bin:"off=70, siz=8"` // total_bytes
 	BytesUsed       uint64 `bin:"off=78, siz=8"` // bytes_used
-	RootDirObjectID uint64 `bin:"off=80, siz=8"` // root_dir_objectid (usually 6)
+	RootDirObjectID ObjID  `bin:"off=80, siz=8"` // root_dir_objectid (usually 6)
 	NumDevices      uint64 `bin:"off=88, siz=8"` // num_devices
 
 	SectorSize        uint32 `bin:"off=90, siz=4"` // sectorsize
@@ -53,11 +52,11 @@ type Superblock struct {
 	StripeSize        uint32 `bin:"off=9c, siz=4"` // stripesize
 	SysChunkArraySize uint32 `bin:"off=a0, siz=4"` // sys_chunk_array_size
 
-	ChunkRootGeneration uint64 `bin:"off=a4, siz=8"` // chunk_root_generation
-	CompatFlags         uint64 `bin:"off=ac, siz=8"` // compat_flags
-	CompatROFlags       uint64 `bin:"off=b4, siz=8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
-	IncompatFlags       uint64 `bin:"off=bc, siz=8"` // incompat_flags - only implementations that support the flags can use the filesystem
-	ChecksumType        uint16 `bin:"off=c4, siz=2"` // csum_type - Btrfs currently uses the CRC32c little-endian hash function with seed -1.
+	ChunkRootGeneration uint64        `bin:"off=a4, siz=8"` // chunk_root_generation
+	CompatFlags         uint64        `bin:"off=ac, siz=8"` // compat_flags
+	CompatROFlags       uint64        `bin:"off=b4, siz=8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
+	IncompatFlags       IncompatFlags `bin:"off=bc, siz=8"` // incompat_flags - only implementations that support the flags can use the filesystem
+	ChecksumType        uint16        `bin:"off=c4, siz=2"` // csum_type - Btrfs currently uses the CRC32c little-endian hash function with seed -1.
 
 	RootLevel  uint8 `bin:"off=c6, siz=1"` // root_level
 	ChunkLevel uint8 `bin:"off=c7, siz=1"` // chunk_root_level
@@ -68,13 +67,24 @@ type Superblock struct {
 	CacheGeneration    uint64      `bin:"off=22b, siz=8"`   // cache_generation
 	UUIDTreeGeneration uint64      `bin:"off=233, siz=8"`   // uuid_tree_generation
 
-	Reserved [0xf0]byte `bin:"off=23b, siz=f0"` // reserved /* future expansion */
+	// FeatureIncompatMetadataUUID
+	MetadataUUID UUID `bin:"off=23b, siz=10"`
+
+	// FeatureIncompatExtentTreeV2
+	NumGlobalRoots uint64 `bin:"off=24b, siz=8"`
+
+	// FeatureIncompatExtentTreeV2
+	BlockGroupRoot           uint64 `bin:"off=253, siz=8"`
+	BlockGroupRootGeneration uint64 `bin:"off=25b, siz=8"`
+	BlockGroupRootLevel      uint8  `bin:"off=263, siz=1"`
+
+	Reserved [199]byte `bin:"off=264, siz=c7"` // future expansion
 
 	SysChunkArray  [0x800]byte `bin:"off=32b, siz=800"` // sys_chunk_array:(n bytes valid) Contains (KEY . CHUNK_ITEM) pairs for all SYSTEM chunks. This is needed to bootstrap the mapping from logical addresses to physical.
 	TODOSuperRoots [0x2a0]byte `bin:"off=b2b, siz=2a0"` // Contain super_roots (4 btrfs_root_backup)
 
-	Unused [0x235]byte `bin:"off=dcb, siz=235"` // current unused
-
+	// Padded to 4096 bytes
+	Padding       [565]byte `bin:"off=dcb, siz=235"`
 	binstruct.End `bin:"off=1000"`
 }
 
@@ -84,6 +94,13 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 		return CSum{}, err
 	}
 	return CRC32c(data[0x20:]), nil
+}
+
+func (sb Superblock) EffectiveMetadataUUID() UUID {
+	if !sb.IncompatFlags.Has(FeatureIncompatMetadataUUID) {
+		return sb.FSUUID
+	}
+	return sb.MetadataUUID
 }
 
 type SysChunk struct {
@@ -116,8 +133,45 @@ func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
 	return ret, nil
 }
 
+type NodeHeader struct {
+	Checksum      CSum        `bin:"off=0,  siz=20"` // Checksum of everything after this field (from 20 to the end of the node)
+	MetadataUUID  UUID        `bin:"off=20, siz=10"` // FS UUID
+	Addr          LogicalAddr `bin:"off=30, siz=8"`  // Logical address of this node
+	Flags         uint64      `bin:"off=38, siz=8"`  // Flags
+	ChunkTreeUUID UUID        `bin:"off=40, siz=10"` // Chunk tree UUID
+	Generation    uint64      `bin:"off=50, siz=8"`  // Generation
+	OwnerTree     TreeObjID   `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
+	NumItems      uint32      `bin:"off=60, siz=4"`  // Number of items
+	Level         uint8       `bin:"off=64, siz=1"`  // Level (0 for leaf nodes)
+	binstruct.End `bin:"off=65"`
+}
+
+type InternalNode struct {
+	NodeHeader
+	Body []KeyPointer
+}
+
+type KeyPointer struct {
+	Key           Key    `bin:"off=0, siz=11"`
+	BlockNumber   uint64 `bin:"off=11, siz=8"`
+	Generation    uint64 `bin:"off=19, siz=8"`
+	binstruct.End `bin:"off=21"`
+}
+
+type LeafNode struct {
+	NodeHeader
+	Body []Item
+}
+
+type Item struct {
+	Key           Key    `bin:"off=0, siz=11"`
+	DataOffset    uint32 `bin:"off=11, siz=4"` // relative to the end of the header (0x65)
+	DataSize      uint32 `bin:"off=15, siz=4"`
+	binstruct.End `bin:"off=19"`
+}
+
 type DevItem struct {
-	DeviceID uint64 `bin:"off=0,    siz=8"` // device id
+	DeviceID ObjID `bin:"off=0,    siz=8"` // device ID
 
 	NumBytes     uint64 `bin:"off=8,    siz=8"` // number of bytes
 	NumBytesUsed uint64 `bin:"off=10,   siz=8"` // number of bytes used
@@ -156,7 +210,7 @@ type ChunkItem struct {
 
 type ChunkItemStripe struct {
 	// Stripes follow (for each number of stripes):
-	DeviceID      ObjID  `bin:"off=0,  siz=8"`  // device id
+	DeviceID      ObjID  `bin:"off=0,  siz=8"`  // device ID
 	Offset        uint64 `bin:"off=8,  siz=8"`  // offset
 	DeviceUUID    UUID   `bin:"off=10, siz=10"` // device UUID
 	binstruct.End `bin:"off=20"`

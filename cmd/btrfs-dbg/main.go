@@ -55,5 +55,9 @@ func Main(imgfilename string) (err error) {
 	}
 	spew.Dump(syschunks)
 
+	if err := img.ScanForNodes(superblocks[0].Data); err != nil {
+		return err
+	}
+
 	return nil
 }
