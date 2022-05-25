@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+"strings"
 	"os"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
@@ -64,7 +65,7 @@ func Main(imgfilename string) (err error) {
 	return nil
 }
 
-// printTree mimics btrfs-progs kernel-shared/print-tree.c:btrfs_print_tree()
+// printTree mimics btrfs-progs kernel-shared/print-tree.c:btrfs_print_tree() and  kernel-shared/print-tree.c:btrfs_print_leaf()
 func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 	node, err := fs.ReadNode(root)
 	if err != nil {
@@ -72,7 +73,18 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 		return
 	}
 	printHeaderInfo(node)
-	// TODO
+	switch node := node.(type) {
+	case *btrfs.InternalNode:
+		// TODO
+	case *btrfs.LeafNode:
+		for i, item := range node.Body {
+			fmt.Printf("\titem %d %s itemoff %d itemsize %d\n",
+				i,
+				fmtKey(item.Data.Key),
+				item.Data.DataOffset,
+				item.Data.DataSize)
+		}
+	}
 }
 
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
@@ -102,4 +114,25 @@ func printHeaderInfo(node btrfs.Node) {
 		node.GetNodeHeader().Addr,
 		node.GetNodeHeader().Data.Flags,
 		node.GetNodeHeader().Data.BackrefRev)
+}
+
+// mimics print-tree.c:btrfs_print_key()
+func fmtKey(key btrfs.Key) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "key (%s %v", key.ObjectID.Format(key.ItemType), key.ItemType)
+	switch key.ItemType {
+	case btrfs.BTRFS_QGROUP_RELATION_KEY, btrfs.BTRFS_QGROUP_INFO_KEY, btrfs.BTRFS_QGROUP_LIMIT_KEY:
+		panic("not implemented")
+	case btrfs.BTRFS_UUID_KEY_SUBVOL, btrfs.BTRFS_UUID_KEY_RECEIVED_SUBVOL:
+		fmt.Fprintf(&out, " 0x%016x)", key.Offset)
+	case btrfs.BTRFS_ROOT_ITEM_KEY:
+		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
+	default:
+		if key.Offset == btrfs.MaxUint64pp-1 {
+			fmt.Fprintf(&out, " -1)")
+		} else {
+			fmt.Fprintf(&out, " %d)", key.Offset)
+		}
+	}
+	return out.String()
 }

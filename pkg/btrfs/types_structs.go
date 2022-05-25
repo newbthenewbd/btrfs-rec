@@ -207,7 +207,7 @@ type NodeHeader struct {
 	BackrefRev    uint8       `bin:"off=3f, siz=1"`
 	ChunkTreeUUID UUID        `bin:"off=40, siz=10"` // Chunk tree UUID
 	Generation    Generation  `bin:"off=50, siz=8"`  // Generation
-	Owner         TreeObjID   `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
+	Owner         ObjID       `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
 	NumItems      uint32      `bin:"off=60, siz=4"`  // Number of items
 	Level         uint8       `bin:"off=64, siz=1"`  // Level (0 for leaf nodes)
 	binstruct.End `bin:"off=65"`
