@@ -39,8 +39,9 @@ const (
 	BTRFS_MULTIPLE_OBJECTIDS = ObjID(maxUint64pp - 255) // dummy objectid represents multiple objectids
 
 	// All files have objectids in this range.
-	BTRFS_FIRST_FREE_OBJECTID       = ObjID(256)
-	BTRFS_LAST_FREE_OBJECTID        = ObjID(maxUint64pp - 256)
+	BTRFS_FIRST_FREE_OBJECTID = ObjID(256)
+	BTRFS_LAST_FREE_OBJECTID  = ObjID(maxUint64pp - 256)
+
 	BTRFS_FIRST_CHUNK_TREE_OBJECTID = ObjID(256)
 
 	// Objects in the CHUNK_TREE

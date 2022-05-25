@@ -1,0 +1,4 @@
+ - [X] look at `btrfs inspect-internal dump-tree` on a good FS
+   - [ ] duplicate it
+ - [ ] draw a diagram of what the struct relations are
+		

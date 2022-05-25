@@ -1,6 +1,8 @@
 package btrfs
 
 import (
+	"fmt"
+	"reflect"
 	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
@@ -13,9 +15,9 @@ type (
 )
 
 type Key struct {
-	ObjectID      ObjID  `bin:"off=0, siz=8"` // Object ID. Each tree has its own set of Object IDs.
-	ItemType      uint8  `bin:"off=8, siz=1"` // Item type.
-	Offset        uint64 `bin:"off=9, siz=8"` // Offset. The meaning depends on the item type.
+	ObjectID      ObjID    `bin:"off=0, siz=8"` // Each tree has its own set of Object IDs.
+	ItemType      ItemType `bin:"off=8, siz=1"`
+	Offset        uint64   `bin:"off=9, siz=8"` // The meaning depends on the item type.
 	binstruct.End `bin:"off=11"`
 }
 
@@ -97,6 +99,29 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 	return CRC32c(data[0x20:]), nil
 }
 
+func (sb Superblock) ValidateChecksum() error {
+	stored := sb.Checksum
+	calced, err := sb.CalculateChecksum()
+	if err != nil {
+		return err
+	}
+	if !calced.Equal(stored) {
+		return fmt.Errorf("superblock checksum mismatch: stored=%s calculated=%s",
+			stored, calced)
+	}
+	return nil
+}
+
+func (a Superblock) Equal(b Superblock) bool {
+	a.Checksum = CSum{}
+	a.Self = 0
+
+	b.Checksum = CSum{}
+	b.Self = 0
+
+	return reflect.DeepEqual(a, b)
+}
+
 func (sb Superblock) EffectiveMetadataUUID() UUID {
 	if !sb.IncompatFlags.Has(FeatureIncompatMetadataUUID) {
 		return sb.FSUUID
@@ -106,7 +131,7 @@ func (sb Superblock) EffectiveMetadataUUID() UUID {
 
 type SysChunk struct {
 	Key           `bin:"off=0, siz=11"`
-	ChunkItem     `bin:"off=11, siz=30"`
+	Chunk         `bin:"off=11, siz=30"`
 	binstruct.End `bin:"off=41"`
 }
 
@@ -120,12 +145,12 @@ func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
 		}
 		dat = dat[0x41:]
 
-		for i := 0; i < int(pair.ChunkItem.NumStripes); i++ {
-			var stripe ChunkItemStripe
+		for i := 0; i < int(pair.Chunk.NumStripes); i++ {
+			var stripe Stripe
 			if err := binstruct.Unmarshal(dat, &stripe); err != nil {
 				return nil, err
 			}
-			pair.ChunkItem.Stripes = append(pair.ChunkItem.Stripes, stripe)
+			pair.Chunk.Stripes = append(pair.Chunk.Stripes, stripe)
 			dat = dat[0x20:]
 		}
 
@@ -230,10 +255,10 @@ type DevItem struct {
 	binstruct.End `bin:"off=62"`
 }
 
-type ChunkItem struct {
+type Chunk struct {
 	// Maps logical address to physical.
 	Size           uint64 `bin:"off=0,  siz=8"` // size of chunk (bytes)
-	Root           ObjID  `bin:"off=8,  siz=8"` // root referencing this chunk (2)
+	Owner          ObjID  `bin:"off=8,  siz=8"` // root referencing this chunk (2)
 	StripeLen      uint64 `bin:"off=10, siz=8"` // stripe length
 	Type           uint64 `bin:"off=18, siz=8"` // type (same as flags for block group?)
 	IOOptimalAlign uint32 `bin:"off=20, siz=4"` // optimal io alignment
@@ -242,10 +267,10 @@ type ChunkItem struct {
 	NumStripes     uint16 `bin:"off=2c, siz=2"` // number of stripes
 	SubStripes     uint16 `bin:"off=2e, siz=2"` // sub stripes
 	binstruct.End  `bin:"off=30"`
-	Stripes        []ChunkItemStripe `bin:"-"`
+	Stripes        []Stripe `bin:"-"`
 }
 
-type ChunkItemStripe struct {
+type Stripe struct {
 	// Stripes follow (for each number of stripes):
 	DeviceID      ObjID  `bin:"off=0,  siz=8"`  // device ID
 	Offset        uint64 `bin:"off=8,  siz=8"`  // offset
