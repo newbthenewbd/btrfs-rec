@@ -9,21 +9,25 @@ type Device struct {
 	*os.File
 }
 
-func (dev Device) Size() (int64, error) {
+func (dev Device) Size() (PhysicalAddr, error) {
 	fi, err := dev.Stat()
 	if err != nil {
 		return 0, err
 	}
-	return fi.Size(), nil
+	return PhysicalAddr(fi.Size()), nil
 }
 
-var superblockAddrs = []int64{
+var superblockAddrs = []PhysicalAddr{
 	0x00_0001_0000, // 64KiB
 	0x00_0400_0000, // 64MiB
 	0x40_0000_0000, // 256GiB
 }
 
-func (dev *Device) Superblocks() ([]Ref[Superblock], error) {
+func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
+	return dev.File.ReadAt(dat, int64(paddr))
+}
+
+func (dev *Device) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
 	const superblockSize = 0x1000
 
 	sz, err := dev.Size()
@@ -31,12 +35,12 @@ func (dev *Device) Superblocks() ([]Ref[Superblock], error) {
 		return nil, err
 	}
 
-	var ret []Ref[Superblock]
+	var ret []Ref[PhysicalAddr, Superblock]
 	for i, addr := range superblockAddrs {
 		if addr+superblockSize <= sz {
-			superblock := Ref[Superblock]{
-				dev:  dev,
-				addr: addr,
+			superblock := Ref[PhysicalAddr, Superblock]{
+				File: dev,
+				Addr: addr,
 			}
 			if err := superblock.Read(); err != nil {
 				return nil, fmt.Errorf("superblock %d: %w", i, err)
@@ -50,7 +54,7 @@ func (dev *Device) Superblocks() ([]Ref[Superblock], error) {
 	return ret, nil
 }
 
-func (dev *Device) superblock() (ret Ref[Superblock], err error) {
+func (dev *Device) Superblock() (ret Ref[PhysicalAddr, Superblock], err error) {
 	sbs, err := dev.Superblocks()
 	if err != nil {
 		return ret, err

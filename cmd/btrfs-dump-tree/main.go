@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 )
 
@@ -15,6 +13,8 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+const version = "5.17"
 
 func Main(imgfilename string) (err error) {
 	maybeSetErr := func(_err error) {
@@ -38,30 +38,68 @@ func Main(imgfilename string) (err error) {
 		},
 	}
 
-	superblocks, err := fs.Devices[0].Superblocks()
+	superblock, err := fs.Superblock()
 	if err != nil {
 		return err
 	}
 
-	spew := spew.NewDefaultConfig()
-	spew.DisablePointerAddresses = true
-
-	sum, err := superblocks[0].Data.CalculateChecksum()
-	if err != nil {
-		return err
+	fmt.Printf("btrfs-progs v%s \n", version)
+	if superblock.Data.RootTree != 0 && false { // XXX
+		fmt.Printf("root tree\n")
+		printTree(fs, superblock.Data.RootTree)
 	}
-	fmt.Printf("superblock checksum: %x\n", sum)
-	spew.Dump(superblocks[0].Data)
-
-	syschunks, err := superblocks[0].Data.ParseSysChunkArray()
-	if err != nil {
-		return err
+	if superblock.Data.ChunkTree != 0 {
+		fmt.Printf("chunk tree\n")
+		printTree(fs, superblock.Data.ChunkTree)
 	}
-	spew.Dump(syschunks)
-
-	if err := btrfs.ScanForNodes(fs.Devices[0], superblocks[0].Data); err != nil {
-		return err
+	if superblock.Data.LogTree != 0 {
+		fmt.Printf("log root tree\n")
+		printTree(fs, superblock.Data.LogTree)
+	}
+	if superblock.Data.BlockGroupRoot != 0 {
+		fmt.Printf("block group tree\n")
+		printTree(fs, superblock.Data.BlockGroupRoot)
 	}
 
 	return nil
+}
+
+// printTree mimics btrfs-progs kernel-shared/print-tree.c:btrfs_print_tree()
+func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
+	node, err := fs.ReadNode(root)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	printHeaderInfo(node)
+	// TODO
+}
+
+// printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
+func printHeaderInfo(node btrfs.Node) {
+	var typename string
+	switch node := node.(type) {
+	case *btrfs.InternalNode:
+		typename = "node"
+		fmt.Printf("node %d level %d items %d free space %d",
+			node.Header.Addr,
+			node.Header.Data.Level,
+			node.Header.Data.NumItems,
+			node.Header.Data.MaxItems-node.Header.Data.NumItems)
+	case *btrfs.LeafNode:
+		typename = "leaf"
+		fmt.Printf("leaf %d items %d free space %d",
+			node.Header.Addr,
+			node.Header.Data.NumItems,
+			node.FreeSpace())
+	}
+	fmt.Printf(" generation %d owner %v\n",
+		node.GetNodeHeader().Data.Generation,
+		node.GetNodeHeader().Data.Owner)
+
+	fmt.Printf("%s %d flags %s backref revision %d\n",
+		typename,
+		node.GetNodeHeader().Addr,
+		node.GetNodeHeader().Data.Flags,
+		node.GetNodeHeader().Data.BackrefRev)
 }

@@ -4,19 +4,25 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 )
 
-type Ref[T any] struct {
-	dev  *Device
-	addr int64
+type File[A ~int64] interface {
+	Name() string
+	Size() (A, error)
+	ReadAt(p []byte, off A) (n int, err error)
+}
+
+type Ref[A ~int64, T any] struct {
+	File File[A]
+	Addr A
 	Data T
 }
 
-func (r *Ref[T]) Read() error {
+func (r *Ref[A, T]) Read() error {
 	size, err := binstruct.Size(r.Data)
 	if err != nil {
 		return err
 	}
 	buf := make([]byte, size)
-	if _, err := r.dev.ReadAt(buf, r.addr); err != nil {
+	if _, err := r.File.ReadAt(buf, r.Addr); err != nil {
 		return err
 	}
 	return binstruct.Unmarshal(buf, &r.Data)

@@ -7,9 +7,13 @@ import (
 )
 
 type Marshaler interface {
-	MarshalBinary() []byte
-	UnmarshalBinary([]byte)
 	BinarySize() int64
+	MarshalBinary() []byte
+}
+
+type Unmarshaler interface {
+	Marshaler
+	UnmarshalBinary([]byte)
 }
 
 type handler interface {
@@ -26,9 +30,9 @@ func (_ extHandler) Marshal(val interface{}) []byte {
 	return val.(Marshaler).MarshalBinary()
 }
 func (e extHandler) Unmarshal(dat []byte) interface{} {
-	val := reflect.New(e.typ).Elem().Interface().(Marshaler)
-	val.UnmarshalBinary(dat)
-	return val
+	valPtr := reflect.New(e.typ).Interface().(Unmarshaler)
+	valPtr.UnmarshalBinary(dat)
+	return reflect.ValueOf(valPtr).Elem().Interface()
 }
 func (e extHandler) Size() int64 {
 	val := reflect.New(e.typ).Elem().Interface().(Marshaler)
@@ -53,7 +57,9 @@ func convert[T any](in interface{}) T {
 }
 
 func genHandler(typ reflect.Type) (handler, error) {
-	if _, ok := reflect.New(typ).Elem().Interface().(Marshaler); ok {
+	_, marOK := reflect.New(typ).Elem().Interface().(Marshaler)
+	_, unmarOK := reflect.New(typ).Interface().(Unmarshaler)
+	if marOK && unmarOK {
 		return extHandler{
 			typ: typ,
 		}, nil
@@ -112,7 +118,7 @@ func genHandler(typ reflect.Type) (handler, error) {
 	case reflect.Int8:
 		return primitive{
 			unmarshal: func(dat []byte) interface{} { return int8(dat[0]) },
-			marshal:   func(val interface{}) []byte { return []byte{uint8(convert[int8](val))}},
+			marshal:   func(val interface{}) []byte { return []byte{uint8(convert[int8](val))} },
 			size:      1,
 		}, nil
 	case reflect.Int16:

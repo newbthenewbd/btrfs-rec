@@ -21,7 +21,7 @@ func ScanForNodes(dev *Device, sb Superblock) error {
 	}
 
 	nodeBuf := make([]byte, sb.NodeSize)
-	for pos := int64(0); pos+int64(sb.SectorSize) < devSize; pos += int64(sb.SectorSize) {
+	for pos := PhysicalAddr(0); pos+PhysicalAddr(sb.SectorSize) < devSize; pos += PhysicalAddr(sb.SectorSize) {
 		if inSlice(pos, superblockAddrs) {
 			fmt.Printf("sector@%d is a superblock\n", pos)
 			continue
@@ -45,7 +45,7 @@ func ScanForNodes(dev *Device, sb Superblock) error {
 		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",
 			pos, pos, nodeHeader.Addr, nodeHeader.Generation, nodeHeader.Owner, nodeHeader.Level)
 
-		pos += int64(sb.NodeSize) - int64(sb.SectorSize)
+		pos += PhysicalAddr(sb.NodeSize) - PhysicalAddr(sb.SectorSize)
 	}
 
 	return nil

@@ -77,9 +77,9 @@ type Superblock struct {
 	NumGlobalRoots uint64 `bin:"off=24b, siz=8"`
 
 	// FeatureIncompatExtentTreeV2
-	BlockGroupRoot           ObjID      `bin:"off=253, siz=8"`
-	BlockGroupRootGeneration Generation `bin:"off=25b, siz=8"`
-	BlockGroupRootLevel      uint8      `bin:"off=263, siz=1"`
+	BlockGroupRoot           LogicalAddr `bin:"off=253, siz=8"`
+	BlockGroupRootGeneration Generation  `bin:"off=25b, siz=8"`
+	BlockGroupRootLevel      uint8       `bin:"off=263, siz=1"`
 
 	Reserved [199]byte `bin:"off=264, siz=c7"` // future expansion
 
@@ -195,22 +195,34 @@ type RootBackup struct {
 	binstruct.End `bin:"off=a8"`
 }
 
+type Node interface {
+	GetNodeHeader() Ref[LogicalAddr, NodeHeader]
+}
+
 type NodeHeader struct {
 	Checksum      CSum        `bin:"off=0,  siz=20"` // Checksum of everything after this field (from 20 to the end of the node)
 	MetadataUUID  UUID        `bin:"off=20, siz=10"` // FS UUID
 	Addr          LogicalAddr `bin:"off=30, siz=8"`  // Logical address of this node
-	Flags         uint64      `bin:"off=38, siz=8"`  // Flags
+	Flags         NodeFlags   `bin:"off=38, siz=7"`
+	BackrefRev    uint8       `bin:"off=3f, siz=1"`
 	ChunkTreeUUID UUID        `bin:"off=40, siz=10"` // Chunk tree UUID
 	Generation    Generation  `bin:"off=50, siz=8"`  // Generation
 	Owner         TreeObjID   `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
 	NumItems      uint32      `bin:"off=60, siz=4"`  // Number of items
 	Level         uint8       `bin:"off=64, siz=1"`  // Level (0 for leaf nodes)
 	binstruct.End `bin:"off=65"`
+
+	Size     uint32 `bin:"-"` // superblock.NodeSize
+	MaxItems uint32 `bin:"-"` // Maximum possible value of NumItems
 }
 
 type InternalNode struct {
-	NodeHeader
-	Body []KeyPointer
+	Header Ref[LogicalAddr, NodeHeader]
+	Body   []Ref[LogicalAddr, KeyPointer]
+}
+
+func (in *InternalNode) GetNodeHeader() Ref[LogicalAddr, NodeHeader] {
+	return in.Header
 }
 
 type KeyPointer struct {
@@ -221,8 +233,22 @@ type KeyPointer struct {
 }
 
 type LeafNode struct {
-	NodeHeader
-	Body []Item
+	Header Ref[LogicalAddr, NodeHeader]
+	Body   []Ref[LogicalAddr, Item]
+}
+
+func (ln *LeafNode) GetNodeHeader() Ref[LogicalAddr, NodeHeader] {
+	return ln.Header
+}
+
+func (ln *LeafNode) FreeSpace() uint32 {
+	freeSpace := ln.Header.Data.Size
+	freeSpace -= 0x65
+	for _, item := range ln.Body {
+		freeSpace -= 0x19
+		freeSpace -= item.Data.DataSize
+	}
+	return freeSpace
 }
 
 type Item struct {
@@ -230,6 +256,7 @@ type Item struct {
 	DataOffset    uint32 `bin:"off=11, siz=4"` // relative to the end of the header (0x65)
 	DataSize      uint32 `bin:"off=15, siz=4"`
 	binstruct.End `bin:"off=19"`
+	Data          Ref[LogicalAddr, []byte] `bin:"-"`
 }
 
 type DevItem struct {
