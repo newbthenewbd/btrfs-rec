@@ -23,7 +23,7 @@ type Key struct {
 
 type Time struct {
 	Sec           int64  `bin:"off=0, siz=8"` // Number of seconds since 1970-01-01T00:00:00Z.
-	NSec          uint64 `bin:"off=8, siz=4"` // Number of nanoseconds since the beginning of the second.
+	NSec          uint32 `bin:"off=8, siz=4"` // Number of nanoseconds since the beginning of the second.
 	binstruct.End `bin:"off=c"`
 }
 
@@ -257,29 +257,6 @@ type Item struct {
 	DataSize      uint32 `bin:"off=15, siz=4"`
 	binstruct.End `bin:"off=19"`
 	Data          Ref[LogicalAddr, []byte] `bin:"-"`
-}
-
-type DevItem struct {
-	DeviceID ObjID `bin:"off=0,    siz=8"` // device ID
-
-	NumBytes     uint64 `bin:"off=8,    siz=8"` // number of bytes
-	NumBytesUsed uint64 `bin:"off=10,   siz=8"` // number of bytes used
-
-	IOOptimalAlign uint32 `bin:"off=18,   siz=4"` // optimal I/O align
-	IOOptimalWidth uint32 `bin:"off=1c,   siz=4"` // optimal I/O width
-	IOMinSize      uint32 `bin:"off=20,   siz=4"` // minimal I/O size (sector size)
-
-	Type        uint64     `bin:"off=24,   siz=8"` // type
-	Generation  Generation `bin:"off=2c,   siz=8"` // generation
-	StartOffset uint64     `bin:"off=34,   siz=8"` // start offset
-	DevGroup    uint32     `bin:"off=3c,   siz=4"` // dev group
-	SeekSpeed   uint8      `bin:"off=40,   siz=1"` // seek speed
-	Bandwidth   uint8      `bin:"off=41,   siz=1"` // bandwidth
-
-	DevUUID UUID `bin:"off=42,   siz=10"` // device UUID
-	FSUUID  UUID `bin:"off=52,   siz=10"` // FS UUID
-
-	binstruct.End `bin:"off=62"`
 }
 
 type Chunk struct {

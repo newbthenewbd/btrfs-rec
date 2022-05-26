@@ -6,7 +6,7 @@ import (
 
 type ObjID uint64
 
-const MaxUint64pp = 0x1_0000_0000
+const MaxUint64pp = 0x1_00000000_00000000
 
 const (
 	// The IDs of the various trees
@@ -132,15 +132,13 @@ func (id ObjID) Format(typ ItemType) string {
 			BTRFS_FREE_SPACE_TREE_OBJECTID:  "FREE_SPACE_TREE",
 			BTRFS_BLOCK_GROUP_TREE_OBJECTID: "BLOCK_GROUP_TREE",
 		}
-		if names != nil {
-			if name, ok := names[id]; ok {
-				return name
-			}
+		if name, ok := names[id]; ok {
+			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
 	}
 }
 
 func (id ObjID) String() string {
-	return id.Format(BTRFS_STRING_ITEM_KEY)
+	return id.Format(BTRFS_UNTYPED_KEY)
 }

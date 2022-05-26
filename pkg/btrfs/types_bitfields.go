@@ -9,9 +9,6 @@ import (
 )
 
 func bitfieldString[T ~uint8 | ~uint16 | ~uint32 | ~uint64](bitfield T, bitnames []string) string {
-	if bitfield == 0 {
-		return "0"
-	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "0x%0X", uint64(bitfield))
 	if bitfield == 0 {
@@ -108,3 +105,16 @@ var nodeFlagNames = []string{
 
 func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
 func (f NodeFlags) String() string         { return bitfieldString(f, nodeFlagNames) }
+
+type RootItemFlags uint64
+
+const (
+	BTRFS_ROOT_SUBVOL_RDONLY = RootItemFlags(1 << iota)
+)
+
+var rootItemFlagNames = []string{
+	"SUBVOL_RDONLY",
+}
+
+func (f RootItemFlags) Has(req RootItemFlags) bool { return f&req == req }
+func (f RootItemFlags) String() string             { return bitfieldString(f, rootItemFlagNames) }
