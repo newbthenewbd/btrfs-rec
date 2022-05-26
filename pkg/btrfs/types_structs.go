@@ -226,9 +226,9 @@ func (in *InternalNode) GetNodeHeader() Ref[LogicalAddr, NodeHeader] {
 }
 
 type KeyPointer struct {
-	Key           Key        `bin:"off=0, siz=11"`
-	BlockNumber   uint64     `bin:"off=11, siz=8"`
-	Generation    Generation `bin:"off=19, siz=8"`
+	Key           Key         `bin:"off=0, siz=11"`
+	BlockPtr      LogicalAddr `bin:"off=11, siz=8"`
+	Generation    Generation  `bin:"off=19, siz=8"`
 	binstruct.End `bin:"off=21"`
 }
 

@@ -81,7 +81,7 @@ func (fs *FS) Superblock() (ret Ref[PhysicalAddr, Superblock], err error) {
 	return sbs[0], nil
 }
 
-func (fs *FS) init() error {
+func (fs *FS) Init() error {
 	if fs.uuid2dev != nil {
 		return fs.initErr
 	}
@@ -121,6 +121,28 @@ func (fs *FS) init() error {
 		for _, chunk := range syschunks {
 			fs.chunks = append(fs.chunks, chunk)
 		}
+		if err := fs.WalkTree(sb.Data.ChunkTree, func(key Key, dat []byte) error {
+			pair := SysChunk{
+				Key: key,
+			}
+			if err := binstruct.Unmarshal(dat, &pair.Chunk); err != nil {
+				return err
+			}
+			dat = dat[0x30:]
+			for i := 0; i < int(pair.Chunk.NumStripes); i++ {
+				var stripe Stripe
+				if err := binstruct.Unmarshal(dat, &stripe); err != nil {
+					return err
+				}
+				pair.Chunk.Stripes = append(pair.Chunk.Stripes, stripe)
+				dat = dat[0x20:]
+			}
+			fs.chunks = append(fs.chunks, pair)
+			return nil
+		}); err != nil {
+			fs.initErr = err
+			return fs.initErr
+		}
 	}
 	return nil
 }
@@ -138,10 +160,6 @@ func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 }
 
 func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
-	if err := fs.init(); err != nil {
-		return 0, err
-	}
-
 	type physicalAddr struct {
 		Dev  UUID
 		Addr PhysicalAddr
@@ -209,6 +227,11 @@ func (fs *FS) ReadNode(addr LogicalAddr) (Node, error) {
 		return nil, fmt.Errorf("node@%d: does not look like a node", addr)
 	}
 
+	if nodeHeader.Addr != addr {
+		return nil, fmt.Errorf("node@%d: read from laddr=%d but claims to be at laddr=%d",
+			addr, addr, nodeHeader.Addr)
+	}
+
 	stored := nodeHeader.Checksum
 	calced := CRC32c(nodeBuf[0x20:])
 	if !calced.Equal(stored) {
@@ -274,4 +297,30 @@ func (fs *FS) ReadNode(addr LogicalAddr) (Node, error) {
 		}
 		return ret, nil
 	}
+}
+
+func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, []byte) error) error {
+	if nodeAddr == 0 {
+		return nil
+	}
+	node, err := fs.ReadNode(nodeAddr)
+	if err != nil {
+		return err
+	}
+	switch node := node.(type) {
+	case *InternalNode:
+		for _, item := range node.Body {
+			// fn(item.Data.Key, TODO)
+			if err := fs.WalkTree(item.Data.BlockPtr, fn); err != nil {
+				return err
+			}
+		}
+	case *LeafNode:
+		for _, item := range node.Body {
+			if err := fn(item.Data.Key, item.Data.Data.Data); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

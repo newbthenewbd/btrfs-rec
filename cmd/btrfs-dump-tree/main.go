@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-"strings"
 	"os"
+	"strings"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 )
@@ -39,13 +39,17 @@ func Main(imgfilename string) (err error) {
 		},
 	}
 
+	if err := fs.Init(); err != nil {
+		return err
+	}
+
 	superblock, err := fs.Superblock()
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("btrfs-progs v%s \n", version)
-	if superblock.Data.RootTree != 0 && false { // XXX
+	if superblock.Data.RootTree != 0 {
 		fmt.Printf("root tree\n")
 		printTree(fs, superblock.Data.RootTree)
 	}
