@@ -24,13 +24,9 @@ func UnmarshalWithoutInterface(dat []byte, dstPtr any) (int, error) {
 	dst := _dstPtr.Elem()
 
 	switch dst.Kind() {
-	case reflect.Uint8:
-		newDstPtr := reflect.New(u8Type)
-		n, err := Unmarshal(dat, newDstPtr.Interface())
-		dst.Set(newDstPtr.Elem().Convert(dst.Type()))
-		return n, err
-	case reflect.Int8:
-		newDstPtr := reflect.New(i8Type)
+	case reflect.Uint8, reflect.Int8, reflect.Uint16, reflect.Int16, reflect.Uint32, reflect.Int32, reflect.Uint64, reflect.Int64:
+		typ := intKind2Type[dst.Kind()]
+		newDstPtr := reflect.New(typ)
 		n, err := Unmarshal(dat, newDstPtr.Interface())
 		dst.Set(newDstPtr.Elem().Convert(dst.Type()))
 		return n, err

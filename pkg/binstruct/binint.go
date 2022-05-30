@@ -23,7 +23,13 @@ type (
 	I64be = binint.I64be
 )
 
-var (
-	u8Type = reflect.TypeOf(U8(0))
-	i8Type = reflect.TypeOf(I8(0))
-)
+var intKind2Type = map[reflect.Kind]reflect.Type{
+	reflect.Uint8:  reflect.TypeOf(U8(0)),
+	reflect.Int8:   reflect.TypeOf(I8(0)),
+	reflect.Uint16: reflect.TypeOf(U16le(0)),
+	reflect.Int16:  reflect.TypeOf(I16le(0)),
+	reflect.Uint32: reflect.TypeOf(U32le(0)),
+	reflect.Int32:  reflect.TypeOf(I32le(0)),
+	reflect.Uint64: reflect.TypeOf(U64le(0)),
+	reflect.Int64:  reflect.TypeOf(I64le(0)),
+}

@@ -18,10 +18,9 @@ func Marshal(obj any) ([]byte, error) {
 func MarshalWithoutInterface(obj any) ([]byte, error) {
 	val := reflect.ValueOf(obj)
 	switch val.Kind() {
-	case reflect.Uint8:
-		return val.Convert(u8Type).Interface().(Marshaler).MarshalBinary()
-	case reflect.Int8:
-		return val.Convert(i8Type).Interface().(Marshaler).MarshalBinary()
+	case reflect.Uint8, reflect.Int8, reflect.Uint16, reflect.Int16, reflect.Uint32, reflect.Int32, reflect.Uint64, reflect.Int64:
+		typ := intKind2Type[val.Kind()]
+		return val.Convert(typ).Interface().(Marshaler).MarshalBinary()
 	case reflect.Ptr:
 		return Marshal(val.Elem().Interface())
 	case reflect.Array:

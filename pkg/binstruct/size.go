@@ -26,6 +26,12 @@ func staticSize(typ reflect.Type) (int, error) {
 	switch typ.Kind() {
 	case reflect.Uint8, reflect.Int8:
 		return 1, nil
+	case reflect.Uint16, reflect.Int16:
+		return 2, nil
+	case reflect.Uint32, reflect.Int32:
+		return 4, nil
+	case reflect.Uint64, reflect.Int64:
+		return 8, nil
 	case reflect.Ptr:
 		return staticSize(typ.Elem())
 	case reflect.Array:
