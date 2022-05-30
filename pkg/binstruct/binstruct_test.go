@@ -41,6 +41,8 @@ func TestSmoke(t *testing.T) {
 		binstruct.End `bin:"off=0x6F"`
 	}
 
+	assert.Equal(t, 0x6F, binstruct.StaticSize(TestType{}))
+
 	input := TestType{}
 	copy(input.Magic[:], "mAgIc")
 	input.Dev.DeviceID = 12
@@ -48,7 +50,7 @@ func TestSmoke(t *testing.T) {
 
 	bs, err := binstruct.Marshal(input)
 	assert.NoError(t, err)
-	assert.True(t, len(bs) == 0x6F, "len(bs)=0x%x", len(bs))
+	assert.Equal(t, 0x6F, len(bs))
 
 	var output TestType
 	n, err := binstruct.Unmarshal(bs, &output)

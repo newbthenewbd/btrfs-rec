@@ -57,7 +57,7 @@ func (x *U32le) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = U32le(binary.LittleEndian.Uint32(dat))
-	return 2, nil
+	return 4, nil
 }
 
 type U64le uint64
@@ -73,7 +73,7 @@ func (x *U64le) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = U64le(binary.LittleEndian.Uint64(dat))
-	return 2, nil
+	return 8, nil
 }
 
 // unsigned big endian
@@ -107,7 +107,7 @@ func (x *U32be) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = U32be(binary.BigEndian.Uint32(dat))
-	return 2, nil
+	return 4, nil
 }
 
 type U64be uint64
@@ -123,7 +123,7 @@ func (x *U64be) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = U64be(binary.BigEndian.Uint64(dat))
-	return 2, nil
+	return 8, nil
 }
 
 // signed
@@ -171,7 +171,7 @@ func (x *I32le) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = I32le(binary.LittleEndian.Uint32(dat))
-	return 2, nil
+	return 4, nil
 }
 
 type I64le int64
@@ -187,7 +187,7 @@ func (x *I64le) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = I64le(binary.LittleEndian.Uint64(dat))
-	return 2, nil
+	return 8, nil
 }
 
 // signed big endian
@@ -221,7 +221,7 @@ func (x *I32be) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = I32be(binary.BigEndian.Uint32(dat))
-	return 2, nil
+	return 4, nil
 }
 
 type I64be int64
@@ -237,5 +237,5 @@ func (x *I64be) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	*x = I64be(binary.BigEndian.Uint64(dat))
-	return 2, nil
+	return 8, nil
 }
