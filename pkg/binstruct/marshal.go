@@ -1,20 +1,27 @@
 package binstruct
 
 import (
+	"encoding"
 	"fmt"
 	"reflect"
 )
 
-type Marshaler interface {
-	MarshalBinary() ([]byte, error)
-}
+type Marshaler = encoding.BinaryMarshaler
 
 func Marshal(obj any) ([]byte, error) {
 	if mar, ok := obj.(Marshaler); ok {
 		return mar.MarshalBinary()
 	}
+	return MarshalWithoutInterface(obj)
+}
+
+func MarshalWithoutInterface(obj any) ([]byte, error) {
 	val := reflect.ValueOf(obj)
 	switch val.Kind() {
+	case reflect.Uint8:
+		return val.Convert(u8Type).Interface().(Marshaler).MarshalBinary()
+	case reflect.Int8:
+		return val.Convert(i8Type).Interface().(Marshaler).MarshalBinary()
 	case reflect.Ptr:
 		return Marshal(val.Elem().Interface())
 	case reflect.Array:
@@ -28,7 +35,7 @@ func Marshal(obj any) ([]byte, error) {
 		}
 		return ret, nil
 	case reflect.Struct:
-		// TODO
+		return getStructHandler(val.Type()).Marshal(val)
 	default:
 		panic(fmt.Errorf("type=%v does not implement binfmt.Marshaler and kind=%v is not a supported statically-sized kind",
 			val.Type(), val.Kind()))

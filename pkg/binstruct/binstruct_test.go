@@ -6,39 +6,43 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	. "lukeshu.com/btrfs-tools/pkg/binstruct/binint"
 )
 
 func TestSmoke(t *testing.T) {
-	type UUID [16]byte
-	type PhysicalAddr int64
+	type UUID [16]U8
+	type PhysicalAddr I64le
+	func (PhysicalAddr) BinaryStaticSize() int { return I64le(0).BinaryStaticSize() }
+	func (x PhysicalAddr) MarshalBinary() ([]byte, error) { return I64le(x).MarshalBinary() }
+	func (x *PhysicalAddr) UnmarshalBinary([]byte) (int, error) { return I64le(x).UnmarshalBinary(dat) }
 	type DevItem struct {
-		DeviceID uint64 `bin:"off=0,    siz=8"` // device id
+		DeviceID U64le `bin:"off=0x0,    siz=0x8"` // device id
 
-		NumBytes     uint64 `bin:"off=8,    siz=8"` // number of bytes
-		NumBytesUsed uint64 `bin:"off=10,   siz=8"` // number of bytes used
+		NumBytes     U64le `bin:"off=0x8,    siz=0x8"` // number of bytes
+		NumBytesUsed U64le `bin:"off=0x10,   siz=0x8"` // number of bytes used
 
-		IOOptimalAlign uint32 `bin:"off=18,   siz=4"` // optimal I/O align
-		IOOptimalWidth uint32 `bin:"off=1c,   siz=4"` // optimal I/O width
-		IOMinSize      uint32 `bin:"off=20,   siz=4"` // minimal I/O size (sector size)
+		IOOptimalAlign U32le `bin:"off=0x18,   siz=0x4"` // optimal I/O align
+		IOOptimalWidth U32le `bin:"off=0x1c,   siz=0x4"` // optimal I/O width
+		IOMinSize      U32le `bin:"off=0x20,   siz=0x4"` // minimal I/O size (sector size)
 
-		Type        uint64 `bin:"off=24,   siz=8"` // type
-		Generation  uint64 `bin:"off=2c,   siz=8"` // generation
-		StartOffset uint64 `bin:"off=34,   siz=8"` // start offset
-		DevGroup    uint32 `bin:"off=3c,   siz=4"` // dev group
-		SeekSpeed   uint8  `bin:"off=40,   siz=1"` // seek speed
-		Bandwidth   uint8  `bin:"off=41,   siz=1"` // bandwidth
+		Type        U64le `bin:"off=0x24,   siz=0x8"` // type
+		Generation  U64le `bin:"off=0x2c,   siz=0x8"` // generation
+		StartOffset U64le `bin:"off=0x34,   siz=0x8"` // start offset
+		DevGroup    U32le `bin:"off=0x3c,   siz=0x4"` // dev group
+		SeekSpeed   U8    `bin:"off=0x40,   siz=0x1"` // seek speed
+		Bandwidth   U8    `bin:"off=0x41,   siz=0x1"` // bandwidth
 
-		DevUUID UUID `bin:"off=42,   siz=10"` // device UUID
-		FSUUID  UUID `bin:"off=52,   siz=10"` // FS UUID
+		DevUUID UUID `bin:"off=0x42,   siz=0x10"` // device UUID
+		FSUUID  UUID `bin:"off=0x52,   siz=0x10"` // FS UUID
 
-		binstruct.End `bin:"off=62"`
+		binstruct.End `bin:"off=0x62"`
 	}
 	type TestType struct {
-		Magic [5]byte      `bin:"off=0,siz=5"`
-		Dev   DevItem      `bin:"off=5,siz=62"`
-		Addr  PhysicalAddr `bin:"off=67, siz=8"`
+		Magic [5]byte      `bin:"off=0x0,siz=0x5"`
+		Dev   DevItem      `bin:"off=0x5,siz=0x62"`
+		Addr  PhysicalAddr `bin:"off=0x67, siz=0x8"`
 
-		binstruct.End `bin:"off=6F"`
+		binstruct.End `bin:"off=0x6F"`
 	}
 
 	input := TestType{}
@@ -51,6 +55,8 @@ func TestSmoke(t *testing.T) {
 	assert.True(t, len(bs) == 0x6F, "len(bs)=0x%x", len(bs))
 
 	var output TestType
-	assert.NoError(t, binstruct.Unmarshal(bs, &output))
+	n, err := binstruct.Unmarshal(bs, &output)
+	assert.NoError(t, err)
+	assert.Equal(t, 0x6F, n)
 	assert.Equal(t, input, output)
 }

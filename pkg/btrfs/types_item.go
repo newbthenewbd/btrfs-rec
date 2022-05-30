@@ -19,8 +19,8 @@ const (
 	BTRFS_INODE_EXTREF_KEY = ItemType(13)
 	BTRFS_XATTR_ITEM_KEY   = ItemType(24)
 
-	BTRFS_VERITY_DESC_ITEM_KEY   = ItemType(36)
-	BTRFS_VERITY_MERKLE_ITEM_KEY = ItemType(37)
+	BTRFS_VERITY_DESC_ITEM_KEY   = ItemType(36) // new
+	BTRFS_VERITY_MERKLE_ITEM_KEY = ItemType(37) // new
 
 	BTRFS_ORPHAN_ITEM_KEY = ItemType(48)
 
@@ -35,7 +35,7 @@ const (
 	BTRFS_EXTENT_DATA_KEY = ItemType(108)
 
 	// csum items have the checksums for data in the extents
-	BTRFS_CSUM_ITEM_KEY = ItemType(120)
+	BTRFS_CSUM_ITEM_KEY = ItemType(120) // new
 	// extent csums are stored in a separate tree and hold csums for
 	// an entire extent on disk.
 	BTRFS_EXTENT_CSUM_KEY = ItemType(128)
@@ -59,7 +59,7 @@ const (
 
 	// The same as the BTRFS_EXTENT_ITEM_KEY, except it's metadata we already know
 	// the length, so we save the level in key->offset instead of the length.
-	BTRFS_METADATA_ITEM_KEY = ItemType(169)
+	BTRFS_METADATA_ITEM_KEY = ItemType(169) // new
 
 	BTRFS_TREE_BLOCK_REF_KEY = ItemType(176)
 
@@ -79,27 +79,27 @@ const (
 	// Every block group is represented in the free space tree by a free space info
 	// item, which stores some accounting information. It is keyed on
 	// (block_group_start, FREE_SPACE_INFO, block_group_length).
-	BTRFS_FREE_SPACE_INFO_KEY = ItemType(198)
+	BTRFS_FREE_SPACE_INFO_KEY = ItemType(198) // new
 
 	// A free space extent tracks an extent of space that is free in a block group.
 	// It is keyed on (start, FREE_SPACE_EXTENT, length).
-	BTRFS_FREE_SPACE_EXTENT_KEY = ItemType(199)
+	BTRFS_FREE_SPACE_EXTENT_KEY = ItemType(199) // new
 
 	// When a block group becomes very fragmented, we convert it to use bitmaps
 	// instead of extents. A free space bitmap is keyed on
 	// (start, FREE_SPACE_BITMAP, length); the corresponding item is a bitmap with
 	// (length / sectorsize) bits.
-	BTRFS_FREE_SPACE_BITMAP_KEY = ItemType(200)
+	BTRFS_FREE_SPACE_BITMAP_KEY = ItemType(200) // new
 
 	BTRFS_DEV_EXTENT_KEY = ItemType(204)
 	BTRFS_DEV_ITEM_KEY   = ItemType(216)
 	BTRFS_CHUNK_ITEM_KEY = ItemType(228)
 
 	// quota groups
-	BTRFS_QGROUP_STATUS_KEY   = ItemType(240)
-	BTRFS_QGROUP_INFO_KEY     = ItemType(242)
-	BTRFS_QGROUP_LIMIT_KEY    = ItemType(244)
-	BTRFS_QGROUP_RELATION_KEY = ItemType(246)
+	BTRFS_QGROUP_STATUS_KEY   = ItemType(240) // new
+	BTRFS_QGROUP_INFO_KEY     = ItemType(242) // new
+	BTRFS_QGROUP_LIMIT_KEY    = ItemType(244) // new
+	BTRFS_QGROUP_RELATION_KEY = ItemType(246) // new
 
 	// The key type for tree items that are stored persistently, but do not need to
 	// exist for extended period of time. The items can exist in any tree.
@@ -110,7 +110,7 @@ const (
 	//
 	// - balance status item
 	//   (BTRFS_BALANCE_OBJECTID, BTRFS_TEMPORARY_ITEM_KEY, 0)
-	BTRFS_TEMPORARY_ITEM_KEY = ItemType(248)
+	BTRFS_TEMPORARY_ITEM_KEY = ItemType(248) // new
 
 	// The key type for tree items that are stored persistently and usually exist
 	// for a long period, eg. filesystem lifetime. The item kinds can be status
@@ -123,7 +123,7 @@ const (
 	// - device statistics, store IO stats in the device tree, one key for all
 	//   stats
 	//   (BTRFS_DEV_STATS_OBJECTID, BTRFS_DEV_STATS_KEY, 0)
-	BTRFS_PERSISTENT_ITEM_KEY = ItemType(249)
+	BTRFS_PERSISTENT_ITEM_KEY = ItemType(249) // new
 
 	// Persistently stores the device replace state in the device tree.
 	// The key is built like this: (0, BTRFS_DEV_REPLACE_KEY, 0).
@@ -133,8 +133,8 @@ const (
 	// These items are part of the filesystem UUID tree.
 	// The key is built like this:
 	// (UUID_upper_64_bits, BTRFS_UUID_KEY*, UUID_lower_64_bits).
-	BTRFS_UUID_KEY_SUBVOL          = ItemType(251) // for UUIDs assigned to subvols
-	BTRFS_UUID_KEY_RECEIVED_SUBVOL = ItemType(252) // for UUIDs assigned to received subvols
+	BTRFS_UUID_KEY_SUBVOL          = ItemType(251) // for UUIDs assigned to subvols // new
+	BTRFS_UUID_KEY_RECEIVED_SUBVOL = ItemType(252) // for UUIDs assigned to received subvols // new
 
 	// string items are for debugging.  They just store a short string of
 	// data in the FS

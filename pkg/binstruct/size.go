@@ -10,27 +10,34 @@ type StaticSizer interface {
 }
 
 func StaticSize(obj any) int {
-	return staticSize(reflect.TypeOf(obj))
+	sz, err := staticSize(reflect.TypeOf(obj))
+	if err != nil {
+		panic(err)
+	}
+	return sz
 }
 
 var staticSizerType = reflect.TypeOf((*StaticSizer)(nil)).Elem()
 
-func staticSize(typ reflect.Type) int {
+func staticSize(typ reflect.Type) (int, error) {
 	if typ.Implements(staticSizerType) {
-		return reflect.New(typ).Elem().Interface().(StaticSizer).BinaryStaticSize()
-	}
-	if szer, ok := obj.(StaticSizer); ok {
-		return szer.BinaryStaticSize()
+		return reflect.New(typ).Elem().Interface().(StaticSizer).BinaryStaticSize(), nil
 	}
 	switch typ.Kind() {
+	case reflect.Uint8, reflect.Int8:
+		return 1, nil
 	case reflect.Ptr:
-		return StaticSize(typ.Elem())
+		return staticSize(typ.Elem())
 	case reflect.Array:
-		return StaticSize(typ.Elem()) * typ.Len()
+		elemSize, err := staticSize(typ.Elem())
+		if err != nil {
+			return 0, err
+		}
+		return elemSize * typ.Len(), nil
 	case reflect.Struct:
-		// TODO
+		return getStructHandler(typ).Size, nil
 	default:
-		panic(fmt.Errorf("type=%v does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
-			typ, typ.Kind()))
+		return 0, fmt.Errorf("type=%v does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
+			typ, typ.Kind())
 	}
 }
