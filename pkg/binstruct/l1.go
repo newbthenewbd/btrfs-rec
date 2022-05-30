@@ -1,3 +1,6 @@
+//go:build old
+// +build old
+
 package binstruct
 
 import (
@@ -7,19 +10,16 @@ import (
 )
 
 type Marshaler interface {
-	BinarySize() int64
 	MarshalBinary() []byte
 }
 
 type Unmarshaler interface {
-	Marshaler
 	UnmarshalBinary([]byte)
 }
 
 type handler interface {
 	Unmarshal(dat []byte) interface{}
 	Marshal(val interface{}) []byte
-	Size() int64
 }
 
 type extHandler struct {
