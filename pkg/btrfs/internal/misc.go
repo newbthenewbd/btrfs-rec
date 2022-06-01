@@ -1,10 +1,9 @@
-package btrfstyp
+package internal
 
 import (
 	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
 type (
@@ -14,9 +13,9 @@ type (
 )
 
 type Key struct {
-	ObjectID      ObjID             `bin:"off=0, siz=8"` // Each tree has its own set of Object IDs.
-	ItemType      internal.ItemType `bin:"off=8, siz=1"`
-	Offset        uint64            `bin:"off=9, siz=8"` // The meaning depends on the item type.
+	ObjectID      ObjID    `bin:"off=0, siz=8"` // Each tree has its own set of Object IDs.
+	ItemType      ItemType `bin:"off=8, siz=1"`
+	Offset        uint64   `bin:"off=9, siz=8"` // The meaning depends on the item type.
 	binstruct.End `bin:"off=11"`
 }
 

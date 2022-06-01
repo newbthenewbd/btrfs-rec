@@ -2,8 +2,6 @@
 .SECONDARY:
 .DELETE_ON_ERROR:
 
-internal:
-	mkdir $@
 btrfsitem/items.txt: btrfsitem $(wildcard btrfsitem/item_*.go) $(MAKEFILE_LIST)
 	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done >$@
 files += btrfsitem/items.txt

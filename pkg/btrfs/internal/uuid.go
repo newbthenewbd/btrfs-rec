@@ -1,4 +1,4 @@
-package btrfstyp
+package internal
 
 import (
 	"bytes"

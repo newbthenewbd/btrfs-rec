@@ -7,6 +7,8 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 func main() {
@@ -72,64 +74,68 @@ func Main(imgfilename string) (err error) {
 
 // printTree mimics btrfs-progs kernel-shared/print-tree.c:btrfs_print_tree() and  kernel-shared/print-tree.c:btrfs_print_leaf()
 func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
-	node, err := fs.ReadNode(root)
+	nodeRef, err := fs.ReadNode(root)
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
 		return
 	}
+	node := nodeRef.Data
 	printHeaderInfo(node)
-	switch node := node.(type) {
-	case *btrfs.InternalNode:
-		for _, item := range node.Body {
+	if node.Head.Level > 0 { // internal
+		for _, item := range node.BodyInternal {
 			fmt.Printf("\t%s block %d gen %d\n",
-				fmtKey(item.Data.Key),
-				item.Data.BlockPtr,
-				item.Data.Generation)
+				fmtKey(item.Key),
+				item.BlockPtr,
+				item.Generation)
 		}
-		for _, item := range node.Body {
-			printTree(fs, item.Data.BlockPtr)
+		for _, item := range node.BodyInternal {
+			printTree(fs, item.BlockPtr)
 		}
-	case *btrfs.LeafNode:
-		for i, item := range node.Body {
+	} else { // leaf
+		for i, item := range node.BodyLeaf {
 			fmt.Printf("\titem %d %s itemoff %d itemsize %d\n",
 				i,
-				fmtKey(item.Data.Key),
-				item.Data.DataOffset,
-				item.Data.DataSize)
-			switch item.Data.Key.ItemType {
-			case btrfs.BTRFS_UNTYPED_KEY:
-				// TODO
-			case btrfs.BTRFS_INODE_ITEM_KEY:
-				// TODO(!)
-			case btrfs.BTRFS_INODE_REF_KEY:
-				dat := item.Data.Data.Data
+				fmtKey(item.Head.Key),
+				item.Head.DataOffset,
+				item.Head.DataSize)
+			switch item.Head.Key.ItemType {
+			//case btrfsitem.UNTYPED_KEY:
+			//	// TODO
+			//case btrfsitem.INODE_ITEM_KEY:
+			//	// TODO(!)
+			case btrfsitem.INODE_REF_KEY:
+				dat := item.Body
 				for len(dat) > 0 {
-					var ref btrfs.InodeRefItem
-					if err := binstruct.Unmarshal(dat, &ref); err != nil {
+					var ref btrfsitem.InodeRef
+					n, err := binstruct.Unmarshal(dat, &ref)
+					if err != nil {
 						fmt.Printf("error: %v\n", err)
 						return
 					}
-					dat = dat[0xA:]
-					ref.Name = dat[:ref.NameLen]
-					dat = dat[ref.NameLen:]
-
 					fmt.Printf("\t\tindex %d namelen %d name: %s\n",
 						ref.Index, ref.NameLen, ref.Name)
+					dat = dat[n:]
 				}
-			case btrfs.BTRFS_INODE_EXTREF_KEY:
-				// TODO
-			case btrfs.BTRFS_DIR_ITEM_KEY, btrfs.BTRFS_DIR_INDEX_KEY, btrfs.BTRFS_XATTR_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_DIR_LOG_INDEX_KEY, btrfs.BTRFS_DIR_LOG_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_ORPHAN_ITEM_KEY:
+			//case btrfsitem.INODE_EXTREF_KEY:
+			//	// TODO
+			//case btrfsitem.DIR_ITEM_KEY, btrfsitem.DIR_INDEX_KEY, btrfsitem.XATTR_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
+			//	// TODO
+			case btrfsitem.ORPHAN_ITEM_KEY:
 				fmt.Printf("\t\torphan item\n")
-			case btrfs.BTRFS_ROOT_ITEM_KEY:
-				var obj btrfs.RootItem
-				if err := binstruct.Unmarshal(item.Data.Data.Data, &obj); err != nil {
+			case btrfsitem.ROOT_ITEM_KEY:
+				var obj btrfsitem.Root
+				n, err := binstruct.Unmarshal(item.Body, &obj)
+				if err != nil {
 					fmt.Printf("error: %v\n", err)
 					return
 				}
+				if n != len(item.Body) {
+					fmt.Printf("error: left over data: got %d bytes but only consumed %d\n", len(item.Body), n)
+					return
+				}
+
 				fmt.Printf("\t\tgeneration %d root_dirid %d bytenr %d byte_limit %d bytes_used %d\n",
 					obj.Generation, obj.RootDirID, obj.ByteNr, obj.ByteLimit, obj.BytesUsed)
 				fmt.Printf("\t\tlast_snapshot %d flags %s refs %d\n",
@@ -149,58 +155,58 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 					fmt.Printf("\t\tstime %s\n", fmtTime(obj.STime))
 					fmt.Printf("\t\trtime %s\n", fmtTime(obj.RTime))
 				}
-			case btrfs.BTRFS_ROOT_REF_KEY:
-				// TODO
-			case btrfs.BTRFS_ROOT_BACKREF_KEY:
-				// TODO
-			case btrfs.BTRFS_EXTENT_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_METADATA_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_TREE_BLOCK_REF_KEY:
+			//case btrfsitem.ROOT_REF_KEY:
+			//	// TODO
+			//case btrfsitem.ROOT_BACKREF_KEY:
+			//	// TODO
+			//case btrfsitem.EXTENT_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.METADATA_ITEM_KEY:
+			//	// TODO
+			case btrfsitem.TREE_BLOCK_REF_KEY:
 				fmt.Printf("\t\ttree block backref\n")
-			case btrfs.BTRFS_SHARED_BLOCK_REF_KEY:
+			case btrfsitem.SHARED_BLOCK_REF_KEY:
 				fmt.Printf("\t\tshared block backref\n")
-			case btrfs.BTRFS_EXTENT_DATA_REF_KEY:
-				// TODO
-			case btrfs.BTRFS_SHARED_DATA_REF_KEY:
-				// TODO
-			case btrfs.BTRFS_EXTENT_REF_V0_KEY:
+			//case btrfsitem.EXTENT_DATA_REF_KEY:
+			//	// TODO
+			//case btrfsitem.SHARED_DATA_REF_KEY:
+			//	// TODO
+			case btrfsitem.EXTENT_REF_V0_KEY:
 				fmt.Printf("\t\textent ref v0 (deprecated)\n")
-			case btrfs.BTRFS_CSUM_ITEM_KEY:
+			case btrfsitem.CSUM_ITEM_KEY:
 				fmt.Printf("\t\tcsum item\n")
-			case btrfs.BTRFS_EXTENT_CSUM_KEY:
-				// TODO
-			case btrfs.BTRFS_EXTENT_DATA_KEY:
-				// TODO
-			case btrfs.BTRFS_BLOCK_GROUP_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_FREE_SPACE_INFO_KEY:
-				// TODO
-			case btrfs.BTRFS_FREE_SPACE_EXTENT_KEY:
+			//case btrfsitem.EXTENT_CSUM_KEY:
+			//	// TODO
+			//case btrfsitem.EXTENT_DATA_KEY:
+			//	// TODO
+			//case btrfsitem.BLOCK_GROUP_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.FREE_SPACE_INFO_KEY:
+			//	// TODO
+			case btrfsitem.FREE_SPACE_EXTENT_KEY:
 				fmt.Printf("\t\tfree space extent\n")
-			case btrfs.BTRFS_FREE_SPACE_BITMAP_KEY:
+			case btrfsitem.FREE_SPACE_BITMAP_KEY:
 				fmt.Printf("\t\tfree space bitmap\n")
-			case btrfs.BTRFS_CHUNK_ITEM_KEY:
-				// TODO(!)
-			case btrfs.BTRFS_DEV_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_DEV_EXTENT_KEY:
-				// TODO
-			case btrfs.BTRFS_QGROUP_STATUS_KEY:
-				// TODO
-			case btrfs.BTRFS_QGROUP_RELATION_KEY, btrfs.BTRFS_QGROUP_INFO_KEY:
-				// TODO
-			case btrfs.BTRFS_QGROUP_LIMIT_KEY:
-				// TODO
-			case btrfs.BTRFS_UUID_KEY_SUBVOL, btrfs.BTRFS_UUID_KEY_RECEIVED_SUBVOL:
-				// TODO
-			case btrfs.BTRFS_STRING_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_PERSISTENT_ITEM_KEY:
-				// TODO
-			case btrfs.BTRFS_TEMPORARY_ITEM_KEY:
-				// TODO
+				//case btrfsitem.CHUNK_ITEM_KEY:
+				//	// TODO(!)
+				//case btrfsitem.DEV_ITEM_KEY:
+				//	// TODO
+				//case btrfsitem.DEV_EXTENT_KEY:
+				//	// TODO
+				//case btrfsitem.QGROUP_STATUS_KEY:
+				//	// TODO
+				//case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY:
+				//	// TODO
+				//case btrfsitem.QGROUP_LIMIT_KEY:
+				//	// TODO
+				//case btrfsitem.UUID_KEY_SUBVOL, btrfsitem.UUID_KEY_RECEIVED_SUBVOL:
+				//	// TODO
+				//case btrfsitem.STRING_ITEM_KEY:
+				//	// TODO
+				//case btrfsitem.PERSISTENT_ITEM_KEY:
+				//	// TODO
+				//case btrfsitem.TEMPORARY_ITEM_KEY:
+				//	// TODO
 			}
 		}
 	}
@@ -209,36 +215,35 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
 func printHeaderInfo(node btrfs.Node) {
 	var typename string
-	switch node := node.(type) {
-	case *btrfs.InternalNode:
+	if node.Head.Level > 0 { // internal node
 		typename = "node"
 		fmt.Printf("node %d level %d items %d free space %d",
-			node.Header.Addr,
-			node.Header.Data.Level,
-			node.Header.Data.NumItems,
-			node.Header.Data.MaxItems-node.Header.Data.NumItems)
-	case *btrfs.LeafNode:
+			node.Head.Addr,
+			node.Head.Level,
+			node.Head.NumItems,
+			node.MaxItems()-node.Head.NumItems)
+	} else { // leaf node
 		typename = "leaf"
 		fmt.Printf("leaf %d items %d free space %d",
-			node.Header.Addr,
-			node.Header.Data.NumItems,
-			node.FreeSpace())
+			node.Head.Addr,
+			node.Head.NumItems,
+			node.LeafFreeSpace())
 	}
 	fmt.Printf(" generation %d owner %v\n",
-		node.GetNodeHeader().Data.Generation,
-		node.GetNodeHeader().Data.Owner)
+		node.Head.Generation,
+		node.Head.Owner)
 
 	fmt.Printf("%s %d flags %s backref revision %d\n",
 		typename,
-		node.GetNodeHeader().Addr,
-		node.GetNodeHeader().Data.Flags,
-		node.GetNodeHeader().Data.BackrefRev)
+		node.Head.Addr,
+		node.Head.Flags,
+		node.Head.BackrefRev)
 
-	fmt.Printf("checksum stored %x\n", node.GetNodeHeader().Data.Checksum)
+	fmt.Printf("checksum stored %x\n", node.Head.Checksum)
 	fmt.Printf("checksum calced %v\n", "TODO")
 
-	fmt.Printf("fs uuid %s\n", node.GetNodeHeader().Data.MetadataUUID)
-	fmt.Printf("chunk uuid %s\n", node.GetNodeHeader().Data.ChunkTreeUUID)
+	fmt.Printf("fs uuid %s\n", node.Head.MetadataUUID)
+	fmt.Printf("chunk uuid %s\n", node.Head.ChunkTreeUUID)
 }
 
 // mimics print-tree.c:btrfs_print_key()
@@ -246,14 +251,14 @@ func fmtKey(key btrfs.Key) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "key (%s %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
-	case btrfs.BTRFS_QGROUP_RELATION_KEY, btrfs.BTRFS_QGROUP_INFO_KEY, btrfs.BTRFS_QGROUP_LIMIT_KEY:
+	case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("not implemented")
-	case btrfs.BTRFS_UUID_KEY_SUBVOL, btrfs.BTRFS_UUID_KEY_RECEIVED_SUBVOL:
+	case btrfsitem.UUID_KEY_SUBVOL, btrfsitem.UUID_KEY_RECEIVED_SUBVOL:
 		fmt.Fprintf(&out, " 0x%016x)", key.Offset)
-	case btrfs.BTRFS_ROOT_ITEM_KEY:
+	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
 	default:
-		if key.Offset == btrfs.MaxUint64pp-1 {
+		if key.Offset == util.MaxUint64pp-1 {
 			fmt.Fprintf(&out, " -1)")
 		} else {
 			fmt.Fprintf(&out, " %d)", key.Offset)

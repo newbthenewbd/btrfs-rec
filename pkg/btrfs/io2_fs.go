@@ -7,7 +7,6 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 

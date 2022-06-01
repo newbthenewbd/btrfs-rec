@@ -1,9 +1,8 @@
-package btrfstyp
+package internal
 
 import (
 	"fmt"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -52,9 +51,9 @@ const (
 	BTRFS_EMPTY_SUBVOL_DIR_OBJECTID = ObjID(2)
 )
 
-func (id ObjID) Format(typ internal.ItemType) string {
+func (id ObjID) Format(typ ItemType) string {
 	switch typ {
-	case internal.PERSISTENT_ITEM_KEY:
+	case PERSISTENT_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_DEV_STATS_OBJECTID: "DEV_STATS",
 		}
@@ -62,15 +61,15 @@ func (id ObjID) Format(typ internal.ItemType) string {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
-	case internal.DEV_EXTENT_KEY:
+	case DEV_EXTENT_KEY:
 		return fmt.Sprintf("%d", int64(id))
-	case internal.QGROUP_RELATION_KEY:
+	case QGROUP_RELATION_KEY:
 		return fmt.Sprintf("%d/%d",
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
-	case internal.UUID_SUBVOL_KEY, internal.UUID_RECEIVED_SUBVOL_KEY:
+	case UUID_SUBVOL_KEY, UUID_RECEIVED_SUBVOL_KEY:
 		return fmt.Sprintf("0x%016x", uint64(id))
-	case internal.DEV_ITEM_KEY:
+	case DEV_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_BALANCE_OBJECTID:         "BALANCE",
 			BTRFS_ORPHAN_OBJECTID:          "ORPHAN",
@@ -89,7 +88,7 @@ func (id ObjID) Format(typ internal.ItemType) string {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
-	case internal.CHUNK_ITEM_KEY:
+	case CHUNK_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_BALANCE_OBJECTID:         "BALANCE",
 			BTRFS_ORPHAN_OBJECTID:          "ORPHAN",
@@ -141,5 +140,5 @@ func (id ObjID) Format(typ internal.ItemType) string {
 }
 
 func (id ObjID) String() string {
-	return id.Format(internal.UNTYPED_KEY)
+	return id.Format(UNTYPED_KEY)
 }

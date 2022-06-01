@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 

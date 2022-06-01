@@ -2,7 +2,7 @@ package btrfsitem
 
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
 type Inode struct { // INODE_ITEM=1
@@ -19,9 +19,9 @@ type Inode struct { // INODE_ITEM=1
 	Flags         uint64        `bin:"off=0x40, siz=0x8"`
 	Sequence      int64         `bin:"off=0x48, siz=0x8"`
 	Reserved      [4]int64      `bin:"off=0x50, siz=0x20"`
-	ATime         btrfstyp.Time `bin:"off=0x70, siz=0xc"`
-	CTime         btrfstyp.Time `bin:"off=0x7c, siz=0xc"`
-	MTime         btrfstyp.Time `bin:"off=0x88, siz=0xc"`
-	OTime         btrfstyp.Time `bin:"off=0x94, siz=0xc"`
+	ATime         internal.Time `bin:"off=0x70, siz=0xc"`
+	CTime         internal.Time `bin:"off=0x7c, siz=0xc"`
+	MTime         internal.Time `bin:"off=0x88, siz=0xc"`
+	OTime         internal.Time `bin:"off=0x94, siz=0xc"`
 	binstruct.End `bin:"off=0xa0"`
 }

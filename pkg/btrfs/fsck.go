@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
-	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
 )
 
 // ScanForNodes mimics btrfs-progs

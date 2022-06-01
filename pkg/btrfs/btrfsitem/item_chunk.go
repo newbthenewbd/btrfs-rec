@@ -2,13 +2,13 @@ package btrfsitem
 
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
 type Chunk struct { // CHUNK_ITEM=228
 	// Maps logical address to physical.
 	Size           uint64         `bin:"off=0x0,  siz=0x8"` // size of chunk (bytes)
-	Owner          btrfstyp.ObjID `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (2)
+	Owner          internal.ObjID `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (2)
 	StripeLen      uint64         `bin:"off=0x10, siz=0x8"` // stripe length
 	Type           uint64         `bin:"off=0x18, siz=0x8"` // type (same as flags for block group?)
 	IOOptimalAlign uint32         `bin:"off=0x20, siz=0x4"` // optimal io alignment
@@ -22,9 +22,9 @@ type Chunk struct { // CHUNK_ITEM=228
 
 type ChunkStripe struct {
 	// Stripes follow (for each number of stripes):
-	DeviceID      btrfstyp.ObjID `bin:"off=0,  siz=8"`  // device ID
+	DeviceID      internal.ObjID `bin:"off=0,  siz=8"`  // device ID
 	Offset        uint64         `bin:"off=8,  siz=8"`  // offset
-	DeviceUUID    btrfstyp.UUID  `bin:"off=10, siz=10"` // device UUID
+	DeviceUUID    internal.UUID  `bin:"off=10, siz=10"` // device UUID
 	binstruct.End `bin:"off=20"`
 }
 

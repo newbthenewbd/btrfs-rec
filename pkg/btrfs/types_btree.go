@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
-	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
