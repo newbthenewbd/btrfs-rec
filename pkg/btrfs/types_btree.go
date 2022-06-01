@@ -91,7 +91,7 @@ type Item struct {
 }
 
 // MaxItems returns the maximum possible valid value of
-// .Haad.NumItems.
+// .Head.NumItems.
 func (node Node) MaxItems() uint32 {
 	bodyBytes := node.Size - uint32(binstruct.StaticSize(NodeHeader{}))
 	if node.Head.Level > 0 {

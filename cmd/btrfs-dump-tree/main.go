@@ -54,30 +54,53 @@ func Main(imgfilename string) (err error) {
 	fmt.Printf("btrfs-progs v%s \n", version)
 	if superblock.Data.RootTree != 0 {
 		fmt.Printf("root tree\n")
-		printTree(fs, superblock.Data.RootTree)
+		if err := printTree(fs, superblock.Data.RootTree); err != nil {
+			return err
+		}
 	}
 	if superblock.Data.ChunkTree != 0 {
 		fmt.Printf("chunk tree\n")
-		printTree(fs, superblock.Data.ChunkTree)
+		if err := printTree(fs, superblock.Data.ChunkTree); err != nil {
+			return err
+		}
 	}
 	if superblock.Data.LogTree != 0 {
 		fmt.Printf("log root tree\n")
-		printTree(fs, superblock.Data.LogTree)
+		if err := printTree(fs, superblock.Data.LogTree); err != nil {
+			return err
+		}
 	}
 	if superblock.Data.BlockGroupRoot != 0 {
 		fmt.Printf("block group tree\n")
-		printTree(fs, superblock.Data.BlockGroupRoot)
+		if err := printTree(fs, superblock.Data.BlockGroupRoot); err != nil {
+			return err
+		}
+	}
+	if err := fs.WalkTree(superblock.Data.RootTree, func(key btrfs.Key, dat []byte) error {
+		if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+			return nil
+		}
+		var obj btrfsitem.Root
+		n, err := binstruct.Unmarshal(dat, &obj)
+		if err != nil {
+			return err
+		}
+		if n != len(dat) {
+			return fmt.Errorf("left over data: got %d bytes but only consumed %d", len(dat), n)
+		}
+		return printTree(fs, obj.ByteNr)
+	}); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // printTree mimics btrfs-progs kernel-shared/print-tree.c:btrfs_print_tree() and  kernel-shared/print-tree.c:btrfs_print_leaf()
-func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
+func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 	nodeRef, err := fs.ReadNode(root)
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
-		return
+		return err
 	}
 	node := nodeRef.Data
 	printHeaderInfo(node)
@@ -89,7 +112,9 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 				item.Generation)
 		}
 		for _, item := range node.BodyInternal {
-			printTree(fs, item.BlockPtr)
+			if err := printTree(fs, item.BlockPtr); err != nil {
+				return err
+			}
 		}
 	} else { // leaf
 		for i, item := range node.BodyLeaf {
@@ -109,8 +134,7 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 					var ref btrfsitem.InodeRef
 					n, err := binstruct.Unmarshal(dat, &ref)
 					if err != nil {
-						fmt.Printf("error: %v\n", err)
-						return
+						return err
 					}
 					fmt.Printf("\t\tindex %d namelen %d name: %s\n",
 						ref.Index, ref.NameLen, ref.Name)
@@ -128,12 +152,10 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 				var obj btrfsitem.Root
 				n, err := binstruct.Unmarshal(item.Body, &obj)
 				if err != nil {
-					fmt.Printf("error: %v\n", err)
-					return
+					return err
 				}
 				if n != len(item.Body) {
-					fmt.Printf("error: left over data: got %d bytes but only consumed %d\n", len(item.Body), n)
-					return
+					return fmt.Errorf("left over data: got %d bytes but only consumed %d", len(item.Body), n)
 				}
 
 				fmt.Printf("\t\tgeneration %d root_dirid %d bytenr %d byte_limit %d bytes_used %d\n",
@@ -210,6 +232,7 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 			}
 		}
 	}
+	return nil
 }
 
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
