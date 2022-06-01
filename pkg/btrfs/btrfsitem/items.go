@@ -14,19 +14,46 @@ type Item interface {
 	isItem()
 }
 
-func UnmarshalItem(keytyp Type, dat []byte) (Item, error) {
+type Error struct {
+	Dat []byte
+	Err error
+}
+
+func (Error) isItem() {}
+
+func (o Error) MarshalBinary() ([]byte, error) {
+	return o.Dat, nil
+}
+
+func (o *Error) UnmarshalBinary(dat []byte) (int, error) {
+	o.Dat = dat
+	return len(dat), nil
+}
+
+// Rather than returning a separate error  value, return an Error item.
+func UnmarshalItem(keytyp Type, dat []byte) Item {
 	gotyp, ok := keytype2gotype[keytyp]
 	if !ok {
-		return nil, fmt.Errorf("btrfsitem.UnmarshalItem: unknown item type: %v", keytyp)
+		return Error{
+			Dat: dat,
+			Err: fmt.Errorf("btrfsitem.UnmarshalItem(typ=%v, dat): unknown item type", keytyp),
+		}
 	}
 	retPtr := reflect.New(gotyp)
 	n, err := binstruct.Unmarshal(dat, retPtr.Interface())
 	if err != nil {
-		return nil, fmt.Errorf("btrfsitem.UnmarshalItem: %w", err)
+		return Error{
+			Dat: dat,
+			Err: fmt.Errorf("btrfsitem.UnmarshalItem(typ=%v, dat): %w", keytyp, err),
+		}
+
 	}
 	if n < len(dat) {
-		return nil, fmt.Errorf("btrfsitem.UnmarshalItem: left over data: got %d bytes but only consumed %d",
-			len(dat), n)
+		return Error{
+			Dat: dat,
+			Err: fmt.Errorf("btrfsitem.UnmarshalItem(typ=%v, dat): left over data: got %d bytes but only consumed %d",
+				keytyp, len(dat), n),
+		}
 	}
-	return retPtr.Elem().Interface().(Item), nil
+	return retPtr.Elem().Interface().(Item)
 }

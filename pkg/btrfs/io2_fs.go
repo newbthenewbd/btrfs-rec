@@ -122,15 +122,17 @@ func (fs *FS) Init() error {
 		for _, chunk := range syschunks {
 			fs.chunks = append(fs.chunks, chunk)
 		}
-		if err := fs.WalkTree(sb.Data.ChunkTree, func(key Key, body btrfsitem.Item) error {
-			if key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+		if err := fs.WalkTree(sb.Data.ChunkTree, WalkTreeHandler{
+			Item: func(key Key, body btrfsitem.Item) error {
+				if key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+					return nil
+				}
+				fs.chunks = append(fs.chunks, SysChunk{
+					Key:   key,
+					Chunk: body.(btrfsitem.Chunk),
+				})
 				return nil
-			}
-			fs.chunks = append(fs.chunks, SysChunk{
-				Key:   key,
-				Chunk: body.(btrfsitem.Chunk),
-			})
-			return nil
+			},
 		}); err != nil {
 			fs.initErr = err
 			return fs.initErr

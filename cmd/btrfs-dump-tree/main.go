@@ -75,11 +75,13 @@ func Main(imgfilename string) (err error) {
 			return err
 		}
 	}
-	if err := fs.WalkTree(superblock.Data.RootTree, func(key btrfs.Key, body btrfsitem.Item) error {
-		if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
-			return nil
-		}
-		return printTree(fs, body.(btrfsitem.Root).ByteNr)
+	if err := fs.WalkTree(superblock.Data.RootTree, btrfs.WalkTreeHandler{
+		Item: func(key btrfs.Key, body btrfsitem.Item) error {
+			if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+				return nil
+			}
+			return printTree(fs, body.(btrfsitem.Root).ByteNr)
+		},
 	}); err != nil {
 		return err
 	}
@@ -91,7 +93,8 @@ func Main(imgfilename string) (err error) {
 func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 	nodeRef, err := fs.ReadNode(root)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return nil
 	}
 	node := nodeRef.Data
 	printHeaderInfo(node)
@@ -209,6 +212,10 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				//	// TODO
 				//case btrfsitem.TEMPORARY_ITEM_KEY:
 				//	// TODO
+			case btrfsitem.Error:
+				fmt.Printf("\t\t(error) error item: %v\n", body.Err)
+			default:
+				fmt.Printf("\t\t(error) unhandled item type: %T\n", body)
 			}
 		}
 	}
