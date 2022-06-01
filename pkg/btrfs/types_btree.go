@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -87,7 +88,7 @@ type ItemHeader struct {
 
 type Item struct {
 	Head ItemHeader
-	Body []byte
+	Body btrfsitem.Item
 }
 
 // MaxItems returns the maximum possible valid value of
@@ -135,8 +136,12 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 				return max(n, lastRead), fmt.Errorf("(leaf): item references byte %d, but node only has %d bytes",
 					dataOff+dataSize, len(nodeBuf))
 			}
+			dataBuf := nodeBuf[dataOff : dataOff+dataSize]
 			lastRead = max(lastRead, dataOff+dataSize)
-			item.Body = nodeBuf[dataOff : dataOff+dataSize]
+			item.Body, err = btrfsitem.UnmarshalItem(item.Head.Key.ItemType, dataBuf)
+			if err != nil {
+				return max(n, lastRead), fmt.Errorf("(leaf): item %d: %w", i, err)
+			}
 
 			node.BodyLeaf = append(node.BodyLeaf, item)
 		}
@@ -210,7 +215,7 @@ func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
 	}, nil
 }
 
-func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, []byte) error) error {
+func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, btrfsitem.Item) error) error {
 	if nodeAddr == 0 {
 		return nil
 	}

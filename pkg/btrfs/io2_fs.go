@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -123,17 +122,14 @@ func (fs *FS) Init() error {
 		for _, chunk := range syschunks {
 			fs.chunks = append(fs.chunks, chunk)
 		}
-		if err := fs.WalkTree(sb.Data.ChunkTree, func(key Key, dat []byte) error {
+		if err := fs.WalkTree(sb.Data.ChunkTree, func(key Key, body btrfsitem.Item) error {
 			if key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 				return nil
 			}
-			pair := SysChunk{
-				Key: key,
-			}
-			if _, err := binstruct.Unmarshal(dat, &pair.Chunk); err != nil {
-				return err
-			}
-			fs.chunks = append(fs.chunks, pair)
+			fs.chunks = append(fs.chunks, SysChunk{
+				Key:   key,
+				Chunk: body.(btrfsitem.Chunk),
+			})
 			return nil
 		}); err != nil {
 			fs.initErr = err

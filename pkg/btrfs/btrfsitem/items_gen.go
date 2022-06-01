@@ -1,6 +1,10 @@
 package btrfsitem
 
-import "lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+import (
+	"reflect"
+
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+)
 
 const (
 	CHUNK_ITEM_KEY           = internal.CHUNK_ITEM_KEY
@@ -16,6 +20,21 @@ const (
 	UUID_SUBVOL_KEY          = internal.UUID_SUBVOL_KEY
 	UUID_RECEIVED_SUBVOL_KEY = internal.UUID_RECEIVED_SUBVOL_KEY
 )
+
+var keytype2gotype = map[Type]reflect.Type{
+	CHUNK_ITEM_KEY:           reflect.TypeOf(Chunk{}),
+	DEV_ITEM_KEY:             reflect.TypeOf(Dev{}),
+	DEV_EXTENT_KEY:           reflect.TypeOf(DevExtent{}),
+	UNTYPED_KEY:              reflect.TypeOf(Empty{}),
+	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
+	INODE_ITEM_KEY:           reflect.TypeOf(Inode{}),
+	INODE_REF_KEY:            reflect.TypeOf(InodeRef{}),
+	ORPHAN_ITEM_KEY:          reflect.TypeOf(Orphan{}),
+	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
+	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
+	UUID_SUBVOL_KEY:          reflect.TypeOf(UUIDMap{}),
+	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
+}
 
 func (Chunk) isItem()     {}
 func (Dev) isItem()       {}

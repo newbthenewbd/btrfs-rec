@@ -9,10 +9,17 @@ files += btrfsitem/items.txt
 btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	{ \
 	  echo 'package $(@D)'; \
-	  echo 'import "lukeshu.com/btrfs-tools/pkg/btrfs/internal"'; \
+	  echo 'import ('; \
+	  echo   '"reflect"'; \
+	  echo; \
+	  echo   '"lukeshu.com/btrfs-tools/pkg/btrfs/internal"'; \
+	  echo ')'; \
 	  echo 'const ('; \
 	  sed -E 's,(.*)=(.*) (.*),\1_KEY=internal.\1_KEY,' $<; \
 	  echo ')'; \
+	  echo 'var keytype2gotype = map[Type]reflect.Type{'; \
+	  sed -E 's|(.*)=(.*) (.*)|\1_KEY: reflect.TypeOf(\3{}),|' $<; \
+	  echo '}'; \
 	  sed -E 's,(.*)=(.*) (.*),\3,' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
 	} | gofmt >$@
 files += btrfsitem/items_gen.go
