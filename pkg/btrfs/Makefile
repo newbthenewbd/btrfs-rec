@@ -3,19 +3,19 @@
 .DELETE_ON_ERROR:
 
 btrfsitem/items.txt: btrfsitem $(wildcard btrfsitem/item_*.go) $(MAKEFILE_LIST)
-	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done >$@
+	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(sort $(filter btrfsitem/item_%.go,$^)) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done >$@
 files += btrfsitem/items.txt
 
-btrfsitem/items.go: btrfsitem/items.txt $(MAKEFILE_LIST)
+btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	{ \
 	  echo 'package $(@D)'; \
 	  echo 'import "lukeshu.com/btrfs-tools/pkg/btrfs/internal"'; \
-	  echo 'type Type = internal.ItemType'; \
 	  echo 'const ('; \
 	  sed -E 's,(.*)=(.*) (.*),\1_KEY=internal.\1_KEY,' $<; \
 	  echo ')'; \
+	  sed -E 's,(.*)=(.*) (.*),\3,' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
 	} | gofmt >$@
-files += btrfsitem/items.go
+files += btrfsitem/items_gen.go
 
 internal/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	{ \
