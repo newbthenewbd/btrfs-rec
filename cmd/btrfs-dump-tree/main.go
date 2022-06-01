@@ -163,18 +163,18 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 			//	// TODO
 			//case btrfsitem.METADATA_ITEM_KEY:
 			//	// TODO
-			case btrfsitem.TREE_BLOCK_REF_KEY:
-				fmt.Printf("\t\ttree block backref\n")
-			case btrfsitem.SHARED_BLOCK_REF_KEY:
-				fmt.Printf("\t\tshared block backref\n")
+			//case btrfsitem.TREE_BLOCK_REF_KEY:
+			//	fmt.Printf("\t\ttree block backref\n")
+			//case btrfsitem.SHARED_BLOCK_REF_KEY:
+			//	fmt.Printf("\t\tshared block backref\n")
 			//case btrfsitem.EXTENT_DATA_REF_KEY:
 			//	// TODO
 			//case btrfsitem.SHARED_DATA_REF_KEY:
 			//	// TODO
-			case btrfsitem.EXTENT_REF_V0_KEY:
-				fmt.Printf("\t\textent ref v0 (deprecated)\n")
-			case btrfsitem.CSUM_ITEM_KEY:
-				fmt.Printf("\t\tcsum item\n")
+			//case btrfsitem.EXTENT_REF_V0_KEY:
+			//	fmt.Printf("\t\textent ref v0 (deprecated)\n")
+			//case btrfsitem.CSUM_ITEM_KEY:
+			//	fmt.Printf("\t\tcsum item\n")
 			//case btrfsitem.EXTENT_CSUM_KEY:
 			//	// TODO
 			//case btrfsitem.EXTENT_DATA_KEY:
@@ -183,24 +183,24 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) {
 			//	// TODO
 			//case btrfsitem.FREE_SPACE_INFO_KEY:
 			//	// TODO
-			case btrfsitem.FREE_SPACE_EXTENT_KEY:
-				fmt.Printf("\t\tfree space extent\n")
-			case btrfsitem.FREE_SPACE_BITMAP_KEY:
-				fmt.Printf("\t\tfree space bitmap\n")
-				//case btrfsitem.CHUNK_ITEM_KEY:
-				//	// TODO(!)
-				//case btrfsitem.DEV_ITEM_KEY:
-				//	// TODO
-				//case btrfsitem.DEV_EXTENT_KEY:
-				//	// TODO
-				//case btrfsitem.QGROUP_STATUS_KEY:
-				//	// TODO
-				//case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY:
-				//	// TODO
-				//case btrfsitem.QGROUP_LIMIT_KEY:
-				//	// TODO
-				//case btrfsitem.UUID_KEY_SUBVOL, btrfsitem.UUID_KEY_RECEIVED_SUBVOL:
-				//	// TODO
+			//case btrfsitem.FREE_SPACE_EXTENT_KEY:
+			//	fmt.Printf("\t\tfree space extent\n")
+			//case btrfsitem.FREE_SPACE_BITMAP_KEY:
+			//	fmt.Printf("\t\tfree space bitmap\n")
+			//case btrfsitem.CHUNK_ITEM_KEY:
+			//	// TODO(!)
+			//case btrfsitem.DEV_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.DEV_EXTENT_KEY:
+			//	// TODO
+			//case btrfsitem.QGROUP_STATUS_KEY:
+			//	// TODO
+			//case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY:
+			//	// TODO
+			//case btrfsitem.QGROUP_LIMIT_KEY:
+			//	// TODO
+			case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
+				// TODO
 				//case btrfsitem.STRING_ITEM_KEY:
 				//	// TODO
 				//case btrfsitem.PERSISTENT_ITEM_KEY:
@@ -251,9 +251,9 @@ func fmtKey(key btrfs.Key) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "key (%s %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
-	case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
+	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("not implemented")
-	case btrfsitem.UUID_KEY_SUBVOL, btrfsitem.UUID_KEY_RECEIVED_SUBVOL:
+	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
 		fmt.Fprintf(&out, " 0x%016x)", key.Offset)
 	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
