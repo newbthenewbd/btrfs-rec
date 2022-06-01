@@ -72,17 +72,17 @@ func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
 func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames) }
 
 type KeyPointer struct {
-	Key           Key         `bin:"off=0, siz=11"`
-	BlockPtr      LogicalAddr `bin:"off=11, siz=8"`
-	Generation    Generation  `bin:"off=19, siz=8"`
-	binstruct.End `bin:"off=21"`
+	Key           Key         `bin:"off=0x0, siz=0x11"`
+	BlockPtr      LogicalAddr `bin:"off=0x11, siz=0x8"`
+	Generation    Generation  `bin:"off=0x19, siz=0x8"`
+	binstruct.End `bin:"off=0x21"`
 }
 
 type ItemHeader struct {
-	Key           Key    `bin:"off=0, siz=11"`
-	DataOffset    uint32 `bin:"off=11, siz=4"` // relative to the end of the header (0x65)
-	DataSize      uint32 `bin:"off=15, siz=4"`
-	binstruct.End `bin:"off=19"`
+	Key           Key    `bin:"off=0x0, siz=0x11"`
+	DataOffset    uint32 `bin:"off=0x11, siz=0x4"` // relative to the end of the header (0x65)
+	DataSize      uint32 `bin:"off=0x15, siz=0x4"`
+	binstruct.End `bin:"off=0x19"`
 }
 
 type Item struct {

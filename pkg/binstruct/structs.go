@@ -113,6 +113,12 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 	for i := 0; i < structInfo.NumField(); i++ {
 		var fieldInfo reflect.StructField = structInfo.Field(i)
 
+		if fieldInfo.Anonymous && fieldInfo.Type != endType {
+			err := fmt.Errorf("binstruct does not support embedded fields")
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				ret.name, i, fieldInfo.Name, err)
+		}
+
 		fieldTag, err := parseStructTag(fieldInfo.Tag.Get("bin"))
 		if err != nil {
 			return ret, fmt.Errorf("struct %q field %d %q: %w",

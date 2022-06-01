@@ -164,8 +164,8 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs := make(map[physicalAddr]struct{})
 
 	for _, chunk := range fs.chunks {
-		if chunk.Offset <= uint64(laddr) && uint64(laddr) < chunk.Offset+uint64(chunk.Chunk.Size) {
-			offsetWithinChunk := uint64(laddr) - chunk.Offset
+		if chunk.Key.Offset <= uint64(laddr) && uint64(laddr) < chunk.Key.Offset+uint64(chunk.Chunk.Size) {
+			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
 			if offsetWithinChunk+uint64(len(dat)) > chunk.Chunk.Size {
 				dat = dat[:chunk.Chunk.Size-offsetWithinChunk]
 			}

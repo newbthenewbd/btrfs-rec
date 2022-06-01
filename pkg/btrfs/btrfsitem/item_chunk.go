@@ -1,6 +1,8 @@
 package btrfsitem
 
 import (
+	"fmt"
+
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
@@ -21,11 +23,10 @@ type Chunk struct { // CHUNK_ITEM=228
 }
 
 type ChunkStripe struct {
-	// Stripes follow (for each number of stripes):
-	DeviceID      internal.ObjID `bin:"off=0,  siz=8"`  // device ID
-	Offset        uint64         `bin:"off=8,  siz=8"`  // offset
-	DeviceUUID    internal.UUID  `bin:"off=10, siz=10"` // device UUID
-	binstruct.End `bin:"off=20"`
+	DeviceID      internal.ObjID `bin:"off=0x0,  siz=0x8"`
+	Offset        uint64         `bin:"off=0x8,  siz=0x8"`
+	DeviceUUID    internal.UUID  `bin:"off=0x10, siz=0x10"`
+	binstruct.End `bin:"off=0x20"`
 }
 
 func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
