@@ -160,3 +160,74 @@ func (node *Node) LeafFreeSpace() uint32 {
 	}
 	return freeSpace
 }
+
+func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
+	var ret util.Ref[LogicalAddr, Node]
+
+	sb, err := fs.Superblock()
+	if err != nil {
+		return ret, err
+	}
+
+	// read
+
+	nodeBuf := make([]byte, sb.Data.NodeSize)
+	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
+		return ret, err
+	}
+
+	var node Node
+	node.Size = sb.Data.NodeSize
+
+	if _, err := node.UnmarshalBinary(nodeBuf); err != nil {
+		return ret, fmt.Errorf("node@%d: %w", addr, err)
+	}
+
+	// sanity checking
+
+	if !node.Head.MetadataUUID.Equal(sb.Data.EffectiveMetadataUUID()) {
+		return ret, fmt.Errorf("node@%d: does not look like a node", addr)
+	}
+
+	if node.Head.Addr != addr {
+		return ret, fmt.Errorf("node@%d: read from laddr=%d but claims to be at laddr=%d",
+			addr, addr, node.Head.Addr)
+	}
+
+	stored := node.Head.Checksum
+	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
+	if !calced.Equal(stored) {
+		return ret, fmt.Errorf("node@%d: checksum mismatch: stored=%s calculated=%s",
+			addr, stored, calced)
+	}
+
+	// return
+
+	return util.Ref[LogicalAddr, Node]{
+		File: fs,
+		Addr: addr,
+		Data: node,
+	}, nil
+}
+
+func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, []byte) error) error {
+	if nodeAddr == 0 {
+		return nil
+	}
+	node, err := fs.ReadNode(nodeAddr)
+	if err != nil {
+		return err
+	}
+	for _, item := range node.Data.BodyInternal {
+		// fn(item.Data.Key, TODO)
+		if err := fs.WalkTree(item.BlockPtr, fn); err != nil {
+			return err
+		}
+	}
+	for _, item := range node.Data.BodyLeaf {
+		if err := fn(item.Head.Key, item.Body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
