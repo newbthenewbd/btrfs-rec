@@ -48,7 +48,8 @@ func staticSize(typ reflect.Type) (int, error) {
 		if !(typ.Implements(marshalerType) || typ.Implements(unmarshalerType)) {
 			return getStructHandler(typ).Size, nil
 		}
-		fallthrough
+		return 0, fmt.Errorf("type=%v (kind=%v) does not implement binfmt.StaticSizer but does implement binfmt.Marshaler or binfmt.Unmarshaler",
+			typ, typ.Kind())
 	default:
 		return 0, fmt.Errorf("type=%v does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
 			typ, typ.Kind())

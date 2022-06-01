@@ -55,6 +55,7 @@ func parseStructTag(str string) (tag, error) {
 }
 
 type structHandler struct {
+	name   string
 	Size   int
 	fields []structField
 }
@@ -75,12 +76,12 @@ func (sh structHandler) Unmarshal(dat []byte, dst reflect.Value) (int, error) {
 			if _n >= 0 {
 				n += _n
 			}
-			return n, fmt.Errorf("field %d %q: %w",
-				i, field.name, err)
+			return n, fmt.Errorf("struct %q field %d %q: %w",
+				sh.name, i, field.name, err)
 		}
 		if _n != field.siz {
-			return n, fmt.Errorf("field %d %q: consumed %d bytes but should have consumed %d bytes",
-				i, field.name, _n, field.siz)
+			return n, fmt.Errorf("struct %q field %d %q: consumed %d bytes but should have consumed %d bytes",
+				sh.name, i, field.name, _n, field.siz)
 		}
 		n += _n
 	}
@@ -96,8 +97,8 @@ func (sh structHandler) Marshal(val reflect.Value) ([]byte, error) {
 		bs, err := Marshal(val.Field(i).Interface())
 		ret = append(ret, bs...)
 		if err != nil {
-			return ret, fmt.Errorf("field %d %q: %w",
-				i, field.name, err)
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				sh.name, i, field.name, err)
 		}
 	}
 	return ret, nil
@@ -106,14 +107,16 @@ func (sh structHandler) Marshal(val reflect.Value) ([]byte, error) {
 func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 	var ret structHandler
 
+	ret.name = structInfo.String()
+
 	var curOffset, endOffset int
 	for i := 0; i < structInfo.NumField(); i++ {
 		var fieldInfo reflect.StructField = structInfo.Field(i)
 
 		fieldTag, err := parseStructTag(fieldInfo.Tag.Get("bin"))
 		if err != nil {
-			return ret, fmt.Errorf("%v: field %q: %w",
-				structInfo, fieldInfo.Name, err)
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				ret.name, i, fieldInfo.Name, err)
 		}
 		if fieldTag.skip {
 			ret.fields = append(ret.fields, structField{
@@ -125,8 +128,8 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 
 		if fieldTag.off != curOffset {
 			err := fmt.Errorf("tag says off=0x%x but curOffset=0x%x", fieldTag.off, curOffset)
-			return ret, fmt.Errorf("%v: field %q: %w",
-				structInfo, fieldInfo.Name, err)
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				ret.name, i, fieldInfo.Name, err)
 		}
 		if fieldInfo.Type == endType {
 			endOffset = curOffset
@@ -134,14 +137,14 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 
 		fieldSize, err := staticSize(fieldInfo.Type)
 		if err != nil {
-			return ret, fmt.Errorf("%v: field %q: %w",
-				structInfo, fieldInfo.Name, err)
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				ret.name, i, fieldInfo.Name, err)
 		}
 
 		if fieldTag.siz != fieldSize {
 			err := fmt.Errorf("tag says siz=0x%x but StaticSize(typ)=0x%x", fieldTag.siz, fieldSize)
-			return ret, fmt.Errorf("%v: field %q: %w",
-				structInfo, fieldInfo.Name, err)
+			return ret, fmt.Errorf("struct %q field %d %q: %w",
+				ret.name, i, fieldInfo.Name, err)
 		}
 		curOffset += fieldTag.siz
 
@@ -153,8 +156,8 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 	ret.Size = curOffset
 
 	if ret.Size != endOffset {
-		return ret, fmt.Errorf("%v: .Size=%v but endOffset=%v",
-			structInfo, ret.Size, endOffset)
+		return ret, fmt.Errorf("struct %q: .Size=%v but endOffset=%v",
+			ret.name, ret.Size, endOffset)
 	}
 
 	return ret, nil

@@ -38,7 +38,7 @@ func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 		_n, err := binstruct.Unmarshal(dat[n:], &stripe)
 		n += _n
 		if err != nil {
-			return n, err
+			return n, fmt.Errorf("%T.UnmarshalBinary: %w", *chunk, err)
 		}
 		chunk.Stripes = append(chunk.Stripes, stripe)
 	}
@@ -55,7 +55,7 @@ func (chunk Chunk) MarshalBinary() ([]byte, error) {
 		_ret, err := binstruct.Marshal(stripe)
 		ret = append(ret, _ret...)
 		if err != nil {
-			return ret, err
+			return ret, fmt.Errorf("%T.MarshalBinary: %w", chunk, err)
 		}
 	}
 	return ret, nil
