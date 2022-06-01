@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
@@ -76,19 +75,11 @@ func Main(imgfilename string) (err error) {
 			return err
 		}
 	}
-	if err := fs.WalkTree(superblock.Data.RootTree, func(key btrfs.Key, dat []byte) error {
+	if err := fs.WalkTree(superblock.Data.RootTree, func(key btrfs.Key, body btrfsitem.Item) error {
 		if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 			return nil
 		}
-		var obj btrfsitem.Root
-		n, err := binstruct.Unmarshal(dat, &obj)
-		if err != nil {
-			return err
-		}
-		if n != len(dat) {
-			return fmt.Errorf("left over data: got %d bytes but only consumed %d", len(dat), n)
-		}
-		return printTree(fs, obj.ByteNr)
+		return printTree(fs, body.(btrfsitem.Root).ByteNr)
 	}); err != nil {
 		return err
 	}
@@ -123,22 +114,15 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				fmtKey(item.Head.Key),
 				item.Head.DataOffset,
 				item.Head.DataSize)
-			switch item.Head.Key.ItemType {
+			switch body := item.Body.(type) {
 			//case btrfsitem.UNTYPED_KEY:
 			//	// TODO
 			//case btrfsitem.INODE_ITEM_KEY:
 			//	// TODO(!)
-			case btrfsitem.INODE_REF_KEY:
-				dat := item.Body
-				for len(dat) > 0 {
-					var ref btrfsitem.InodeRef
-					n, err := binstruct.Unmarshal(dat, &ref)
-					if err != nil {
-						return err
-					}
+			case btrfsitem.InodeRefList:
+				for _, ref := range body {
 					fmt.Printf("\t\tindex %d namelen %d name: %s\n",
 						ref.Index, ref.NameLen, ref.Name)
-					dat = dat[n:]
 				}
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
@@ -146,36 +130,32 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			//	// TODO
-			case btrfsitem.ORPHAN_ITEM_KEY:
-				fmt.Printf("\t\torphan item\n")
-			case btrfsitem.ROOT_ITEM_KEY:
-				var obj btrfsitem.Root
-				n, err := binstruct.Unmarshal(item.Body, &obj)
-				if err != nil {
-					return err
+			case btrfsitem.Empty:
+				switch item.Head.Key.ItemType {
+				case btrfsitem.ORPHAN_ITEM_KEY:
+					fmt.Printf("\t\torphan item\n")
+				default:
+					return fmt.Errorf("unhandled empty item type: %v", item.Head.Key.ItemType)
 				}
-				if n != len(item.Body) {
-					return fmt.Errorf("left over data: got %d bytes but only consumed %d", len(item.Body), n)
-				}
-
+			case btrfsitem.Root:
 				fmt.Printf("\t\tgeneration %d root_dirid %d bytenr %d byte_limit %d bytes_used %d\n",
-					obj.Generation, obj.RootDirID, obj.ByteNr, obj.ByteLimit, obj.BytesUsed)
+					body.Generation, body.RootDirID, body.ByteNr, body.ByteLimit, body.BytesUsed)
 				fmt.Printf("\t\tlast_snapshot %d flags %s refs %d\n",
-					obj.LastSnapshot, obj.Flags, obj.Refs)
+					body.LastSnapshot, body.Flags, body.Refs)
 				fmt.Printf("\t\tdrop_progress %s drop_level %d\n",
-					fmtKey(obj.DropProgress), obj.DropLevel)
+					fmtKey(body.DropProgress), body.DropLevel)
 				fmt.Printf("\t\tlevel %d generation_v2 %d\n",
-					obj.Level, obj.GenerationV2)
-				if obj.Generation == obj.GenerationV2 {
-					fmt.Printf("\t\tuuid %s\n", obj.UUID)
-					fmt.Printf("\t\tparent_uuid %s\n", obj.ParentUUID)
-					fmt.Printf("\t\treceived_uuid %s\n", obj.ReceivedUUID)
+					body.Level, body.GenerationV2)
+				if body.Generation == body.GenerationV2 {
+					fmt.Printf("\t\tuuid %s\n", body.UUID)
+					fmt.Printf("\t\tparent_uuid %s\n", body.ParentUUID)
+					fmt.Printf("\t\treceived_uuid %s\n", body.ReceivedUUID)
 					fmt.Printf("\t\tctransid %d otransid %d stransid %d rtransid %d\n",
-						obj.CTransID, obj.OTransID, obj.STransID, obj.RTransID)
-					fmt.Printf("\t\tctime %s\n", fmtTime(obj.CTime))
-					fmt.Printf("\t\totime %s\n", fmtTime(obj.OTime))
-					fmt.Printf("\t\tstime %s\n", fmtTime(obj.STime))
-					fmt.Printf("\t\trtime %s\n", fmtTime(obj.RTime))
+						body.CTransID, body.OTransID, body.STransID, body.RTransID)
+					fmt.Printf("\t\tctime %s\n", fmtTime(body.CTime))
+					fmt.Printf("\t\totime %s\n", fmtTime(body.OTime))
+					fmt.Printf("\t\tstime %s\n", fmtTime(body.STime))
+					fmt.Printf("\t\trtime %s\n", fmtTime(body.RTime))
 				}
 			//case btrfsitem.ROOT_REF_KEY:
 			//	// TODO
@@ -221,7 +201,7 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.QGROUP_LIMIT_KEY:
 			//	// TODO
-			case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
+			case btrfsitem.UUIDMap:
 				// TODO
 				//case btrfsitem.STRING_ITEM_KEY:
 				//	// TODO

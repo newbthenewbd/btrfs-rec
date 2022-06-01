@@ -28,7 +28,7 @@ var keytype2gotype = map[Type]reflect.Type{
 	UNTYPED_KEY:              reflect.TypeOf(Empty{}),
 	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
 	INODE_ITEM_KEY:           reflect.TypeOf(Inode{}),
-	INODE_REF_KEY:            reflect.TypeOf(InodeRef{}),
+	INODE_REF_KEY:            reflect.TypeOf(InodeRefList{}),
 	ORPHAN_ITEM_KEY:          reflect.TypeOf(Orphan{}),
 	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
 	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
@@ -36,13 +36,13 @@ var keytype2gotype = map[Type]reflect.Type{
 	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
 }
 
-func (Chunk) isItem()     {}
-func (Dev) isItem()       {}
-func (DevExtent) isItem() {}
-func (DevStats) isItem()  {}
-func (Empty) isItem()     {}
-func (Inode) isItem()     {}
-func (InodeRef) isItem()  {}
-func (Orphan) isItem()    {}
-func (Root) isItem()      {}
-func (UUIDMap) isItem()   {}
+func (Chunk) isItem()        {}
+func (Dev) isItem()          {}
+func (DevExtent) isItem()    {}
+func (DevStats) isItem()     {}
+func (Empty) isItem()        {}
+func (Inode) isItem()        {}
+func (InodeRefList) isItem() {}
+func (Orphan) isItem()       {}
+func (Root) isItem()         {}
+func (UUIDMap) isItem()      {}

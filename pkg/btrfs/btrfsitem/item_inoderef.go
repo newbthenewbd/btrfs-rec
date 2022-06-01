@@ -4,8 +4,36 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 )
 
-type InodeRef struct { // INODE_REF=12
-	Index         int64 `bin:"off=0x0, siz=0x8"`
+type InodeRefList []InodeRef // INODE_REF=12
+
+func (o *InodeRefList) UnmarshalBinary(dat []byte) (int, error) {
+	n := 0
+	for n < len(dat) {
+		var ref InodeRef
+		_n, err := binstruct.Unmarshal(dat, &ref)
+		n += _n
+		if err != nil {
+			return n, err
+		}
+		*o = append(*o, ref)
+	}
+	return n, nil
+}
+
+func (o InodeRefList) MarshalBinary() ([]byte, error) {
+	var ret []byte
+	for _, ref := range o {
+		bs, err := binstruct.Marshal(ref)
+		ret = append(ret, bs...)
+		if err != nil {
+			return ret, err
+		}
+	}
+	return ret, nil
+}
+
+type InodeRef struct {
+	Index         int64  `bin:"off=0x0, siz=0x8"`
 	NameLen       uint16 `bin:"off=0x8, siz=0x2"`
 	binstruct.End `bin:"off=0xa"`
 	Name          []byte `bin:"-"`
