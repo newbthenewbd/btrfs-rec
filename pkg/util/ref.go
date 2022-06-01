@@ -1,4 +1,4 @@
-package btrfs
+package util
 
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
@@ -17,13 +17,13 @@ type Ref[A ~int64, T any] struct {
 }
 
 func (r *Ref[A, T]) Read() error {
-	size, err := binstruct.Size(r.Data)
-	if err != nil {
-		return err
-	}
+	size := binstruct.StaticSize(r.Data)
 	buf := make([]byte, size)
 	if _, err := r.File.ReadAt(buf, r.Addr); err != nil {
 		return err
 	}
-	return binstruct.Unmarshal(buf, &r.Data)
+	if _, err := binstruct.Unmarshal(buf, &r.Data); err != nil {
+		return err
+	}
+	return nil
 }

@@ -6,6 +6,9 @@ import (
 	"reflect"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type FS struct {
@@ -36,8 +39,8 @@ func (fs *FS) Size() (LogicalAddr, error) {
 	return ret, nil
 }
 
-func (fs *FS) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
-	var ret []Ref[PhysicalAddr, Superblock]
+func (fs *FS) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
+	var ret []util.Ref[PhysicalAddr, Superblock]
 	for _, dev := range fs.Devices {
 		sbs, err := dev.Superblocks()
 		if err != nil {
@@ -48,7 +51,7 @@ func (fs *FS) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
 	return ret, nil
 }
 
-func (fs *FS) Superblock() (ret Ref[PhysicalAddr, Superblock], err error) {
+func (fs *FS) Superblock() (ret util.Ref[PhysicalAddr, Superblock], err error) {
 	sbs, err := fs.Superblocks()
 	if err != nil {
 		return ret, err
@@ -122,20 +125,14 @@ func (fs *FS) Init() error {
 			fs.chunks = append(fs.chunks, chunk)
 		}
 		if err := fs.WalkTree(sb.Data.ChunkTree, func(key Key, dat []byte) error {
+			if key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+				return nil
+			}
 			pair := SysChunk{
 				Key: key,
 			}
-			if err := binstruct.Unmarshal(dat, &pair.Chunk); err != nil {
+			if _, err := binstruct.Unmarshal(dat, &pair.Chunk); err != nil {
 				return err
-			}
-			dat = dat[0x30:]
-			for i := 0; i < int(pair.Chunk.NumStripes); i++ {
-				var stripe Stripe
-				if err := binstruct.Unmarshal(dat, &stripe); err != nil {
-					return err
-				}
-				pair.Chunk.Stripes = append(pair.Chunk.Stripes, stripe)
-				dat = dat[0x20:]
 			}
 			fs.chunks = append(fs.chunks, pair)
 			return nil
@@ -207,96 +204,51 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	return len(dat), nil
 }
 
-func (fs *FS) ReadNode(addr LogicalAddr) (Node, error) {
+func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
+	var ret util.Ref[LogicalAddr, Node]
+
 	sb, err := fs.Superblock()
 	if err != nil {
-		return nil, err
+		return ret, err
 	}
 
 	nodeBuf := make([]byte, sb.Data.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
-		return nil, err
+		return ret, err
 	}
 
-	var nodeHeader NodeHeader
-	if err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
-		return nil, fmt.Errorf("node@%d: %w", addr, err)
+	var node Node
+	node.Size = sb.Data.NodeSize
+
+	if _, err := node.UnmarshalBinary(nodeBuf); err != nil {
+		return ret, fmt.Errorf("node@%d: %w", addr, err)
 	}
 
-	if !nodeHeader.MetadataUUID.Equal(sb.Data.EffectiveMetadataUUID()) {
-		return nil, fmt.Errorf("node@%d: does not look like a node", addr)
+	// sanity checking
+
+	if !node.Head.MetadataUUID.Equal(sb.Data.EffectiveMetadataUUID()) {
+		return ret, fmt.Errorf("node@%d: does not look like a node", addr)
 	}
 
-	if nodeHeader.Addr != addr {
-		return nil, fmt.Errorf("node@%d: read from laddr=%d but claims to be at laddr=%d",
-			addr, addr, nodeHeader.Addr)
+	if node.Head.Addr != addr {
+		return ret, fmt.Errorf("node@%d: read from laddr=%d but claims to be at laddr=%d",
+			addr, addr, node.Head.Addr)
 	}
 
-	stored := nodeHeader.Checksum
-	calced := CRC32c(nodeBuf[0x20:])
+	stored := node.Head.Checksum
+	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
 	if !calced.Equal(stored) {
-		return nil, fmt.Errorf("node@%d: checksum mismatch: stored=%s calculated=%s",
+		return ret, fmt.Errorf("node@%d: checksum mismatch: stored=%s calculated=%s",
 			addr, stored, calced)
 	}
 
-	nodeHeader.Size = sb.Data.NodeSize
+	// return
 
-	if nodeHeader.Level > 0 {
-		// internal node
-		nodeHeader.MaxItems = (sb.Data.NodeSize - 0x65) / 0x21
-		ret := &InternalNode{
-			Header: Ref[LogicalAddr, NodeHeader]{
-				File: fs,
-				Addr: addr,
-				Data: nodeHeader,
-			},
-			Body: nil,
-		}
-		for i := uint32(0); i < nodeHeader.NumItems; i++ {
-			itemOff := 0x65 + (0x21 * int(i))
-			var item KeyPointer
-			if err := binstruct.Unmarshal(nodeBuf[itemOff:], &item); err != nil {
-				return nil, fmt.Errorf("node@%d (internal): item %d: %w", addr, i, err)
-			}
-			ret.Body = append(ret.Body, Ref[LogicalAddr, KeyPointer]{
-				File: fs,
-				Addr: addr + LogicalAddr(itemOff),
-				Data: item,
-			})
-		}
-		return ret, nil
-	} else {
-		// leaf node
-		nodeHeader.MaxItems = (sb.Data.NodeSize - 0x65) / 0x19
-		ret := &LeafNode{
-			Header: Ref[LogicalAddr, NodeHeader]{
-				File: fs,
-				Addr: addr,
-				Data: nodeHeader,
-			},
-			Body: nil,
-		}
-		for i := uint32(0); i < nodeHeader.NumItems; i++ {
-			itemOff := 0x65 + (0x19 * int(i))
-			var item Item
-			if err := binstruct.Unmarshal(nodeBuf[itemOff:], &item); err != nil {
-				return nil, fmt.Errorf("node@%d (leaf): item %d: %w", addr, i, err)
-			}
-			dataOff := 0x65 + int(item.DataOffset)
-			dataSize := int(item.DataSize)
-			item.Data = Ref[LogicalAddr, []byte]{
-				File: fs,
-				Addr: addr + LogicalAddr(dataOff),
-				Data: nodeBuf[dataOff : dataOff+dataSize],
-			}
-			ret.Body = append(ret.Body, Ref[LogicalAddr, Item]{
-				File: fs,
-				Addr: addr + LogicalAddr(itemOff),
-				Data: item,
-			})
-		}
-		return ret, nil
-	}
+	return util.Ref[LogicalAddr, Node]{
+		File: fs,
+		Addr: addr,
+		Data: node,
+	}, nil
 }
 
 func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, []byte) error) error {
@@ -307,19 +259,15 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, fn func(Key, []byte) error) error {
 	if err != nil {
 		return err
 	}
-	switch node := node.(type) {
-	case *InternalNode:
-		for _, item := range node.Body {
-			// fn(item.Data.Key, TODO)
-			if err := fs.WalkTree(item.Data.BlockPtr, fn); err != nil {
-				return err
-			}
+	for _, item := range node.Data.BodyInternal {
+		// fn(item.Data.Key, TODO)
+		if err := fs.WalkTree(item.BlockPtr, fn); err != nil {
+			return err
 		}
-	case *LeafNode:
-		for _, item := range node.Body {
-			if err := fn(item.Data.Key, item.Data.Data.Data); err != nil {
-				return err
-			}
+	}
+	for _, item := range node.Data.BodyLeaf {
+		if err := fn(item.Head.Key, item.Body); err != nil {
+			return err
 		}
 	}
 	return nil

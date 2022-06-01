@@ -1,12 +1,13 @@
-package btrfs
+package btrfstyp
 
 import (
 	"fmt"
+
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type ObjID uint64
-
-const MaxUint64pp = 0x1_00000000_00000000
 
 const (
 	// The IDs of the various trees
@@ -18,7 +19,7 @@ const (
 	BTRFS_ROOT_TREE_DIR_OBJECTID    = ObjID(6) // directory objectid inside the root tree
 	BTRFS_CSUM_TREE_OBJECTID        = ObjID(7) // holds checksums of all the data extents
 	BTRFS_QUOTA_TREE_OBJECTID       = ObjID(8)
-	BTRFS_UUID_TREE_OBJECTID        = ObjID(9)  // for storing items that use the BTRFS_UUID_KEY*
+	BTRFS_UUID_TREE_OBJECTID        = ObjID(9)  // for storing items that use the BTRFS_UUID_*_KEY
 	BTRFS_FREE_SPACE_TREE_OBJECTID  = ObjID(10) // tracks free space in block groups.
 	BTRFS_BLOCK_GROUP_TREE_OBJECTID = ObjID(11) // hold the block group items.
 
@@ -26,21 +27,21 @@ const (
 	BTRFS_DEV_STATS_OBJECTID = ObjID(0) // device stats in the device tree
 
 	// ???
-	BTRFS_BALANCE_OBJECTID         = ObjID(MaxUint64pp - 4) // for storing balance parameters in the root tree
-	BTRFS_ORPHAN_OBJECTID          = ObjID(MaxUint64pp - 5) // orphan objectid for tracking unlinked/truncated files
-	BTRFS_TREE_LOG_OBJECTID        = ObjID(MaxUint64pp - 6) // does write ahead logging to speed up fsyncs
-	BTRFS_TREE_LOG_FIXUP_OBJECTID  = ObjID(MaxUint64pp - 7)
-	BTRFS_TREE_RELOC_OBJECTID      = ObjID(MaxUint64pp - 8) // space balancing
-	BTRFS_DATA_RELOC_TREE_OBJECTID = ObjID(MaxUint64pp - 9)
-	BTRFS_EXTENT_CSUM_OBJECTID     = ObjID(MaxUint64pp - 10) // extent checksums all have this objectid
-	BTRFS_FREE_SPACE_OBJECTID      = ObjID(MaxUint64pp - 11) // For storing free space cache
-	BTRFS_FREE_INO_OBJECTID        = ObjID(MaxUint64pp - 12) // stores the inode number for the free-ino cache
+	BTRFS_BALANCE_OBJECTID         = ObjID(util.MaxUint64pp - 4) // for storing balance parameters in the root tree
+	BTRFS_ORPHAN_OBJECTID          = ObjID(util.MaxUint64pp - 5) // orphan objectid for tracking unlinked/truncated files
+	BTRFS_TREE_LOG_OBJECTID        = ObjID(util.MaxUint64pp - 6) // does write ahead logging to speed up fsyncs
+	BTRFS_TREE_LOG_FIXUP_OBJECTID  = ObjID(util.MaxUint64pp - 7)
+	BTRFS_TREE_RELOC_OBJECTID      = ObjID(util.MaxUint64pp - 8) // space balancing
+	BTRFS_DATA_RELOC_TREE_OBJECTID = ObjID(util.MaxUint64pp - 9)
+	BTRFS_EXTENT_CSUM_OBJECTID     = ObjID(util.MaxUint64pp - 10) // extent checksums all have this objectid
+	BTRFS_FREE_SPACE_OBJECTID      = ObjID(util.MaxUint64pp - 11) // For storing free space cache
+	BTRFS_FREE_INO_OBJECTID        = ObjID(util.MaxUint64pp - 12) // stores the inode number for the free-ino cache
 
-	BTRFS_MULTIPLE_OBJECTIDS = ObjID(MaxUint64pp - 255) // dummy objectid represents multiple objectids
+	BTRFS_MULTIPLE_OBJECTIDS = ObjID(util.MaxUint64pp - 255) // dummy objectid represents multiple objectids
 
 	// All files have objectids in this range.
 	BTRFS_FIRST_FREE_OBJECTID = ObjID(256)
-	BTRFS_LAST_FREE_OBJECTID  = ObjID(MaxUint64pp - 256)
+	BTRFS_LAST_FREE_OBJECTID  = ObjID(util.MaxUint64pp - 256)
 
 	BTRFS_FIRST_CHUNK_TREE_OBJECTID = ObjID(256)
 
@@ -51,9 +52,9 @@ const (
 	BTRFS_EMPTY_SUBVOL_DIR_OBJECTID = ObjID(2)
 )
 
-func (id ObjID) Format(typ ItemType) string {
+func (id ObjID) Format(typ internal.ItemType) string {
 	switch typ {
-	case BTRFS_PERSISTENT_ITEM_KEY:
+	case internal.PERSISTENT_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_DEV_STATS_OBJECTID: "DEV_STATS",
 		}
@@ -61,15 +62,15 @@ func (id ObjID) Format(typ ItemType) string {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
-	case BTRFS_DEV_EXTENT_KEY:
+	case internal.DEV_EXTENT_KEY:
 		return fmt.Sprintf("%d", int64(id))
-	case BTRFS_QGROUP_RELATION_KEY:
+	case internal.QGROUP_RELATION_KEY:
 		return fmt.Sprintf("%d/%d",
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
-	case BTRFS_UUID_KEY_SUBVOL, BTRFS_UUID_KEY_RECEIVED_SUBVOL:
+	case internal.UUID_SUBVOL_KEY, internal.UUID_RECEIVED_SUBVOL_KEY:
 		return fmt.Sprintf("0x%016x", uint64(id))
-	case BTRFS_DEV_ITEM_KEY:
+	case internal.DEV_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_BALANCE_OBJECTID:         "BALANCE",
 			BTRFS_ORPHAN_OBJECTID:          "ORPHAN",
@@ -88,7 +89,7 @@ func (id ObjID) Format(typ ItemType) string {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
-	case BTRFS_CHUNK_ITEM_KEY:
+	case internal.CHUNK_ITEM_KEY:
 		names := map[ObjID]string{
 			BTRFS_BALANCE_OBJECTID:         "BALANCE",
 			BTRFS_ORPHAN_OBJECTID:          "ORPHAN",
@@ -140,5 +141,5 @@ func (id ObjID) Format(typ ItemType) string {
 }
 
 func (id ObjID) String() string {
-	return id.Format(BTRFS_UNTYPED_KEY)
+	return id.Format(internal.UNTYPED_KEY)
 }

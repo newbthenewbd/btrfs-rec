@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
 )
 
 // ScanForNodes mimics btrfs-progs
@@ -30,7 +31,7 @@ func ScanForNodes(dev *Device, sb Superblock) error {
 			return fmt.Errorf("sector@%d: %w", pos, err)
 		}
 		var nodeHeader NodeHeader
-		if err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
+		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
 			return fmt.Errorf("sector@%d: %w", pos, err)
 		}
 		if !nodeHeader.MetadataUUID.Equal(sb.EffectiveMetadataUUID()) {

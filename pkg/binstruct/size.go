@@ -17,7 +17,11 @@ func StaticSize(obj any) int {
 	return sz
 }
 
-var staticSizerType = reflect.TypeOf((*StaticSizer)(nil)).Elem()
+var (
+	staticSizerType = reflect.TypeOf((*StaticSizer)(nil)).Elem()
+	marshalerType   = reflect.TypeOf((*Marshaler)(nil)).Elem()
+	unmarshalerType = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+)
 
 func staticSize(typ reflect.Type) (int, error) {
 	if typ.Implements(staticSizerType) {
@@ -41,7 +45,10 @@ func staticSize(typ reflect.Type) (int, error) {
 		}
 		return elemSize * typ.Len(), nil
 	case reflect.Struct:
-		return getStructHandler(typ).Size, nil
+		if !(typ.Implements(marshalerType) || typ.Implements(unmarshalerType)) {
+			return getStructHandler(typ).Size, nil
+		}
+		fallthrough
 	default:
 		return 0, fmt.Errorf("type=%v does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
 			typ, typ.Kind())

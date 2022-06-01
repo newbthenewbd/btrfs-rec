@@ -3,33 +3,12 @@ package btrfs
 import (
 	"fmt"
 	"reflect"
-	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
-
-type (
-	PhysicalAddr int64
-	LogicalAddr  int64
-	Generation   uint64
-)
-
-type Key struct {
-	ObjectID      ObjID    `bin:"off=0, siz=8"` // Each tree has its own set of Object IDs.
-	ItemType      ItemType `bin:"off=8, siz=1"`
-	Offset        uint64   `bin:"off=9, siz=8"` // The meaning depends on the item type.
-	binstruct.End `bin:"off=11"`
-}
-
-type Time struct {
-	Sec           int64  `bin:"off=0, siz=8"` // Number of seconds since 1970-01-01T00:00:00Z.
-	NSec          uint32 `bin:"off=8, siz=4"` // Number of nanoseconds since the beginning of the second.
-	binstruct.End `bin:"off=c"`
-}
-
-func (t Time) ToStd() time.Time {
-	return time.Unix(t.Sec, int64(t.NSec))
-}
 
 type Superblock struct {
 	Checksum   CSum         `bin:"off=0,  siz=20"` // Checksum of everything past this field (from 20 to 1000)
@@ -65,10 +44,10 @@ type Superblock struct {
 	ChunkLevel uint8 `bin:"off=c7, siz=1"` // chunk_root_level
 	LogLevel   uint8 `bin:"off=c8, siz=1"` // log_root_level
 
-	DevItem            DevItem     `bin:"off=c9,  siz=62"`  // DEV_ITEM data for this device
-	Label              [0x100]byte `bin:"off=12b, siz=100"` // label (may not contain '/' or '\\')
-	CacheGeneration    Generation  `bin:"off=22b, siz=8"`
-	UUIDTreeGeneration uint64      `bin:"off=233, siz=8"` // uuid_tree_generation
+	DevItem            btrfsitem.Dev `bin:"off=c9,  siz=62"`  // DEV_ITEM data for this device
+	Label              [0x100]byte   `bin:"off=12b, siz=100"` // label (may not contain '/' or '\\')
+	CacheGeneration    Generation    `bin:"off=22b, siz=8"`
+	UUIDTreeGeneration uint64        `bin:"off=233, siz=8"` // uuid_tree_generation
 
 	// FeatureIncompatMetadataUUID
 	MetadataUUID UUID `bin:"off=23b, siz=10"`
@@ -130,9 +109,9 @@ func (sb Superblock) EffectiveMetadataUUID() UUID {
 }
 
 type SysChunk struct {
-	Key           `bin:"off=0, siz=11"`
-	Chunk         `bin:"off=11, siz=30"`
-	binstruct.End `bin:"off=41"`
+	Key             `bin:"off=0, siz=11"`
+	btrfsitem.Chunk `bin:"off=11, siz=30"`
+	binstruct.End   `bin:"off=41"`
 }
 
 func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
@@ -140,18 +119,20 @@ func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
 	var ret []SysChunk
 	for len(dat) > 0 {
 		var pair SysChunk
-		if err := binstruct.Unmarshal(dat, &pair); err != nil {
+		n, err := binstruct.Unmarshal(dat, &pair)
+		dat = dat[n:]
+		if err != nil {
 			return nil, err
 		}
-		dat = dat[0x41:]
 
 		for i := 0; i < int(pair.Chunk.NumStripes); i++ {
-			var stripe Stripe
-			if err := binstruct.Unmarshal(dat, &stripe); err != nil {
+			var stripe btrfsitem.ChunkStripe
+			n, err := binstruct.Unmarshal(dat, &stripe)
+			dat = dat[n:]
+			if err != nil {
 				return nil, err
 			}
 			pair.Chunk.Stripes = append(pair.Chunk.Stripes, stripe)
-			dat = dat[0x20:]
 		}
 
 		ret = append(ret, pair)
@@ -195,89 +176,41 @@ type RootBackup struct {
 	binstruct.End `bin:"off=a8"`
 }
 
-type Node interface {
-	GetNodeHeader() Ref[LogicalAddr, NodeHeader]
+type IncompatFlags uint64
+
+const (
+	FeatureIncompatMixedBackref = IncompatFlags(1 << iota)
+	FeatureIncompatDefaultSubvol
+	FeatureIncompatMixedGroups
+	FeatureIncompatCompressLZO
+	FeatureIncompatCompressZSTD
+	FeatureIncompatBigMetadata // buggy
+	FeatureIncompatExtendedIRef
+	FeatureIncompatRAID56
+	FeatureIncompatSkinnyMetadata
+	FeatureIncompatNoHoles
+	FeatureIncompatMetadataUUID
+	FeatureIncompatRAID1C34
+	FeatureIncompatZoned
+	FeatureIncompatExtentTreeV2
+)
+
+var incompatFlagNames = []string{
+	"FeatureIncompatMixedBackref",
+	"FeatureIncompatDefaultSubvol",
+	"FeatureIncompatMixedGroups",
+	"FeatureIncompatCompressLZO",
+	"FeatureIncompatCompressZSTD",
+	"FeatureIncompatBigMetadata ",
+	"FeatureIncompatExtendedIRef",
+	"FeatureIncompatRAID56",
+	"FeatureIncompatSkinnyMetadata",
+	"FeatureIncompatNoHoles",
+	"FeatureIncompatMetadataUUID",
+	"FeatureIncompatRAID1C34",
+	"FeatureIncompatZoned",
+	"FeatureIncompatExtentTreeV2",
 }
 
-type NodeHeader struct {
-	Checksum      CSum        `bin:"off=0,  siz=20"` // Checksum of everything after this field (from 20 to the end of the node)
-	MetadataUUID  UUID        `bin:"off=20, siz=10"` // FS UUID
-	Addr          LogicalAddr `bin:"off=30, siz=8"`  // Logical address of this node
-	Flags         NodeFlags   `bin:"off=38, siz=7"`
-	BackrefRev    uint8       `bin:"off=3f, siz=1"`
-	ChunkTreeUUID UUID        `bin:"off=40, siz=10"` // Chunk tree UUID
-	Generation    Generation  `bin:"off=50, siz=8"`  // Generation
-	Owner         ObjID       `bin:"off=58, siz=8"`  // The ID of the tree that contains this node
-	NumItems      uint32      `bin:"off=60, siz=4"`  // Number of items
-	Level         uint8       `bin:"off=64, siz=1"`  // Level (0 for leaf nodes)
-	binstruct.End `bin:"off=65"`
-
-	Size     uint32 `bin:"-"` // superblock.NodeSize
-	MaxItems uint32 `bin:"-"` // Maximum possible value of NumItems
-}
-
-type InternalNode struct {
-	Header Ref[LogicalAddr, NodeHeader]
-	Body   []Ref[LogicalAddr, KeyPointer]
-}
-
-func (in *InternalNode) GetNodeHeader() Ref[LogicalAddr, NodeHeader] {
-	return in.Header
-}
-
-type KeyPointer struct {
-	Key           Key         `bin:"off=0, siz=11"`
-	BlockPtr      LogicalAddr `bin:"off=11, siz=8"`
-	Generation    Generation  `bin:"off=19, siz=8"`
-	binstruct.End `bin:"off=21"`
-}
-
-type LeafNode struct {
-	Header Ref[LogicalAddr, NodeHeader]
-	Body   []Ref[LogicalAddr, Item]
-}
-
-func (ln *LeafNode) GetNodeHeader() Ref[LogicalAddr, NodeHeader] {
-	return ln.Header
-}
-
-func (ln *LeafNode) FreeSpace() uint32 {
-	freeSpace := ln.Header.Data.Size
-	freeSpace -= 0x65
-	for _, item := range ln.Body {
-		freeSpace -= 0x19
-		freeSpace -= item.Data.DataSize
-	}
-	return freeSpace
-}
-
-type Item struct {
-	Key           Key    `bin:"off=0, siz=11"`
-	DataOffset    uint32 `bin:"off=11, siz=4"` // relative to the end of the header (0x65)
-	DataSize      uint32 `bin:"off=15, siz=4"`
-	binstruct.End `bin:"off=19"`
-	Data          Ref[LogicalAddr, []byte] `bin:"-"`
-}
-
-type Chunk struct {
-	// Maps logical address to physical.
-	Size           uint64 `bin:"off=0,  siz=8"` // size of chunk (bytes)
-	Owner          ObjID  `bin:"off=8,  siz=8"` // root referencing this chunk (2)
-	StripeLen      uint64 `bin:"off=10, siz=8"` // stripe length
-	Type           uint64 `bin:"off=18, siz=8"` // type (same as flags for block group?)
-	IOOptimalAlign uint32 `bin:"off=20, siz=4"` // optimal io alignment
-	IOOptimalWidth uint32 `bin:"off=24, siz=4"` // optimal io width
-	IoMinSize      uint32 `bin:"off=28, siz=4"` // minimal io size (sector size)
-	NumStripes     uint16 `bin:"off=2c, siz=2"` // number of stripes
-	SubStripes     uint16 `bin:"off=2e, siz=2"` // sub stripes
-	binstruct.End  `bin:"off=30"`
-	Stripes        []Stripe `bin:"-"`
-}
-
-type Stripe struct {
-	// Stripes follow (for each number of stripes):
-	DeviceID      ObjID  `bin:"off=0,  siz=8"`  // device ID
-	Offset        uint64 `bin:"off=8,  siz=8"`  // offset
-	DeviceUUID    UUID   `bin:"off=10, siz=10"` // device UUID
-	binstruct.End `bin:"off=20"`
-}
+func (f IncompatFlags) Has(req IncompatFlags) bool { return f&req == req }
+func (f IncompatFlags) String() string             { return util.BitfieldString(f, incompatFlagNames) }

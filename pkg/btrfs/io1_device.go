@@ -3,6 +3,9 @@ package btrfs
 import (
 	"fmt"
 	"os"
+
+	. "lukeshu.com/btrfs-tools/pkg/btrfs/btrfstyp"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Device struct {
@@ -27,7 +30,7 @@ func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
 	return dev.File.ReadAt(dat, int64(paddr))
 }
 
-func (dev *Device) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
 	const superblockSize = 0x1000
 
 	sz, err := dev.Size()
@@ -35,10 +38,10 @@ func (dev *Device) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
 		return nil, err
 	}
 
-	var ret []Ref[PhysicalAddr, Superblock]
+	var ret []util.Ref[PhysicalAddr, Superblock]
 	for i, addr := range superblockAddrs {
 		if addr+superblockSize <= sz {
-			superblock := Ref[PhysicalAddr, Superblock]{
+			superblock := util.Ref[PhysicalAddr, Superblock]{
 				File: dev,
 				Addr: addr,
 			}
@@ -54,7 +57,7 @@ func (dev *Device) Superblocks() ([]Ref[PhysicalAddr, Superblock], error) {
 	return ret, nil
 }
 
-func (dev *Device) Superblock() (ret Ref[PhysicalAddr, Superblock], err error) {
+func (dev *Device) Superblock() (ret util.Ref[PhysicalAddr, Superblock], err error) {
 	sbs, err := dev.Superblocks()
 	if err != nil {
 		return ret, err
