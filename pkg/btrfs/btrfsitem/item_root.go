@@ -42,9 +42,9 @@ const (
 	BTRFS_ROOT_SUBVOL_RDONLY = RootFlags(1 << iota)
 )
 
-var rootItemFlagNames = []string{
+var rootFlagNames = []string{
 	"SUBVOL_RDONLY",
 }
 
 func (f RootFlags) Has(req RootFlags) bool { return f&req == req }
-func (f RootFlags) String() string         { return util.BitfieldString(f, rootItemFlagNames) }
+func (f RootFlags) String() string         { return util.BitfieldString(f, rootFlagNames) }

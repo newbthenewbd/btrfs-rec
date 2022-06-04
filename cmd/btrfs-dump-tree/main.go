@@ -120,8 +120,18 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			switch body := item.Body.(type) {
 			//case btrfsitem.UNTYPED_KEY:
 			//	// TODO
-			//case btrfsitem.INODE_ITEM_KEY:
-			//	// TODO(!)
+			case btrfsitem.Inode:
+				fmt.Printf(""+
+					"\t\tgeneration %d transid %d size %d nbytes %d\n"+
+					"\t\tblock group %d mode %o links %d uid %d gid %d rdev %d\n"+
+					"\t\tsequence %d flags %v\n",
+					body.Generation, body.TransID, body.Size, body.NumBytes,
+					body.BlockGroup, body.Mode, body.NLink, body.UID, body.GID, body.RDev,
+					body.Sequence, body.Flags)
+				fmt.Printf("\t\tatime %s\n", fmtTime(body.ATime))
+				fmt.Printf("\t\tctime %s\n", fmtTime(body.CTime))
+				fmt.Printf("\t\tmtime %s\n", fmtTime(body.MTime))
+				fmt.Printf("\t\totime %s\n", fmtTime(body.OTime))
 			case btrfsitem.InodeRefList:
 				for _, ref := range body {
 					fmt.Printf("\t\tindex %d namelen %d name: %s\n",
@@ -129,17 +139,19 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				}
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
-			//case btrfsitem.DIR_ITEM_KEY, btrfsitem.DIR_INDEX_KEY, btrfsitem.XATTR_ITEM_KEY:
-			//	// TODO
+			case btrfsitem.DirList:
+				for _, dir := range body {
+					fmt.Printf("\t\tlocation %s type %v\n",
+						fmtKey(dir.Location), dir.Type)
+					fmt.Printf("\t\ttransid %d data_len %d name_len %d\n",
+						dir.TransID, dir.DataLen, dir.NameLen)
+					fmt.Printf("\t\tname: %s\n", dir.Name)
+					if len(dir.Data) > 0 {
+						fmt.Printf("\t\tdata %s\n", dir.Data)
+					}
+				}
 			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			//	// TODO
-			case btrfsitem.Empty:
-				switch item.Head.Key.ItemType {
-				case btrfsitem.ORPHAN_ITEM_KEY:
-					fmt.Printf("\t\torphan item\n")
-				default:
-					return fmt.Errorf("unhandled empty item type: %v", item.Head.Key.ItemType)
-				}
 			case btrfsitem.Root:
 				fmt.Printf("\t\tgeneration %d root_dirid %d bytenr %d byte_limit %d bytes_used %d\n",
 					body.Generation, body.RootDirID, body.ByteNr, body.ByteLimit, body.BytesUsed)
@@ -204,14 +216,21 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.QGROUP_LIMIT_KEY:
 			//	// TODO
-			case btrfsitem.UUIDMap:
-				// TODO
-				//case btrfsitem.STRING_ITEM_KEY:
-				//	// TODO
-				//case btrfsitem.PERSISTENT_ITEM_KEY:
-				//	// TODO
-				//case btrfsitem.TEMPORARY_ITEM_KEY:
-				//	// TODO
+			//case btrfsitem.UUIDMap:
+			//	// TODO
+			//case btrfsitem.STRING_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.PERSISTENT_ITEM_KEY:
+			//	// TODO
+			//case btrfsitem.TEMPORARY_ITEM_KEY:
+			//	// TODO
+			case btrfsitem.Empty:
+				switch item.Head.Key.ItemType {
+				case btrfsitem.ORPHAN_ITEM_KEY:
+					fmt.Printf("\t\torphan item\n")
+				default:
+					return fmt.Errorf("unhandled empty item type: %v", item.Head.Key.ItemType)
+				}
 			case btrfsitem.Error:
 				fmt.Printf("\t\t(error) error item: %v\n", body.Err)
 			default:

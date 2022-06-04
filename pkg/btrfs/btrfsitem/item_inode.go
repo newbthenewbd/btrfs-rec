@@ -3,6 +3,7 @@ package btrfsitem
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Inode struct { // INODE_ITEM=1
@@ -16,7 +17,7 @@ type Inode struct { // INODE_ITEM=1
 	GID           int32         `bin:"off=0x30, siz=0x4"`
 	Mode          int32         `bin:"off=0x34, siz=0x4"`
 	RDev          int64         `bin:"off=0x38, siz=0x8"`
-	Flags         uint64        `bin:"off=0x40, siz=0x8"`
+	Flags         InodeFlags    `bin:"off=0x40, siz=0x8"`
 	Sequence      int64         `bin:"off=0x48, siz=0x8"`
 	Reserved      [4]int64      `bin:"off=0x50, siz=0x20"`
 	ATime         internal.Time `bin:"off=0x70, siz=0xc"`
@@ -25,3 +26,38 @@ type Inode struct { // INODE_ITEM=1
 	OTime         internal.Time `bin:"off=0x94, siz=0xc"`
 	binstruct.End `bin:"off=0xa0"`
 }
+
+type InodeFlags uint64
+
+const (
+	BTRFS_INODE_NODATASUM = InodeFlags(1 << iota)
+	BTRFS_INODE_NODATACOW
+	BTRFS_INODE_READONLY
+	BTRFS_INODE_NOCOMPRESS
+	BTRFS_INODE_PREALLOC
+	BTRFS_INODE_SYNC
+	BTRFS_INODE_IMMUTABLE
+	BTRFS_INODE_APPEND
+	BTRFS_INODE_NODUMP
+	BTRFS_INODE_NOATIME
+	BTRFS_INODE_DIRSYNC
+	BTRFS_INODE_COMPRESS
+)
+
+var inodeFlagNames = []string{
+	"NODATASUM",
+	"NODATACOW",
+	"READONLY",
+	"NOCOMPRESS",
+	"PREALLOC",
+	"SYNC",
+	"IMMUTABLE",
+	"APPEND",
+	"NODUMP",
+	"NOATIME",
+	"DIRSYNC",
+	"COMPRESS",
+}
+
+func (f InodeFlags) Has(req InodeFlags) bool { return f&req == req }
+func (f InodeFlags) String() string          { return util.BitfieldString(f, inodeFlagNames) }

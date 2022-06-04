@@ -7,7 +7,7 @@ import (
 
 func BitfieldString[T ~uint8 | ~uint16 | ~uint32 | ~uint64](bitfield T, bitnames []string) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "0x%0X", uint64(bitfield))
+	fmt.Fprintf(&out, "0x%0x", uint64(bitfield))
 	if bitfield == 0 {
 		out.WriteString("(none)")
 	} else {
