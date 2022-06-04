@@ -74,7 +74,7 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 	if err != nil {
 		return CSum{}, err
 	}
-	return CRC32c(data[0x20:]), nil
+	return CRC32c(data[binstruct.StaticSize(CSum{}):]), nil
 }
 
 func (sb Superblock) ValidateChecksum() error {

@@ -250,7 +250,11 @@ func printHeaderInfo(node btrfs.Node) {
 		node.Head.BackrefRev)
 
 	fmt.Printf("checksum stored %x\n", node.Head.Checksum)
-	fmt.Printf("checksum calced %v\n", "TODO")
+	if calcSum, err := node.CalculateChecksum(); err != nil {
+		fmt.Printf("checksum calced %v\n", err)
+	} else {
+		fmt.Printf("checksum calced %x\n", calcSum)
+	}
 
 	fmt.Printf("fs uuid %s\n", node.Head.MetadataUUID)
 	fmt.Printf("chunk uuid %s\n", node.Head.ChunkTreeUUID)

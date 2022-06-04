@@ -147,7 +147,80 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 }
 
 func (node Node) MarshalBinary() ([]byte, error) {
-	panic("TODO")
+	if node.Size == 0 {
+		return nil, fmt.Errorf("Node.MarshalBinary: .Size must be set")
+	}
+
+	ret := make([]byte, node.Size)
+
+	dat, err := binstruct.Marshal(node.Head)
+	if err != nil {
+		return dat, err
+	}
+	if node.Head.Level > 0 {
+		// internal node
+		for _, item := range node.BodyInternal {
+			bs, err := binstruct.Marshal(item)
+			dat = append(dat, bs...)
+			if err != nil {
+				return dat, err
+			}
+		}
+		if copy(ret, dat) < len(dat) {
+			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
+				len(dat), node.Size)
+		}
+	} else {
+		// leaf node
+		if copy(ret, dat) < len(dat) {
+			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
+				len(dat), node.Size)
+		}
+		n := len(dat)
+		for _, item := range node.BodyLeaf {
+			dat, err = binstruct.Marshal(item.Head)
+			if err != nil {
+				return ret, err
+			}
+			if copy(ret[n:], dat) < len(dat) {
+				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
+					n+len(dat), node.Size)
+			}
+			n += len(dat)
+
+			dat, err := binstruct.Marshal(item.Body)
+			if err != nil {
+				return ret, err
+			}
+			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
+			if copy(ret[dataOff:], dat) < len(dat) {
+				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
+					dataOff+len(dat), node.Size)
+			}
+		}
+	}
+	return ret, nil
+}
+
+func (node Node) CalculateChecksum() (CSum, error) {
+	data, err := binstruct.Marshal(node)
+	if err != nil {
+		return CSum{}, err
+	}
+	return CRC32c(data[binstruct.StaticSize(CSum{}):]), nil
+}
+
+func (node Node) ValidateChecksum() error {
+	stored := node.Head.Checksum
+	calced, err := node.CalculateChecksum()
+	if err != nil {
+		return err
+	}
+	if !calced.Equal(stored) {
+		return fmt.Errorf("node checksum mismatch: stored=%s calculated=%s",
+			stored, calced)
+	}
+	return nil
 }
 
 func (node *Node) LeafFreeSpace() uint32 {
