@@ -109,6 +109,9 @@ func Main(imgfilename string) (err error) {
 	}); err != nil {
 		return err
 	}
+	fmt.Printf("total bytes %d\n", superblock.Data.TotalBytes)
+	fmt.Printf("bytes used %d\n", superblock.Data.BytesUsed)
+	fmt.Printf("uuid %v\n", superblock.Data.FSUUID)
 
 	return nil
 }
@@ -142,6 +145,10 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				item.Head.DataOffset,
 				item.Head.DataSize)
 			switch body := item.Body.(type) {
+			case btrfsitem.FreeSpaceHeader:
+				fmt.Printf("\t\tlocation %s\n", fmtKey(body.Location))
+				fmt.Printf("\t\tcache generation %d entries %d bitmaps %d\n",
+					body.Generation, body.NumEntries, body.NumBitmaps)
 			case btrfsitem.Inode:
 				fmt.Printf(""+
 					"\t\tgeneration %d transid %d size %d nbytes %d\n"+
