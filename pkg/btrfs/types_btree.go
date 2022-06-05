@@ -137,18 +137,18 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
 			dataSize := int(item.Head.DataSize)
 			if dataOff+dataSize > len(nodeBuf) {
-				return max(n, lastRead), fmt.Errorf("(leaf): item references byte %d, but node only has %d bytes",
+				return util.Max(n, lastRead), fmt.Errorf("(leaf): item references byte %d, but node only has %d bytes",
 					dataOff+dataSize, len(nodeBuf))
 			}
 			dataBuf := nodeBuf[dataOff : dataOff+dataSize]
-			firstRead = min(firstRead, dataOff)
-			lastRead = max(lastRead, dataOff+dataSize)
+			firstRead = util.Min(firstRead, dataOff)
+			lastRead = util.Max(lastRead, dataOff+dataSize)
 			item.Body = btrfsitem.UnmarshalItem(item.Head.Key, dataBuf)
 
 			node.BodyLeaf = append(node.BodyLeaf, item)
 		}
 		node.Padding = nodeBuf[n:firstRead]
-		return max(n, lastRead), nil
+		return util.Max(n, lastRead), nil
 	}
 }
 
@@ -201,7 +201,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 				return ret, err
 			}
 			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
-			minData = min(minData, dataOff)
+			minData = util.Min(minData, dataOff)
 			if copy(ret[dataOff:], dat) < len(dat) {
 				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
 					dataOff+len(dat), node.Size)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -19,7 +20,7 @@ func (dev Device) Size() (PhysicalAddr, error) {
 	return PhysicalAddr(fi.Size()), nil
 }
 
-var superblockAddrs = []PhysicalAddr{
+var SuperblockAddrs = []PhysicalAddr{
 	0x00_0001_0000, // 64KiB
 	0x00_0400_0000, // 64MiB
 	0x40_0000_0000, // 256GiB
@@ -30,7 +31,7 @@ func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
 }
 
 func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
-	const superblockSize = 0x1000
+	superblockSize := PhysicalAddr(binstruct.StaticSize(Superblock{}))
 
 	sz, err := dev.Size()
 	if err != nil {
@@ -38,7 +39,7 @@ func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
 	}
 
 	var ret []util.Ref[PhysicalAddr, Superblock]
-	for i, addr := range superblockAddrs {
+	for i, addr := range SuperblockAddrs {
 		if addr+superblockSize <= sz {
 			superblock := util.Ref[PhysicalAddr, Superblock]{
 				File: dev,

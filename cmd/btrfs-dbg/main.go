@@ -7,6 +7,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
+	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 )
 
 func main() {
@@ -59,7 +60,7 @@ func Main(imgfilename string) (err error) {
 	}
 	spew.Dump(syschunks)
 
-	if err := btrfs.ScanForNodes(fs.Devices[0], superblocks[0].Data); err != nil {
+	if err := btrfsmisc.ScanForNodes(fs.Devices[0], superblocks[0].Data); err != nil {
 		return err
 	}
 
