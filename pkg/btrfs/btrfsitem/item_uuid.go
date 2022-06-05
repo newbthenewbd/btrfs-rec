@@ -7,12 +7,10 @@ import (
 
 // The Key for this item is a UUID, and the item is a list of
 // subvolume IDs (ObjectIDs) that that UUID maps to.
-type UUIDMap struct { // UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
-	SubvolIDs []internal.ObjID
-}
+type UUIDMap []internal.ObjID // UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
 
 func (o *UUIDMap) UnmarshalBinary(dat []byte) (int, error) {
-	o.SubvolIDs = nil
+	*o = nil
 	var n int
 	for len(dat) > n {
 		var subvolID internal.ObjID
@@ -21,14 +19,14 @@ func (o *UUIDMap) UnmarshalBinary(dat []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		o.SubvolIDs = append(o.SubvolIDs, subvolID)
+		*o = append(*o, subvolID)
 	}
 	return n, nil
 }
 
 func (o UUIDMap) MarshalBinary() ([]byte, error) {
 	var ret []byte
-	for _, subvolID := range o.SubvolIDs {
+	for _, subvolID := range o {
 		bs, err := binstruct.Marshal(subvolID)
 		ret = append(ret, bs...)
 		if err != nil {

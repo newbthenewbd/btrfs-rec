@@ -53,8 +53,8 @@ func (t ItemType) String() string {
 		PERSISTENT_ITEM_KEY:      "PERSISTENT_ITEM",
 		ROOT_ITEM_KEY:            "ROOT_ITEM",
 		SHARED_DATA_REF_KEY:      "SHARED_DATA_REF",
-		UUID_SUBVOL_KEY:          "UUID_SUBVOL",
-		UUID_RECEIVED_SUBVOL_KEY: "UUID_RECEIVED_SUBVOL",
+		UUID_SUBVOL_KEY:          "UUID_KEY_SUBVOL",
+		UUID_RECEIVED_SUBVOL_KEY: "UUID_KEY_RECEIVED_SUBVOL",
 	}
 	if name, ok := names[t]; ok {
 		return name

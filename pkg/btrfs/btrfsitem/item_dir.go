@@ -10,6 +10,7 @@ import (
 type DirList []Dir // DIR_ITEM=84, DIR_INDEX=96, XATTR_ITEM=24
 
 func (o *DirList) UnmarshalBinary(dat []byte) (int, error) {
+	*o = nil
 	n := 0
 	for n < len(dat) {
 		var ref Dir

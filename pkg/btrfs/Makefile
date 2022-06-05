@@ -38,7 +38,7 @@ internal/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo ')'; \
 	  echo 'func (t ItemType) String() string {'; \
 	  echo '  names := map[ItemType]string{'; \
-	  sed -E 's@(.*)=(.*) (.*)@\1_KEY: "\1",@' $<; \
+	  sed -E 's@(.*)=(.*) (.*)@\1_KEY: "\1",@' $< | sed 's/"UUID_/&KEY_/'; \
 	  echo '  }'; \
 	  echo '  if name, ok := names[t]; ok {'; \
 	  echo '    return name'; \

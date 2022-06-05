@@ -263,20 +263,41 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					body.SeekSpeed, body.Bandwidth,
 					body.DevUUID,
 					body.FSUUID)
-			//case btrfsitem.DEV_EXTENT_KEY:
-			//	// TODO
+			case btrfsitem.DevExtent:
+				fmt.Printf(""+
+					"\t\tdev extent chunk_tree %d\n"+
+					"\t\tchunk_objectid %d chunk_offset %d length %d\n"+
+					"\t\tchunk_tree_uuid %s\n",
+					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
+					body.ChunkTreeUUID)
 			//case btrfsitem.QGROUP_STATUS_KEY:
 			//	// TODO
 			//case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY:
 			//	// TODO
 			//case btrfsitem.QGROUP_LIMIT_KEY:
 			//	// TODO
-			//case btrfsitem.UUIDMap:
-			//	// TODO
+			case btrfsitem.UUIDMap:
+				for _, subvolID := range body {
+					fmt.Printf("\t\tsubvol_id %d\n",
+						subvolID)
+				}
 			//case btrfsitem.STRING_ITEM_KEY:
 			//	// TODO
-			//case btrfsitem.PERSISTENT_ITEM_KEY:
-			//	// TODO
+			case btrfsitem.DevStats:
+				fmt.Printf("\t\tpersistent item objectid %s offset %d\n",
+					item.Head.Key.ObjectID.Format(item.Head.Key.ItemType), item.Head.Key.Offset)
+				switch item.Head.Key.ObjectID {
+				case btrfs.DEV_STATS_OBJECTID:
+					fmt.Printf("\t\tdevice stats\n")
+					fmt.Printf("\t\twrite_errs %d read_errs %d flush_errs %d corruption_errs %d generation %d\n",
+						body.Values[btrfsitem.DEV_STAT_WRITE_ERRS],
+						body.Values[btrfsitem.DEV_STAT_READ_ERRS],
+						body.Values[btrfsitem.DEV_STAT_FLUSH_ERRS],
+						body.Values[btrfsitem.DEV_STAT_CORRUPTION_ERRS],
+						body.Values[btrfsitem.DEV_STAT_GENERATION_ERRS])
+				default:
+					fmt.Printf("\t\tunknown persistent item objectid %d\n", item.Head.Key.ObjectID)
+				}
 			//case btrfsitem.TEMPORARY_ITEM_KEY:
 			//	// TODO
 			case btrfsitem.Empty:

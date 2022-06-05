@@ -34,6 +34,7 @@ func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
+	chunk.Stripes = nil
 	for i := 0; i < int(chunk.NumStripes); i++ {
 		var stripe ChunkStripe
 		_n, err := binstruct.Unmarshal(dat[n:], &stripe)

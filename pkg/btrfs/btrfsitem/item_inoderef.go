@@ -7,6 +7,7 @@ import (
 type InodeRefList []InodeRef // INODE_REF=12
 
 func (o *InodeRefList) UnmarshalBinary(dat []byte) (int, error) {
+	*o = nil
 	n := 0
 	for n < len(dat) {
 		var ref InodeRef
