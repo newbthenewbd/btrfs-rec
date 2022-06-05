@@ -73,29 +73,29 @@ func (o Dir) MarshalBinary() ([]byte, error) {
 type FileType uint8
 
 const (
-	BTRFS_FT_UNKNOWN  = FileType(0)
-	BTRFS_FT_REG_FILE = FileType(1)
-	BTRFS_FT_DIR      = FileType(2)
-	BTRFS_FT_CHRDEV   = FileType(3)
-	BTRFS_FT_BLKDEV   = FileType(4)
-	BTRFS_FT_FIFO     = FileType(5)
-	BTRFS_FT_SOCK     = FileType(6)
-	BTRFS_FT_SYMLINK  = FileType(7)
-	BTRFS_FT_XATTR    = FileType(8)
-	BTRFS_FT_MAX      = FileType(9)
+	FT_UNKNOWN  = FileType(0)
+	FT_REG_FILE = FileType(1)
+	FT_DIR      = FileType(2)
+	FT_CHRDEV   = FileType(3)
+	FT_BLKDEV   = FileType(4)
+	FT_FIFO     = FileType(5)
+	FT_SOCK     = FileType(6)
+	FT_SYMLINK  = FileType(7)
+	FT_XATTR    = FileType(8)
+	FT_MAX      = FileType(9)
 )
 
 func (ft FileType) String() string {
 	names := map[FileType]string{
-		BTRFS_FT_UNKNOWN:  "UNKNOWN",
-		BTRFS_FT_REG_FILE: "REG_FILE",
-		BTRFS_FT_DIR:      "DIR",
-		BTRFS_FT_CHRDEV:   "CHRDEV",
-		BTRFS_FT_BLKDEV:   "BLKDEV",
-		BTRFS_FT_FIFO:     "FIFO",
-		BTRFS_FT_SOCK:     "SOCK",
-		BTRFS_FT_SYMLINK:  "SYMLINK",
-		BTRFS_FT_XATTR:    "XATTR",
+		FT_UNKNOWN:  "UNKNOWN",
+		FT_REG_FILE: "REG_FILE",
+		FT_DIR:      "DIR",
+		FT_CHRDEV:   "CHRDEV",
+		FT_BLKDEV:   "BLKDEV",
+		FT_FIFO:     "FIFO",
+		FT_SOCK:     "SOCK",
+		FT_SYMLINK:  "SYMLINK",
+		FT_XATTR:    "XATTR",
 	}
 	if name, ok := names[ft]; ok {
 		return name

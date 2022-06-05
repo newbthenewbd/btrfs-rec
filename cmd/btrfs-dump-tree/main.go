@@ -80,6 +80,30 @@ func Main(imgfilename string) (err error) {
 			if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 				return nil
 			}
+			treeName, ok := map[btrfs.ObjID]string{
+				btrfs.ROOT_TREE_OBJECTID:        "root",
+				btrfs.EXTENT_TREE_OBJECTID:      "extent",
+				btrfs.CHUNK_TREE_OBJECTID:       "chunk",
+				btrfs.DEV_TREE_OBJECTID:         "device",
+				btrfs.FS_TREE_OBJECTID:          "fs",
+				btrfs.ROOT_TREE_DIR_OBJECTID:    "directory",
+				btrfs.CSUM_TREE_OBJECTID:        "checksum",
+				btrfs.ORPHAN_OBJECTID:           "orphan",
+				btrfs.TREE_LOG_OBJECTID:         "log",
+				btrfs.TREE_LOG_FIXUP_OBJECTID:   "log fixup",
+				btrfs.TREE_RELOC_OBJECTID:       "reloc",
+				btrfs.DATA_RELOC_TREE_OBJECTID:  "data reloc",
+				btrfs.EXTENT_CSUM_OBJECTID:      "extent checksum",
+				btrfs.QUOTA_TREE_OBJECTID:       "quota",
+				btrfs.UUID_TREE_OBJECTID:        "uuid",
+				btrfs.FREE_SPACE_TREE_OBJECTID:  "free space",
+				btrfs.MULTIPLE_OBJECTIDS:        "multiple",
+				btrfs.BLOCK_GROUP_TREE_OBJECTID: "block group",
+			}[key.ObjectID]
+			if !ok {
+				treeName = "file"
+			}
+			fmt.Printf("%s tree %s \n", treeName, fmtKey(key))
 			return printTree(fs, body.(btrfsitem.Root).ByteNr)
 		},
 	}); err != nil {
@@ -174,10 +198,19 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.ROOT_BACKREF_KEY:
 			//	// TODO
-			//case btrfsitem.EXTENT_ITEM_KEY:
-			//	// TODO
-			//case btrfsitem.METADATA_ITEM_KEY:
-			//	// TODO
+			case btrfsitem.Extent:
+				fmt.Printf("\t\trefs %d gen %d flags %v\n",
+					body.Head.Refs, body.Head.Generation, body.Head.Flags)
+				if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
+					fmt.Printf("\t\ttree block %s level %d\n",
+						fmtKey(body.Info.Key), body.Info.Level)
+				}
+				printExtentInlineRefs(body.Refs)
+			case btrfsitem.Metadata:
+				fmt.Printf("\t\trefs %d gen %d flags %v\n",
+					body.Head.Refs, body.Head.Generation, body.Head.Flags)
+				fmt.Printf("\t\ttree block skinny level %d\n", item.Head.Key.Offset)
+				printExtentInlineRefs(body.Refs)
 			//case btrfsitem.TREE_BLOCK_REF_KEY:
 			//	fmt.Printf("\t\ttree block backref\n")
 			//case btrfsitem.SHARED_BLOCK_REF_KEY:
@@ -250,7 +283,7 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				case btrfsitem.ORPHAN_ITEM_KEY:
 					fmt.Printf("\t\torphan item\n")
 				default:
-					return fmt.Errorf("unhandled empty item type: %v", item.Head.Key.ItemType)
+					fmt.Printf("\t\t(error) unhandled empty item type: %v\n", item.Head.Key.ItemType)
 				}
 			case btrfsitem.Error:
 				fmt.Printf("\t\t(error) error item: %v\n", body.Err)
@@ -298,6 +331,33 @@ func printHeaderInfo(node btrfs.Node) {
 
 	fmt.Printf("fs uuid %s\n", node.Head.MetadataUUID)
 	fmt.Printf("chunk uuid %s\n", node.Head.ChunkTreeUUID)
+}
+
+// printExtentInlineRefs mimics part of btrfs-progs kernel-shared/print-tree.c:print_extent_item()
+func printExtentInlineRefs(refs []btrfsitem.ExtentInlineRef) {
+	for _, ref := range refs {
+		switch subitem := ref.Body.(type) {
+		case btrfsitem.Empty:
+			switch ref.Type {
+			case btrfsitem.TREE_BLOCK_REF_KEY:
+				fmt.Printf("\t\ttree block backref root %v\n",
+					btrfs.ObjID(ref.Offset))
+			case btrfsitem.SHARED_BLOCK_REF_KEY:
+				fmt.Printf("\t\tshared block backref parent %d\n",
+					ref.Offset)
+			default:
+				fmt.Printf("\t\t(error) unexpected empty sub-item type: %v\n", ref.Type)
+			}
+		case btrfsitem.ExtentDataRef:
+			fmt.Printf("\t\textent data backref root %v objectid %d offset %d count %d\n",
+				subitem.Root, subitem.ObjectID, subitem.Offset, subitem.Count)
+		case btrfsitem.SharedDataRef:
+			fmt.Printf("\t\tshared data backref parent %d count %d\n",
+				ref.Offset, subitem.Count)
+		default:
+			fmt.Printf("\t\t(error) unexpected sub-item type: %T\n", subitem)
+		}
+	}
 }
 
 // mimics print-tree.c:btrfs_print_key()

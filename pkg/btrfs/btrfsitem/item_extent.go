@@ -10,7 +10,7 @@ import (
 
 type Extent struct { // EXTENT_ITEM=168
 	Head ExtentHeader
-	Info TreeBlockInfo // only if .Head.Flags.Has(BTRFS_EXTENT_FLAG_TREE_BLOCK)
+	Info TreeBlockInfo // only if .Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK)
 	Refs []ExtentInlineRef
 }
 
@@ -19,7 +19,7 @@ func (o *Extent) UnmarshalBinary(dat []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	if o.Head.Flags.Has(BTRFS_EXTENT_FLAG_TREE_BLOCK) {
+	if o.Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK) {
 		_n, err := binstruct.Unmarshal(dat[n:], &o.Info)
 		n += _n
 		if err != nil {
@@ -44,7 +44,7 @@ func (o Extent) MarshalBinary() ([]byte, error) {
 	if err != nil {
 		return dat, err
 	}
-	if o.Head.Flags.Has(BTRFS_EXTENT_FLAG_TREE_BLOCK) {
+	if o.Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK) {
 		bs, err := binstruct.Marshal(o.Info)
 		dat = append(dat, bs...)
 		if err != nil {
@@ -77,8 +77,8 @@ type TreeBlockInfo struct {
 type ExtentFlags uint64
 
 const (
-	BTRFS_EXTENT_FLAG_DATA = ExtentFlags(1 << iota)
-	BTRFS_EXTENT_FLAG_TREE_BLOCK
+	EXTENT_FLAG_DATA = ExtentFlags(1 << iota)
+	EXTENT_FLAG_TREE_BLOCK
 )
 
 var extentFlagNames = []string{

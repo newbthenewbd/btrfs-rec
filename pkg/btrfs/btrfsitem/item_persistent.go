@@ -14,6 +14,6 @@ const (
 )
 
 type DevStats struct { // PERSISTENT_ITEM=249
-	Values [DEV_STAT_VALUES_MAX]int64 `bin:"off=0, siz=40"`
+	Values        [DEV_STAT_VALUES_MAX]int64 `bin:"off=0, siz=40"`
 	binstruct.End `bin:"off=40"`
 }

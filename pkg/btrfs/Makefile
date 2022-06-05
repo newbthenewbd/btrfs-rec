@@ -57,7 +57,7 @@ internal_objid.go: internal/objid.go $(MAKEFILE_LIST)
 	  echo   '"lukeshu.com/btrfs-tools/pkg/btrfs/internal"'; \
 	  echo ')'; \
 	  echo 'const('; \
-	  sed -En 's/^\s*(\S*_OBJECTID)\s*=.*/\1 = internal.\1/p' <$<; \
+	  sed -En 's/^\s*(\S*_OBJECTIDS?)\s*=.*/\1 = internal.\1/p' <$<; \
 	  echo ')'; \
 	} | gofmt >$@
 files += internal_objid.go
