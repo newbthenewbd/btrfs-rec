@@ -217,8 +217,33 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.EXTENT_CSUM_KEY:
 			//	// TODO
-			//case btrfsitem.EXTENT_DATA_KEY:
-			//	// TODO
+			case btrfsitem.FileExtent:
+				fmt.Printf("\t\tgeneration %d type %v\n",
+					body.Generation, body.Type)
+				switch body.Type {
+				case btrfsitem.FILE_EXTENT_INLINE:
+					fmt.Printf("\t\tinline extent data size %d ram_bytes %d compression %v\n",
+						len(body.BodyInline), body.RAMBytes, body.Compression)
+				case btrfsitem.FILE_EXTENT_PREALLOC:
+					fmt.Printf("\t\tprealloc data disk byte %d nr %d\n",
+						body.BodyPrealloc.DiskByteNr,
+						body.BodyPrealloc.DiskNumBytes)
+					fmt.Printf("\t\tprealloc data offset %d nr %d\n",
+						body.BodyPrealloc.Offset,
+						body.BodyPrealloc.NumBytes)
+				case btrfsitem.FILE_EXTENT_REG:
+					fmt.Printf("\t\textent data disk byte %d nr %d\n",
+						body.BodyReg.DiskByteNr,
+						body.BodyReg.DiskNumBytes)
+					fmt.Printf("\t\textenti data offset %d nr %d ram %d\n",
+						body.BodyReg.Offset,
+						body.BodyReg.NumBytes,
+						body.RAMBytes)
+					fmt.Printf("\t\textent compression %v\n",
+						body.Compression)
+				default:
+					fmt.Printf("\t\t(error) unknown file extent type %v", body.Type)
+				}
 			case btrfsitem.BlockGroup:
 				fmt.Printf("\t\tblock group used %d chunk_objectid %d flags %v\n",
 					body.Used, body.ChunkObjectID, body.Flags)
