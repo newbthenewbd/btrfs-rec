@@ -226,4 +226,4 @@ var incompatFlagNames = []string{
 }
 
 func (f IncompatFlags) Has(req IncompatFlags) bool { return f&req == req }
-func (f IncompatFlags) String() string             { return util.BitfieldString(f, incompatFlagNames) }
+func (f IncompatFlags) String() string             { return util.BitfieldString(f, incompatFlagNames, util.HexLower) }

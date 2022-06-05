@@ -60,4 +60,4 @@ var inodeFlagNames = []string{
 }
 
 func (f InodeFlags) Has(req InodeFlags) bool { return f&req == req }
-func (f InodeFlags) String() string          { return util.BitfieldString(f, inodeFlagNames) }
+func (f InodeFlags) String() string          { return util.BitfieldString(f, inodeFlagNames, util.HexLower) }

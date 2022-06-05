@@ -72,7 +72,7 @@ var nodeFlagNames = []string{
 }
 
 func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
-func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames) }
+func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames, util.HexLower) }
 
 type KeyPointer struct {
 	Key           Key         `bin:"off=0x0, siz=0x11"`

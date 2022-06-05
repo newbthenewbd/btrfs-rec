@@ -88,7 +88,7 @@ const (
 func (ft FileType) String() string {
 	names := map[FileType]string{
 		FT_UNKNOWN:  "UNKNOWN",
-		FT_REG_FILE: "REG_FILE",
+		FT_REG_FILE: "FILE", // XXX
 		FT_DIR:      "DIR",
 		FT_CHRDEV:   "CHRDEV",
 		FT_BLKDEV:   "BLKDEV",

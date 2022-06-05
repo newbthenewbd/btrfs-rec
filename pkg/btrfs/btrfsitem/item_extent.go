@@ -87,7 +87,7 @@ var extentFlagNames = []string{
 }
 
 func (f ExtentFlags) Has(req ExtentFlags) bool { return f&req == req }
-func (f ExtentFlags) String() string           { return util.BitfieldString(f, extentFlagNames) }
+func (f ExtentFlags) String() string           { return util.BitfieldString(f, extentFlagNames, util.HexNone) }
 
 type ExtentInlineRef struct {
 	Type          Type   `bin:"off=0, siz=1"`

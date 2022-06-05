@@ -47,4 +47,4 @@ var rootFlagNames = []string{
 }
 
 func (f RootFlags) Has(req RootFlags) bool { return f&req == req }
-func (f RootFlags) String() string         { return util.BitfieldString(f, rootFlagNames) }
+func (f RootFlags) String() string         { return util.BitfieldString(f, rootFlagNames, util.HexLower) }
