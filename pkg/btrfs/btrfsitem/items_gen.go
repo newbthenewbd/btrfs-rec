@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	BLOCK_GROUP_ITEM_KEY     = internal.BLOCK_GROUP_ITEM_KEY
 	CHUNK_ITEM_KEY           = internal.CHUNK_ITEM_KEY
 	DEV_ITEM_KEY             = internal.DEV_ITEM_KEY
 	DEV_EXTENT_KEY           = internal.DEV_EXTENT_KEY
@@ -33,6 +34,7 @@ const (
 )
 
 var keytype2gotype = map[Type]reflect.Type{
+	BLOCK_GROUP_ITEM_KEY:     reflect.TypeOf(BlockGroup{}),
 	CHUNK_ITEM_KEY:           reflect.TypeOf(Chunk{}),
 	DEV_ITEM_KEY:             reflect.TypeOf(Dev{}),
 	DEV_EXTENT_KEY:           reflect.TypeOf(DevExtent{}),
@@ -56,6 +58,7 @@ var keytype2gotype = map[Type]reflect.Type{
 	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
 }
 
+func (BlockGroup) isItem()    {}
 func (Chunk) isItem()         {}
 func (Dev) isItem()           {}
 func (DevExtent) isItem()     {}

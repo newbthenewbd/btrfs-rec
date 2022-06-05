@@ -1,8 +1,17 @@
 package btrfsitem
 
 import (
+	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
+
+type BlockGroup struct { // BLOCK_GROUP_ITEM=192
+	Used          int64           `bin:"off=0, siz=8"`
+	ChunkObjectID internal.ObjID  `bin:"off=8, siz=8"`
+	Flags         BlockGroupFlags `bin:"off=16, siz=8"`
+	binstruct.End `bin:"off=24"`
+}
 
 type BlockGroupFlags uint64
 

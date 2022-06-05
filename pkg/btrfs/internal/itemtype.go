@@ -7,6 +7,7 @@ import "fmt"
 type ItemType uint8
 
 const (
+	BLOCK_GROUP_ITEM_KEY     = ItemType(192)
 	CHUNK_ITEM_KEY           = ItemType(228)
 	DEV_ITEM_KEY             = ItemType(216)
 	DEV_EXTENT_KEY           = ItemType(204)
@@ -32,6 +33,7 @@ const (
 
 func (t ItemType) String() string {
 	names := map[ItemType]string{
+		BLOCK_GROUP_ITEM_KEY:     "BLOCK_GROUP_ITEM",
 		CHUNK_ITEM_KEY:           "CHUNK_ITEM",
 		DEV_ITEM_KEY:             "DEV_ITEM",
 		DEV_EXTENT_KEY:           "DEV_EXTENT",

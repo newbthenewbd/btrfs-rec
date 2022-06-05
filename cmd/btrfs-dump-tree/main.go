@@ -227,8 +227,9 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.EXTENT_DATA_KEY:
 			//	// TODO
-			//case btrfsitem.BLOCK_GROUP_ITEM_KEY:
-			//	// TODO
+			case btrfsitem.BlockGroup:
+				fmt.Printf("\t\tblock group used %d chunk_objectid %d flags %v\n",
+					body.Used, body.ChunkObjectID, body.Flags)
 			//case btrfsitem.FREE_SPACE_INFO_KEY:
 			//	// TODO
 			//case btrfsitem.FREE_SPACE_EXTENT_KEY:
