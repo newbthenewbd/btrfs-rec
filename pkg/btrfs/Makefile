@@ -3,7 +3,7 @@
 .DELETE_ON_ERROR:
 
 btrfsitem/items.txt: btrfsitem $(wildcard btrfsitem/item_*.go) $(MAKEFILE_LIST)
-	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(sort $(filter btrfsitem/item_%.go,$^)) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done >$@
+	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done | LC_COLLATE=C sort >$@
 files += btrfsitem/items.txt
 
 btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
