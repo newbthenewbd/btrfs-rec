@@ -3,7 +3,13 @@
 .DELETE_ON_ERROR:
 
 btrfsitem/items.txt: btrfsitem $(wildcard btrfsitem/item_*.go) $(MAKEFILE_LIST)
-	sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do for key in $$keys; do echo "$$key" "$$typ"; done; done | LC_COLLATE=C sort >$@
+	{ \
+	  sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do \
+	    for key in $$keys; do \
+	      echo "$$key" "$$typ"; \
+	    done; \
+	  done; \
+	} | LC_COLLATE=C sort >$@
 files += btrfsitem/items.txt
 
 btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
@@ -20,9 +26,12 @@ btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  sed -E 's,(.*)=(.*) (.*),\1_KEY=internal.\1_KEY,' $<; \
 	  echo ')'; \
 	  echo 'var keytype2gotype = map[Type]reflect.Type{'; \
-	  sed -E 's|(.*)=(.*) (.*)|\1_KEY: reflect.TypeOf(\3{}),|' $<; \
+	  sed -En 's|(.*)=([^:]*) (.*)|\1_KEY: reflect.TypeOf(\3{}),|p' $<; \
 	  echo '}'; \
-	  sed -E 's,(.*)=(.*) (.*),\3,' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
+	  echo 'var untypedObjID2gotype = map[internal.ObjID]reflect.Type{'; \
+	  sed -En 's|UNTYPED=0:(.*) (.*)|internal.\1: reflect.TypeOf(\2{}),|p' $<; \
+	  echo '}'; \
+	  sed -En 's,(.*)=(.*) (.+),\3,p' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
 	} | gofmt >$@
 files += btrfsitem/items_gen.go
 
@@ -34,7 +43,7 @@ internal/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'import "fmt"'; \
 	  echo 'type ItemType uint8'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=(.*) (.*),\1_KEY=ItemType(\2),' $<; \
+	  sed -E 's,(.*)=([^:]*)(:.*)? (.*),\1_KEY=ItemType(\2),' $< | uniq; \
 	  echo ')'; \
 	  echo 'func (t ItemType) String() string {'; \
 	  echo '  names := map[ItemType]string{'; \

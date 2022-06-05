@@ -143,7 +143,7 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 			dataBuf := nodeBuf[dataOff : dataOff+dataSize]
 			firstRead = min(firstRead, dataOff)
 			lastRead = max(lastRead, dataOff+dataSize)
-			item.Body = btrfsitem.UnmarshalItem(item.Head.Key.ItemType, dataBuf)
+			item.Body = btrfsitem.UnmarshalItem(item.Head.Key, dataBuf)
 
 			node.BodyLeaf = append(node.BodyLeaf, item)
 		}

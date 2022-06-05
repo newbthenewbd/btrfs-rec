@@ -60,10 +60,12 @@ var keytype2gotype = map[Type]reflect.Type{
 	SHARED_BLOCK_REF_KEY:     reflect.TypeOf(Empty{}),
 	SHARED_DATA_REF_KEY:      reflect.TypeOf(SharedDataRef{}),
 	TREE_BLOCK_REF_KEY:       reflect.TypeOf(Empty{}),
-	UNTYPED_KEY:              reflect.TypeOf(Empty{}),
 	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
 	UUID_SUBVOL_KEY:          reflect.TypeOf(UUIDMap{}),
 	XATTR_ITEM_KEY:           reflect.TypeOf(DirList{}),
+}
+var untypedObjID2gotype = map[internal.ObjID]reflect.Type{
+	internal.FREE_SPACE_OBJECTID: reflect.TypeOf(FreeSpaceHeader{}),
 }
 
 func (BlockGroup) isItem()      {}
@@ -77,6 +79,7 @@ func (Extent) isItem()          {}
 func (ExtentDataRef) isItem()   {}
 func (FileExtent) isItem()      {}
 func (FreeSpaceBitmap) isItem() {}
+func (FreeSpaceHeader) isItem() {}
 func (FreeSpaceInfo) isItem()   {}
 func (Inode) isItem()           {}
 func (InodeRefList) isItem()    {}
