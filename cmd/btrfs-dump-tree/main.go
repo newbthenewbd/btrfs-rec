@@ -118,8 +118,6 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				item.Head.DataOffset,
 				item.Head.DataSize)
 			switch body := item.Body.(type) {
-			//case btrfsitem.UNTYPED_KEY:
-			//	// TODO
 			case btrfsitem.Inode:
 				fmt.Printf(""+
 					"\t\tgeneration %d transid %d size %d nbytes %d\n"+
@@ -204,10 +202,33 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	fmt.Printf("\t\tfree space extent\n")
 			//case btrfsitem.FREE_SPACE_BITMAP_KEY:
 			//	fmt.Printf("\t\tfree space bitmap\n")
-			//case btrfsitem.CHUNK_ITEM_KEY:
-			//	// TODO(!)
-			//case btrfsitem.DEV_ITEM_KEY:
-			//	// TODO
+			case btrfsitem.Chunk:
+				fmt.Printf("\t\tlength %d owner %d stripe_len %d type %v\n",
+					body.Size, body.Owner, body.StripeLen, body.Type)
+				fmt.Printf("\t\tio_align %d io_width %d sector_size %d\n",
+					body.IOOptimalAlign, body.IOOptimalWidth, body.IOMinSize)
+				fmt.Printf("\t\tnum_stripes %d sub_stripes %d\n",
+					body.NumStripes, body.SubStripes)
+				for i, stripe := range body.Stripes {
+					fmt.Printf("\t\t\tstripe %d devid %d offset %d\n",
+						i, stripe.DeviceID, stripe.Offset)
+					fmt.Printf("\t\t\tdev_uuid %s\n",
+						stripe.DeviceUUID)
+				}
+			case btrfsitem.Dev:
+				fmt.Printf(""+
+					"\t\tdevid %d total_bytes %d bytes_used %d\n"+
+					"\t\tio_align %d io_width %d sector_size %d type %d\n"+
+					"\t\tgeneration %d start_offset %d dev_group %d\n"+
+					"\t\tseek_speed %d bandwidth %d\n"+
+					"\t\tuuid %s\n"+
+					"\t\tfsid %s\n",
+					body.DeviceID, body.NumBytes, body.NumBytesUsed,
+					body.IOOptimalAlign, body.IOOptimalWidth, body.IOMinSize, body.Type,
+					body.Generation, body.StartOffset, body.DevGroup,
+					body.SeekSpeed, body.Bandwidth,
+					body.DevUUID,
+					body.FSUUID)
 			//case btrfsitem.DEV_EXTENT_KEY:
 			//	// TODO
 			//case btrfsitem.QGROUP_STATUS_KEY:
