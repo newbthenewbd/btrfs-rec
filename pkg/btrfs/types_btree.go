@@ -20,6 +20,8 @@ type Node struct {
 	// the node's type, as specified in the header)
 	BodyInternal []KeyPointer // for internal nodes
 	BodyLeaf     []Item       // for leave nodes
+
+	Padding []byte
 }
 
 type NodeHeader struct {
@@ -118,9 +120,11 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 			}
 			node.BodyInternal = append(node.BodyInternal, item)
 		}
-		return n, nil
+		node.Padding = nodeBuf[n:]
+		return len(nodeBuf), nil
 	} else {
 		// leaf node
+		firstRead := len(nodeBuf)
 		lastRead := 0
 		for i := uint32(0); i < node.Head.NumItems; i++ {
 			var item Item
@@ -137,11 +141,13 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 					dataOff+dataSize, len(nodeBuf))
 			}
 			dataBuf := nodeBuf[dataOff : dataOff+dataSize]
+			firstRead = min(firstRead, dataOff)
 			lastRead = max(lastRead, dataOff+dataSize)
 			item.Body = btrfsitem.UnmarshalItem(item.Head.Key.ItemType, dataBuf)
 
 			node.BodyLeaf = append(node.BodyLeaf, item)
 		}
+		node.Padding = nodeBuf[n:firstRead]
 		return max(n, lastRead), nil
 	}
 }
@@ -166,6 +172,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 				return dat, err
 			}
 		}
+		dat = append(dat, node.Padding...)
 		if copy(ret, dat) < len(dat) {
 			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
 				len(dat), node.Size)
@@ -177,6 +184,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 				len(dat), node.Size)
 		}
 		n := len(dat)
+		minData := len(ret)
 		for _, item := range node.BodyLeaf {
 			dat, err = binstruct.Marshal(item.Head)
 			if err != nil {
@@ -193,11 +201,16 @@ func (node Node) MarshalBinary() ([]byte, error) {
 				return ret, err
 			}
 			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
+			minData = min(minData, dataOff)
 			if copy(ret[dataOff:], dat) < len(dat) {
 				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
 					dataOff+len(dat), node.Size)
 			}
 		}
+		if copy(ret[n:minData], node.Padding) < len(node.Padding) {
+			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: not enough room left for padding")
+		}
+
 	}
 	return ret, nil
 }
