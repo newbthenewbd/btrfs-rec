@@ -211,18 +211,10 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
 				fmt.Printf("\t\ttree block skinny level %d\n", item.Head.Key.Offset)
 				printExtentInlineRefs(body.Refs)
-			//case btrfsitem.TREE_BLOCK_REF_KEY:
-			//	fmt.Printf("\t\ttree block backref\n")
-			//case btrfsitem.SHARED_BLOCK_REF_KEY:
-			//	fmt.Printf("\t\tshared block backref\n")
 			//case btrfsitem.EXTENT_DATA_REF_KEY:
 			//	// TODO
 			//case btrfsitem.SHARED_DATA_REF_KEY:
 			//	// TODO
-			//case btrfsitem.EXTENT_REF_V0_KEY:
-			//	fmt.Printf("\t\textent ref v0 (deprecated)\n")
-			//case btrfsitem.CSUM_ITEM_KEY:
-			//	fmt.Printf("\t\tcsum item\n")
 			//case btrfsitem.EXTENT_CSUM_KEY:
 			//	// TODO
 			//case btrfsitem.EXTENT_DATA_KEY:
@@ -230,12 +222,11 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			case btrfsitem.BlockGroup:
 				fmt.Printf("\t\tblock group used %d chunk_objectid %d flags %v\n",
 					body.Used, body.ChunkObjectID, body.Flags)
-			//case btrfsitem.FREE_SPACE_INFO_KEY:
-			//	// TODO
-			//case btrfsitem.FREE_SPACE_EXTENT_KEY:
-			//	fmt.Printf("\t\tfree space extent\n")
-			//case btrfsitem.FREE_SPACE_BITMAP_KEY:
-			//	fmt.Printf("\t\tfree space bitmap\n")
+			case btrfsitem.FreeSpaceInfo:
+				fmt.Printf("\t\tfree space info extent count %d flags %d\n",
+					body.ExtentCount, body.Flags)
+			case btrfsitem.FreeSpaceBitmap:
+				fmt.Printf("\t\tfree space bitmap\n")
 			case btrfsitem.Chunk:
 				fmt.Printf("\t\tlength %d owner %d stripe_len %d type %v\n",
 					body.Size, body.Owner, body.StripeLen, body.Type)
@@ -272,7 +263,7 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					body.ChunkTreeUUID)
 			//case btrfsitem.QGROUP_STATUS_KEY:
 			//	// TODO
-			//case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY:
+			//case btrfsitem.QGROUP_INFO_KEY:
 			//	// TODO
 			//case btrfsitem.QGROUP_LIMIT_KEY:
 			//	// TODO
@@ -302,8 +293,20 @@ func printTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//	// TODO
 			case btrfsitem.Empty:
 				switch item.Head.Key.ItemType {
-				case btrfsitem.ORPHAN_ITEM_KEY:
+				case btrfsitem.ORPHAN_ITEM_KEY: // 48
 					fmt.Printf("\t\torphan item\n")
+				case btrfsitem.TREE_BLOCK_REF_KEY: // 176
+					fmt.Printf("\t\ttree block backref\n")
+				case btrfsitem.SHARED_BLOCK_REF_KEY: // 182
+					fmt.Printf("\t\tshared block backref\n")
+				case btrfsitem.FREE_SPACE_EXTENT_KEY: // 199
+					fmt.Printf("\t\tfree space extent\n")
+				case btrfsitem.QGROUP_RELATION_KEY: // 246
+					// do nothing
+				//case btrfsitem.EXTENT_REF_V0_KEY:
+				//	fmt.Printf("\t\textent ref v0 (deprecated)\n")
+				//case btrfsitem.CSUM_ITEM_KEY:
+				//	fmt.Printf("\t\tcsum item\n")
 				default:
 					fmt.Printf("\t\t(error) unhandled empty item type: %v\n", item.Head.Key.ItemType)
 				}

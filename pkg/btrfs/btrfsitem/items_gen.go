@@ -17,6 +17,9 @@ const (
 	DIR_ITEM_KEY             = internal.DIR_ITEM_KEY
 	EXTENT_DATA_REF_KEY      = internal.EXTENT_DATA_REF_KEY
 	EXTENT_ITEM_KEY          = internal.EXTENT_ITEM_KEY
+	FREE_SPACE_BITMAP_KEY    = internal.FREE_SPACE_BITMAP_KEY
+	FREE_SPACE_EXTENT_KEY    = internal.FREE_SPACE_EXTENT_KEY
+	FREE_SPACE_INFO_KEY      = internal.FREE_SPACE_INFO_KEY
 	INODE_ITEM_KEY           = internal.INODE_ITEM_KEY
 	INODE_REF_KEY            = internal.INODE_REF_KEY
 	METADATA_ITEM_KEY        = internal.METADATA_ITEM_KEY
@@ -42,10 +45,13 @@ var keytype2gotype = map[Type]reflect.Type{
 	DIR_ITEM_KEY:             reflect.TypeOf(DirList{}),
 	EXTENT_DATA_REF_KEY:      reflect.TypeOf(ExtentDataRef{}),
 	EXTENT_ITEM_KEY:          reflect.TypeOf(Extent{}),
+	FREE_SPACE_BITMAP_KEY:    reflect.TypeOf(FreeSpaceBitmap{}),
+	FREE_SPACE_EXTENT_KEY:    reflect.TypeOf(Empty{}),
+	FREE_SPACE_INFO_KEY:      reflect.TypeOf(FreeSpaceInfo{}),
 	INODE_ITEM_KEY:           reflect.TypeOf(Inode{}),
 	INODE_REF_KEY:            reflect.TypeOf(InodeRefList{}),
 	METADATA_ITEM_KEY:        reflect.TypeOf(Metadata{}),
-	ORPHAN_ITEM_KEY:          reflect.TypeOf(Orphan{}),
+	ORPHAN_ITEM_KEY:          reflect.TypeOf(Empty{}),
 	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
 	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
 	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
@@ -58,19 +64,20 @@ var keytype2gotype = map[Type]reflect.Type{
 	XATTR_ITEM_KEY:           reflect.TypeOf(DirList{}),
 }
 
-func (BlockGroup) isItem()    {}
-func (Chunk) isItem()         {}
-func (Dev) isItem()           {}
-func (DevExtent) isItem()     {}
-func (DevStats) isItem()      {}
-func (DirList) isItem()       {}
-func (Empty) isItem()         {}
-func (Extent) isItem()        {}
-func (ExtentDataRef) isItem() {}
-func (Inode) isItem()         {}
-func (InodeRefList) isItem()  {}
-func (Metadata) isItem()      {}
-func (Orphan) isItem()        {}
-func (Root) isItem()          {}
-func (SharedDataRef) isItem() {}
-func (UUIDMap) isItem()       {}
+func (BlockGroup) isItem()      {}
+func (Chunk) isItem()           {}
+func (Dev) isItem()             {}
+func (DevExtent) isItem()       {}
+func (DevStats) isItem()        {}
+func (DirList) isItem()         {}
+func (Empty) isItem()           {}
+func (Extent) isItem()          {}
+func (ExtentDataRef) isItem()   {}
+func (FreeSpaceBitmap) isItem() {}
+func (FreeSpaceInfo) isItem()   {}
+func (Inode) isItem()           {}
+func (InodeRefList) isItem()    {}
+func (Metadata) isItem()        {}
+func (Root) isItem()            {}
+func (SharedDataRef) isItem()   {}
+func (UUIDMap) isItem()         {}

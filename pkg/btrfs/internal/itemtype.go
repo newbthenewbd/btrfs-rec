@@ -15,6 +15,9 @@ const (
 	DIR_ITEM_KEY             = ItemType(84)
 	EXTENT_DATA_REF_KEY      = ItemType(178)
 	EXTENT_ITEM_KEY          = ItemType(168)
+	FREE_SPACE_BITMAP_KEY    = ItemType(200)
+	FREE_SPACE_EXTENT_KEY    = ItemType(199)
+	FREE_SPACE_INFO_KEY      = ItemType(198)
 	INODE_ITEM_KEY           = ItemType(1)
 	INODE_REF_KEY            = ItemType(12)
 	METADATA_ITEM_KEY        = ItemType(169)
@@ -41,6 +44,9 @@ func (t ItemType) String() string {
 		DIR_ITEM_KEY:             "DIR_ITEM",
 		EXTENT_DATA_REF_KEY:      "EXTENT_DATA_REF",
 		EXTENT_ITEM_KEY:          "EXTENT_ITEM",
+		FREE_SPACE_BITMAP_KEY:    "FREE_SPACE_BITMAP",
+		FREE_SPACE_EXTENT_KEY:    "FREE_SPACE_EXTENT",
+		FREE_SPACE_INFO_KEY:      "FREE_SPACE_INFO",
 		INODE_ITEM_KEY:           "INODE_ITEM",
 		INODE_REF_KEY:            "INODE_REF",
 		METADATA_ITEM_KEY:        "METADATA_ITEM",
