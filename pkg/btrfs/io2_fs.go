@@ -153,18 +153,6 @@ func (fs *FS) Init() error {
 	return nil
 }
 
-func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
-	done := 0
-	for done < len(dat) {
-		n, err := fs.maybeShortReadAt(dat[done:], laddr+LogicalAddr(done))
-		done += n
-		if err != nil {
-			return done, err
-		}
-	}
-	return done, nil
-}
-
 type QualifiedPhysicalAddr struct {
 	Dev  UUID
 	Addr PhysicalAddr
@@ -188,6 +176,18 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 	}
 
 	return paddrs, maxlen
+}
+
+func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
+	done := 0
+	for done < len(dat) {
+		n, err := fs.maybeShortReadAt(dat[done:], laddr+LogicalAddr(done))
+		done += n
+		if err != nil {
+			return done, err
+		}
+	}
+	return done, nil
 }
 
 func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
@@ -215,6 +215,39 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 			if !bytes.Equal(dat, buf) {
 				return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%d", laddr, len(dat))
 			}
+		}
+	}
+	return len(dat), nil
+}
+
+func (fs *FS) WriteAt(dat []byte, laddr LogicalAddr) (int, error) {
+	done := 0
+	for done < len(dat) {
+		n, err := fs.maybeShortWriteAt(dat[done:], laddr+LogicalAddr(done))
+		done += n
+		if err != nil {
+			return done, err
+		}
+	}
+	return done, nil
+}
+
+func (fs *FS) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
+	paddrs, maxlen := fs.Resolve(laddr)
+	if len(paddrs) == 0 {
+		return 0, fmt.Errorf("could not map logical address %v", laddr)
+	}
+	if uint64(len(dat)) > maxlen {
+		dat = dat[:maxlen]
+	}
+
+	for paddr := range paddrs {
+		dev, ok := fs.uuid2dev[paddr.Dev]
+		if !ok {
+			return 0, fmt.Errorf("device=%s does not exist", paddr.Dev)
+		}
+		if _, err := dev.WriteAt(dat, paddr.Addr); err != nil {
+			return 0, fmt.Errorf("write device=%s paddr=%v: %w", paddr.Dev, paddr.Addr, err)
 		}
 	}
 	return len(dat), nil

@@ -231,6 +231,9 @@ func Main(imgfilename string) (err error) {
 	if err != nil {
 		fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
 	}
+	if err := reconstructedNode.Write(); err != nil {
+		fmt.Printf("Pass 1: ... write new node: error:: %v\n", err)
+	}
 
 	fmt.Printf("\nPass 2: ?????????????????????????\n") ////////////////////////////////////////
 	/*

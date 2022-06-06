@@ -33,6 +33,10 @@ func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
 	return dev.File.ReadAt(dat, int64(paddr))
 }
 
+func (dev *Device) WriteAt(dat []byte, paddr PhysicalAddr) (int, error) {
+	return dev.File.WriteAt(dat, int64(paddr))
+}
+
 func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
 	if dev.cacheSuperblocks != nil {
 		return dev.cacheSuperblocks, nil
