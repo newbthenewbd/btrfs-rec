@@ -62,9 +62,9 @@ func (o Extent) MarshalBinary() ([]byte, error) {
 }
 
 type ExtentHeader struct {
-	Refs          int64       `bin:"off=0, siz=8"`
-	Generation    int64       `bin:"off=8, siz=8"`
-	Flags         ExtentFlags `bin:"off=16, siz=8"`
+	Refs          int64               `bin:"off=0, siz=8"`
+	Generation    internal.Generation `bin:"off=8, siz=8"`
+	Flags         ExtentFlags         `bin:"off=16, siz=8"`
 	binstruct.End `bin:"off=24"`
 }
 

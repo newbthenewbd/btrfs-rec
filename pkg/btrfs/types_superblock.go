@@ -46,7 +46,7 @@ type Superblock struct {
 	DevItem            btrfsitem.Dev `bin:"off=0xc9,  siz=0x62"`  // DEV_ITEM data for this device
 	Label              [0x100]byte   `bin:"off=0x12b, siz=0x100"` // label (may not contain '/' or '\\')
 	CacheGeneration    Generation    `bin:"off=0x22b, siz=0x8"`
-	UUIDTreeGeneration uint64        `bin:"off=0x233, siz=0x8"` // uuid_tree_generation
+	UUIDTreeGeneration Generation    `bin:"off=0x233, siz=0x8"`
 
 	// FeatureIncompatMetadataUUID
 	MetadataUUID UUID `bin:"off=0x23b, siz=0x10"`

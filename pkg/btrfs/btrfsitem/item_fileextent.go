@@ -4,11 +4,12 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
 type FileExtent struct { // EXTENT_DATA=108
-	Generation int64 `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
-	RAMBytes   int64 `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
+	Generation internal.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
+	RAMBytes   int64               `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
 
 	// 32 bits describing the data encoding
 	Compression   CompressionType `bin:"off=0x10, siz=0x1"`

@@ -8,7 +8,7 @@ import (
 
 type Root struct { // ROOT_ITEM=132
 	Inode         Inode                `bin:"off=0x0, siz=0xa0"`
-	Generation    int64                `bin:"off=0xa0, siz=0x8"`
+	Generation    internal.Generation  `bin:"off=0xa0, siz=0x8"`
 	RootDirID     int64                `bin:"off=0xa8, siz=0x8"`
 	ByteNr        internal.LogicalAddr `bin:"off=0xb0, siz=0x8"`
 	ByteLimit     int64                `bin:"off=0xb8, siz=0x8"`
@@ -19,7 +19,7 @@ type Root struct { // ROOT_ITEM=132
 	DropProgress  internal.Key         `bin:"off=0xdc, siz=0x11"`
 	DropLevel     uint8                `bin:"off=0xed, siz=0x1"`
 	Level         uint8                `bin:"off=0xee, siz=0x1"`
-	GenerationV2  int64                `bin:"off=0xef, siz=0x8"`
+	GenerationV2  internal.Generation  `bin:"off=0xef, siz=0x8"`
 	UUID          internal.UUID        `bin:"off=0xF7, siz=0x10"`
 	ParentUUID    internal.UUID        `bin:"off=0x107, siz=0x10"`
 	ReceivedUUID  internal.UUID        `bin:"off=0x117, siz=0x10"`
