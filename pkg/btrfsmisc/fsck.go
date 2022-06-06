@@ -45,14 +45,13 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 				Size: sb.NodeSize,
 			},
 		}
-		var nodeHeader btrfs.NodeHeader
-		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
+		if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
 			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
 		}
 
 		// sanity checking
 
-		if nodeHeader.MetadataUUID != sb.EffectiveMetadataUUID() {
+		if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
 			//fmt.Printf("sector@%d does not look like a node\n", pos)
 			continue
 		}

@@ -211,7 +211,7 @@ func Main(imgfilename string) (err error) {
 		stripeSize := stripes[0].Size
 		for _, stripe := range stripes {
 			if stripe.Size != stripeSize {
-				panic("mismatch")
+				panic("TODO: mismatch")
 			}
 		}
 		itemSize := uint32(binstruct.StaticSize(btrfsitem.ChunkHeader{}) + (len(stripes) * binstruct.StaticSize(btrfsitem.ChunkStripe{})))
@@ -240,7 +240,7 @@ func Main(imgfilename string) (err error) {
 					Size:           stripeSize,
 					Owner:          btrfs.EXTENT_TREE_OBJECTID,
 					StripeLen:      65536, // ???
-					Type:           TODO,
+					Type:           0,     // TODO
 					IOOptimalAlign: superblock.Data.DevItem.IOOptimalAlign,
 					IOOptimalWidth: superblock.Data.DevItem.IOOptimalWidth,
 					IOMinSize:      superblock.Data.DevItem.IOMinSize,
