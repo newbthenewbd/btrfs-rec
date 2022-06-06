@@ -23,7 +23,7 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 	}
 
 	nodeBuf := make([]byte, sb.NodeSize)
-	for pos := btrfs.PhysicalAddr(0); pos+btrfs.PhysicalAddr(sb.SectorSize) < devSize; pos += btrfs.PhysicalAddr(sb.SectorSize) {
+	for pos := btrfs.PhysicalAddr(0); pos+btrfs.PhysicalAddr(sb.NodeSize) < devSize; pos += btrfs.PhysicalAddr(sb.SectorSize) {
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
 			//fmt.Printf("sector@%d is a superblock\n", pos)
 			continue

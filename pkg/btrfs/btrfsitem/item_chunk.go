@@ -23,9 +23,9 @@ type Chunk struct { // CHUNK_ITEM=228
 }
 
 type ChunkStripe struct {
-	DeviceID      internal.ObjID `bin:"off=0x0,  siz=0x8"`
-	Offset        uint64         `bin:"off=0x8,  siz=0x8"`
-	DeviceUUID    internal.UUID  `bin:"off=0x10, siz=0x10"`
+	DeviceID      internal.ObjID        `bin:"off=0x0,  siz=0x8"`
+	Offset        internal.PhysicalAddr `bin:"off=0x8,  siz=0x8"`
+	DeviceUUID    internal.UUID         `bin:"off=0x10, siz=0x10"`
 	binstruct.End `bin:"off=0x20"`
 }
 

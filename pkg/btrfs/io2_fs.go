@@ -181,7 +181,7 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 			for _, stripe := range chunk.Chunk.Stripes {
 				paddrs[QualifiedPhysicalAddr{
 					Dev:  stripe.DeviceUUID,
-					Addr: PhysicalAddr(stripe.Offset + offsetWithinChunk),
+					Addr: stripe.Offset + PhysicalAddr(offsetWithinChunk),
 				}] = struct{}{}
 			}
 		}

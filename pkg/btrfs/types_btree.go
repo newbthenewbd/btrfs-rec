@@ -2,7 +2,9 @@ package btrfs
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	iofs "io/fs"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
@@ -297,6 +299,10 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 }
 
 type WalkTreeHandler struct {
+	// Callbacks for entire nodes
+	PreNode  func(LogicalAddr) error
+	MidNode  func(*util.Ref[LogicalAddr, Node]) error
+	PostNode func(*util.Ref[LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
 	PreKeyPointer  func(KeyPointer) error
 	PostKeyPointer func(KeyPointer) error
@@ -310,18 +316,40 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 	if nodeAddr == 0 {
 		return nil
 	}
+	if cbs.PreNode != nil {
+		if err := cbs.PreNode(nodeAddr); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return nil
+			}
+			return err
+		}
+	}
 	node, err := fs.ReadNode(nodeAddr)
 	if err != nil {
 		if cbs.NodeError != nil {
 			err = cbs.NodeError(err)
 		}
 		if err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return nil
+			}
 			return fmt.Errorf("btrfs.FS.WalkTree: %w", err)
+		}
+	}
+	if cbs.MidNode != nil {
+		if err := cbs.MidNode(node); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return nil
+			}
+			return err
 		}
 	}
 	for _, item := range node.Data.BodyInternal {
 		if cbs.PreKeyPointer != nil {
 			if err := cbs.PreKeyPointer(item); err != nil {
+				if errors.Is(err, iofs.SkipDir) {
+					continue
+				}
 				return err
 			}
 		}
@@ -330,6 +358,9 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 		}
 		if cbs.PostKeyPointer != nil {
 			if err := cbs.PostKeyPointer(item); err != nil {
+				if errors.Is(err, iofs.SkipDir) {
+					continue
+				}
 				return err
 			}
 		}
@@ -337,8 +368,19 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 	for _, item := range node.Data.BodyLeaf {
 		if cbs.Item != nil {
 			if err := cbs.Item(item.Head.Key, item.Body); err != nil {
+				if errors.Is(err, iofs.SkipDir) {
+					continue
+				}
 				return fmt.Errorf("btrfs.FS.WalkTree: callback: %w", err)
 			}
+		}
+	}
+	if cbs.PostNode != nil {
+		if err := cbs.PostNode(node); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return nil
+			}
+			return err
 		}
 	}
 	return nil
