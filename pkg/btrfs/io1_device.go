@@ -10,6 +10,9 @@ import (
 
 type Device struct {
 	*os.File
+
+	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
+	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
 }
 
 func (dev Device) Size() (PhysicalAddr, error) {
@@ -30,7 +33,10 @@ func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
 	return dev.File.ReadAt(dat, int64(paddr))
 }
 
-func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
+	if dev.cacheSuperblocks != nil {
+		return dev.cacheSuperblocks, nil
+	}
 	superblockSize := PhysicalAddr(binstruct.StaticSize(Superblock{}))
 
 	sz, err := dev.Size()
@@ -38,10 +44,10 @@ func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
 		return nil, err
 	}
 
-	var ret []util.Ref[PhysicalAddr, Superblock]
+	var ret []*util.Ref[PhysicalAddr, Superblock]
 	for i, addr := range SuperblockAddrs {
 		if addr+superblockSize <= sz {
-			superblock := util.Ref[PhysicalAddr, Superblock]{
+			superblock := &util.Ref[PhysicalAddr, Superblock]{
 				File: dev,
 				Addr: addr,
 			}
@@ -54,23 +60,30 @@ func (dev *Device) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
 	if len(ret) == 0 {
 		return nil, fmt.Errorf("no superblocks")
 	}
+	dev.cacheSuperblocks = ret
 	return ret, nil
 }
 
-func (dev *Device) Superblock() (ret util.Ref[PhysicalAddr, Superblock], err error) {
+func (dev *Device) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
+	if dev.cacheSuperblock != nil {
+		return dev.cacheSuperblock, nil
+	}
 	sbs, err := dev.Superblocks()
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
+
 	for i, sb := range sbs {
 		if err := sb.Data.ValidateChecksum(); err != nil {
-			return ret, fmt.Errorf("superblock %d: %w", i, err)
+			return nil, fmt.Errorf("superblock %d: %w", i, err)
 		}
 		if i > 0 {
 			if !sb.Data.Equal(sbs[0].Data) {
-				return ret, fmt.Errorf("superblock %d and superblock %d disagree", 0, i)
+				return nil, fmt.Errorf("superblock %d and superblock %d disagree", 0, i)
 			}
 		}
 	}
+
+	dev.cacheSuperblock = sbs[0]
 	return sbs[0], nil
 }

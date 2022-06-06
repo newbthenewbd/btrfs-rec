@@ -8,6 +8,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 func main() {
@@ -60,7 +61,16 @@ func Main(imgfilename string) (err error) {
 	}
 	spew.Dump(syschunks)
 
-	if err := btrfsmisc.ScanForNodes(fs.Devices[0], superblocks[0].Data); err != nil {
+	if err := btrfsmisc.ScanForNodes(fs.Devices[0], superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",
+				nodeRef.Addr,
+				nodeRef.Addr, nodeRef.Data.Head.Addr,
+				nodeRef.Data.Head.Generation, nodeRef.Data.Head.Owner, nodeRef.Data.Head.Level)
+		}
+	}); err != nil {
 		return err
 	}
 

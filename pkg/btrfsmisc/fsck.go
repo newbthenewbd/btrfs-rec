@@ -11,7 +11,7 @@ import (
 // ScanForNodes mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device(), except it doesn't do
 // anything but log when it finds a node.
-func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock) error {
+func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfs.PhysicalAddr, btrfs.Node], error)) error {
 	devSize, err := dev.Size()
 	if err != nil {
 		return err
@@ -25,27 +25,50 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock) error {
 	nodeBuf := make([]byte, sb.NodeSize)
 	for pos := btrfs.PhysicalAddr(0); pos+btrfs.PhysicalAddr(sb.SectorSize) < devSize; pos += btrfs.PhysicalAddr(sb.SectorSize) {
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
-			fmt.Printf("sector@%d is a superblock\n", pos)
+			//fmt.Printf("sector@%d is a superblock\n", pos)
 			continue
 		}
+
+		// read
+
 		if _, err := dev.ReadAt(nodeBuf, pos); err != nil {
-			return fmt.Errorf("sector@%d: %w", pos, err)
+			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
+			continue
 		}
+
+		// does it look like a node?
+
 		var nodeHeader btrfs.NodeHeader
 		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
-			return fmt.Errorf("sector@%d: %w", pos, err)
+			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
 		}
 		if nodeHeader.MetadataUUID != sb.EffectiveMetadataUUID() {
 			//fmt.Printf("sector@%d does not look like a node\n", pos)
 			continue
 		}
-		if nodeHeader.Checksum != btrfs.CRC32c(nodeBuf[0x20:]) {
-			fmt.Printf("sector@%d looks like a node but is corrupt (checksum doesn't match)\n", pos)
+
+		// ok, it looks like a node; go ahead and read it as a node
+
+		nodeRef := &util.Ref[btrfs.PhysicalAddr, btrfs.Node]{
+			File: dev,
+			Addr: pos,
+			Data: btrfs.Node{
+				Size: sb.NodeSize,
+			},
+		}
+		if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
+			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
 			continue
 		}
 
-		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",
-			pos, pos, nodeHeader.Addr, nodeHeader.Generation, nodeHeader.Owner, nodeHeader.Level)
+		// finally, process the node
+
+		if nodeRef.Data.Head.Checksum != btrfs.CRC32c(nodeBuf[0x20:]) {
+			fn(nodeRef, fmt.Errorf("sector@%d looks like a node but is corrupt (checksum doesn't match)", pos))
+			continue
+		}
+
+		fn(nodeRef, nil)
 
 		pos += btrfs.PhysicalAddr(sb.NodeSize) - btrfs.PhysicalAddr(sb.SectorSize)
 	}

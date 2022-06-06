@@ -249,49 +249,47 @@ func (node *Node) LeafFreeSpace() uint32 {
 	return freeSpace
 }
 
-func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
-	var ret util.Ref[LogicalAddr, Node]
-
+func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 	sb, err := fs.Superblock()
 	if err != nil {
-		return ret, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
 
 	// read
 
 	nodeBuf := make([]byte, sb.Data.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
-		return ret, err
+		return nil, err
 	}
 
 	var node Node
 	node.Size = sb.Data.NodeSize
 
 	if _, err := node.UnmarshalBinary(nodeBuf); err != nil {
-		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
 	}
 
 	// sanity checking
 
 	if node.Head.MetadataUUID != sb.Data.EffectiveMetadataUUID() {
-		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: does not look like a node", addr)
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: does not look like a node", addr)
 	}
 
 	if node.Head.Addr != addr {
-		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: read from laddr=%d but claims to be at laddr=%d",
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: read from laddr=%d but claims to be at laddr=%d",
 			addr, addr, node.Head.Addr)
 	}
 
 	stored := node.Head.Checksum
 	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
 	if calced != stored {
-		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
 			addr, stored, calced)
 	}
 
 	// return
 
-	return util.Ref[LogicalAddr, Node]{
+	return &util.Ref[LogicalAddr, Node]{
 		File: fs,
 		Addr: addr,
 		Data: node,

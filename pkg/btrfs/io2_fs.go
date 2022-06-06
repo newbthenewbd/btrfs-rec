@@ -16,6 +16,9 @@ type FS struct {
 	initErr  error
 	uuid2dev map[UUID]*Device
 	chunks   []SysChunk
+
+	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
+	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
 }
 
 func (fs *FS) Name() string {
@@ -38,8 +41,11 @@ func (fs *FS) Size() (LogicalAddr, error) {
 	return ret, nil
 }
 
-func (fs *FS) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
-	var ret []util.Ref[PhysicalAddr, Superblock]
+func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
+	if fs.cacheSuperblocks != nil {
+		return fs.cacheSuperblocks, nil
+	}
+	var ret []*util.Ref[PhysicalAddr, Superblock]
 	for _, dev := range fs.Devices {
 		sbs, err := dev.Superblocks()
 		if err != nil {
@@ -47,13 +53,17 @@ func (fs *FS) Superblocks() ([]util.Ref[PhysicalAddr, Superblock], error) {
 		}
 		ret = append(ret, sbs...)
 	}
+	fs.cacheSuperblocks = ret
 	return ret, nil
 }
 
-func (fs *FS) Superblock() (ret util.Ref[PhysicalAddr, Superblock], err error) {
+func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
+	if fs.cacheSuperblock != nil {
+		return fs.cacheSuperblock, nil
+	}
 	sbs, err := fs.Superblocks()
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
 
 	fname := ""
@@ -67,19 +77,20 @@ func (fs *FS) Superblock() (ret util.Ref[PhysicalAddr, Superblock], err error) {
 		}
 
 		if err := sb.Data.ValidateChecksum(); err != nil {
-			return ret, fmt.Errorf("file %q superblock %d: %w", sb.File.Name(), sbi, err)
+			return nil, fmt.Errorf("file %q superblock %d: %w", sb.File.Name(), sbi, err)
 		}
 		if i > 0 {
 			// This is probably wrong, but lots of my
 			// multi-device code is probably wrong.
 			if !sb.Data.Equal(sbs[0].Data) {
-				return ret, fmt.Errorf("file %q superblock %d and file %q superblock %d disagree",
+				return nil, fmt.Errorf("file %q superblock %d and file %q superblock %d disagree",
 					sbs[0].File.Name(), 0,
 					sb.File.Name(), sbi)
 			}
 		}
 	}
 
+	fs.cacheSuperblock = sbs[0]
 	return sbs[0], nil
 }
 
