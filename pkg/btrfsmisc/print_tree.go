@@ -159,11 +159,11 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 				fmt.Printf("\t\tfree space bitmap\n")
 			case btrfsitem.Chunk:
 				fmt.Printf("\t\tlength %d owner %d stripe_len %d type %v\n",
-					body.Size, body.Owner, body.StripeLen, body.Type)
+					body.Head.Size, body.Head.Owner, body.Head.StripeLen, body.Head.Type)
 				fmt.Printf("\t\tio_align %d io_width %d sector_size %d\n",
-					body.IOOptimalAlign, body.IOOptimalWidth, body.IOMinSize)
+					body.Head.IOOptimalAlign, body.Head.IOOptimalWidth, body.Head.IOMinSize)
 				fmt.Printf("\t\tnum_stripes %d sub_stripes %d\n",
-					body.NumStripes, body.SubStripes)
+					body.Head.NumStripes, body.Head.SubStripes)
 				for i, stripe := range body.Stripes {
 					fmt.Printf("\t\t\tstripe %d devid %d offset %d\n",
 						i, stripe.DeviceID, stripe.Offset)

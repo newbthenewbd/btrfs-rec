@@ -70,8 +70,14 @@ func Main(imgfilename string) (err error) {
 		fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
 	}
 
+	type reconstructedStripe struct {
+		Size uint64
+		Addr btrfs.QualifiedPhysicalAddr
+	}
+	reconstructedChunks := make(map[btrfs.LogicalAddr][]reconstructedStripe)
 	for _, dev := range fs.Devices {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes\n", dev.Name())
+		superblock, _ := dev.Superblock()
 		foundNodes := make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
 		var lostAndFoundChunks []btrfs.SysChunk
 		if err := btrfsmisc.ScanForNodes(dev, superblock.Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
@@ -150,8 +156,71 @@ func Main(imgfilename string) (err error) {
 				})
 			}
 		}
-		fmt.Printf("Pass 1: ... dev[%q] reconstructed stripes: %#v\n", dev.Name(), stripes)
+		//fmt.Printf("Pass 1: ... dev[%q] reconstructed stripes: %#v\n", dev.Name(), stripes)
+		for _, stripe := range stripes {
+			reconstructedChunks[stripe.LAddr] = append(reconstructedChunks[stripe.LAddr], reconstructedStripe{
+				Size: stripe.Size,
+				Addr: btrfs.QualifiedPhysicalAddr{
+					Dev:  superblock.Data.DevItem.DevUUID,
+					Addr: stripe.PAddr,
+				},
+			})
+		}
 	}
+	// FIXME(lukeshu): OK, so this just assumes that all the
+	// reconstructed stripes fit in one node, and that we can just
+	// store that node at the root node of the chunk tree.  This
+	// isn't true in general, but it's true of my particular
+	// filesystem.
+	/*
+		reconstructedNode := &util.Ref[btrfs.LogicalAddr, btrfs.Node]{
+			File: fs,
+			Addr: superblock.Data.ChunkTree,
+			Data: btrfs.Node{
+				Size: superblock.Data.NodeSize,
+				Head: btrfs.NodeHeader{
+					MetadataUUID: superblock.Data.EffectiveMetadataUUID(),
+					Addr:         superblock.Data.ChunkTree,
+					Flags:        btrfs.NodeWritten,
+					//BackrefRef: ???,
+					//ChunkTreeUUID: ???,
+					Generation: superblock.Data.ChunkRootGeneration,
+					Owner:      btrfs.CHUNK_TREE_OBJECTID,
+					Level:      0,
+				},
+			},
+		}
+		itemOff := superblock.Data.NodeSize - binstruct.StaticSize(btrfs.ItemHeader{})
+		for laddr, stripes := range reconstructedChunks {
+			stripeSize := stripes[0].Size
+			for i, stripe := range stripes {
+				if stripes.Size != stripeSize {
+					panic("mismatch")
+				}
+			}
+			itemSize := binstruct.StaticSize(btrfsitem.ChunkHeader) + (len(stripes) * binstruct.StaticSize(btrfsitem.ChunkStripe))
+			itemOff -= itemSize
+			reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
+				Head: btrfs.ItemHeader{
+					Key:        TODO,
+					DataOffset: itemOff,
+					DataSize:   itemSize,
+				},
+				Body: btrfsitem.Chunk{
+					Head: btrfsitem.ChunkHeader{
+						Size: stripeSize,
+						Owner: 2,
+						StripeLen:
+					Stripes: stripes,
+				},
+			})
+		}
+		reconstructedNode.Data.Head.NumItems = len(reconstructedNode.Data.BodyLeaf)
+		reconstructedNode.Data.Head.Checksum, err = reconstructedNode.Data.CalculateChecksum()
+		if err != nil {
+			fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
+		}
+	*/
 
 	fmt.Printf("\nPass 2: ?????????????????????????\n") ////////////////////////////////////////
 	/*

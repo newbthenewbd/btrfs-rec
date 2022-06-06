@@ -7,8 +7,13 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
+// Maps logical address to physical.
 type Chunk struct { // CHUNK_ITEM=228
-	// Maps logical address to physical.
+	Head    ChunkHeader
+	Stripes []ChunkStripe
+}
+
+type ChunkHeader struct {
 	Size           uint64          `bin:"off=0x0,  siz=0x8"` // size of chunk (bytes)
 	Owner          internal.ObjID  `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (2)
 	StripeLen      uint64          `bin:"off=0x10, siz=0x8"` // stripe length
@@ -19,7 +24,6 @@ type Chunk struct { // CHUNK_ITEM=228
 	NumStripes     uint16          `bin:"off=0x2c, siz=0x2"` // number of stripes
 	SubStripes     uint16          `bin:"off=0x2e, siz=0x2"` // sub stripes
 	binstruct.End  `bin:"off=0x30"`
-	Stripes        []ChunkStripe `bin:"-"`
 }
 
 type ChunkStripe struct {
@@ -30,12 +34,12 @@ type ChunkStripe struct {
 }
 
 func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
-	n, err := binstruct.UnmarshalWithoutInterface(dat, chunk)
+	n, err := binstruct.Unmarshal(dat, &chunk.Head)
 	if err != nil {
 		return n, err
 	}
 	chunk.Stripes = nil
-	for i := 0; i < int(chunk.NumStripes); i++ {
+	for i := 0; i < int(chunk.Head.NumStripes); i++ {
 		var stripe ChunkStripe
 		_n, err := binstruct.Unmarshal(dat[n:], &stripe)
 		n += _n
@@ -48,8 +52,8 @@ func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 }
 
 func (chunk Chunk) MarshalBinary() ([]byte, error) {
-	chunk.NumStripes = uint16(len(chunk.Stripes))
-	ret, err := binstruct.MarshalWithoutInterface(chunk)
+	chunk.Head.NumStripes = uint16(len(chunk.Stripes))
+	ret, err := binstruct.Marshal(chunk.Head)
 	if err != nil {
 		return ret, err
 	}

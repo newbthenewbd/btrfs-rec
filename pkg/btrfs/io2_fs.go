@@ -175,9 +175,9 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 	maxlen = math.MaxUint64
 
 	for _, chunk := range fs.chunks {
-		if chunk.Key.Offset <= uint64(laddr) && uint64(laddr) < chunk.Key.Offset+uint64(chunk.Chunk.Size) {
+		if chunk.Key.Offset <= uint64(laddr) && uint64(laddr) < chunk.Key.Offset+uint64(chunk.Chunk.Head.Size) {
 			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
-			maxlen = util.Min(maxlen, chunk.Chunk.Size-offsetWithinChunk)
+			maxlen = util.Min(maxlen, chunk.Chunk.Head.Size-offsetWithinChunk)
 			for _, stripe := range chunk.Chunk.Stripes {
 				paddrs[QualifiedPhysicalAddr{
 					Dev:  stripe.DeviceUUID,
