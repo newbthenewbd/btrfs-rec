@@ -57,9 +57,14 @@ func Main(imgfilename string) (err error) {
 	fmt.Printf("Pass 1: ... walking chunk tree\n")
 	visitedChunkNodes := make(map[btrfs.LogicalAddr]struct{})
 	if err := fs.WalkTree(superblock.Data.ChunkTree, btrfs.WalkTreeHandler{
-		MidNode: func(node *util.Ref[btrfs.LogicalAddr, btrfs.Node]) error {
-			visitedChunkNodes[node.Addr] = struct{}{}
-			return nil
+		Node: func(node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+			if err != nil {
+				fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
+			}
+			if node != nil {
+				visitedChunkNodes[node.Addr] = struct{}{}
+			}
+			return err
 		},
 	}); err != nil {
 		fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)

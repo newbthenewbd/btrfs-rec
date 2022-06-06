@@ -107,6 +107,9 @@ func (node Node) MaxItems() uint32 {
 }
 
 func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
+	node.BodyInternal = nil
+	node.BodyLeaf = nil
+	node.Padding = nil
 	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
 	if err != nil {
 		return n, err
@@ -264,52 +267,58 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 		return nil, err
 	}
 
-	var node Node
-	node.Size = sb.Data.NodeSize
+	// parse (early)
 
-	if _, err := node.UnmarshalBinary(nodeBuf); err != nil {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
+	nodeRef := &util.Ref[LogicalAddr, Node]{
+		File: fs,
+		Addr: addr,
+		Data: Node{
+			Size: sb.Data.NodeSize,
+		},
+	}
+	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
+		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
 	}
 
 	// sanity checking
 
-	if node.Head.MetadataUUID != sb.Data.EffectiveMetadataUUID() {
+	if nodeRef.Data.Head.MetadataUUID != sb.Data.EffectiveMetadataUUID() {
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: does not look like a node", addr)
 	}
 
-	if node.Head.Addr != addr {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: read from laddr=%d but claims to be at laddr=%d",
-			addr, addr, node.Head.Addr)
+	stored := nodeRef.Data.Head.Checksum
+	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
+	if stored != calced {
+		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
+			addr, stored, calced)
 	}
 
-	stored := node.Head.Checksum
-	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
-	if calced != stored {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
-			addr, stored, calced)
+	if nodeRef.Data.Head.Addr != addr {
+		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: read from laddr=%d but claims to be at laddr=%d",
+			addr, addr, nodeRef.Data.Head.Addr)
+	}
+
+	// parse (main)
+
+	if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
+		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
 	}
 
 	// return
 
-	return &util.Ref[LogicalAddr, Node]{
-		File: fs,
-		Addr: addr,
-		Data: node,
-	}, nil
+	return nodeRef, nil
 }
 
 type WalkTreeHandler struct {
 	// Callbacks for entire nodes
 	PreNode  func(LogicalAddr) error
-	MidNode  func(*util.Ref[LogicalAddr, Node]) error
+	Node     func(*util.Ref[LogicalAddr, Node], error) error
 	PostNode func(*util.Ref[LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
 	PreKeyPointer  func(KeyPointer) error
 	PostKeyPointer func(KeyPointer) error
 	// Callbacks for items on leaf nodes
 	Item func(Key, btrfsitem.Item) error
-	// Error handler
-	NodeError func(error) error
 }
 
 func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
@@ -325,24 +334,14 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 		}
 	}
 	node, err := fs.ReadNode(nodeAddr)
-	if err != nil {
-		if cbs.NodeError != nil {
-			err = cbs.NodeError(err)
-		}
-		if err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return nil
-			}
-			return fmt.Errorf("btrfs.FS.WalkTree: %w", err)
-		}
+	if cbs.Node != nil {
+		err = cbs.Node(node, err)
 	}
-	if cbs.MidNode != nil {
-		if err := cbs.MidNode(node); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return nil
-			}
-			return err
+	if err != nil {
+		if errors.Is(err, iofs.SkipDir) {
+			return nil
 		}
+		return fmt.Errorf("btrfs.FS.WalkTree: %w", err)
 	}
 	for _, item := range node.Data.BodyInternal {
 		if cbs.PreKeyPointer != nil {

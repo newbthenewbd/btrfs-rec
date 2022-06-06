@@ -17,6 +17,8 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 	nodeRef, err := fs.ReadNode(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	}
+	if nodeRef == nil {
 		return nil
 	}
 	node := nodeRef.Data

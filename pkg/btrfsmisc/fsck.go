@@ -36,18 +36,7 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 			continue
 		}
 
-		// does it look like a node?
-
-		var nodeHeader btrfs.NodeHeader
-		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
-			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
-		}
-		if nodeHeader.MetadataUUID != sb.EffectiveMetadataUUID() {
-			//fmt.Printf("sector@%d does not look like a node\n", pos)
-			continue
-		}
-
-		// ok, it looks like a node; go ahead and read it as a node
+		// parse (early)
 
 		nodeRef := &util.Ref[btrfs.PhysicalAddr, btrfs.Node]{
 			File: dev,
@@ -56,17 +45,34 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 				Size: sb.NodeSize,
 			},
 		}
+		var nodeHeader btrfs.NodeHeader
+		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
+			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
+		}
+
+		// sanity checking
+
+		if nodeHeader.MetadataUUID != sb.EffectiveMetadataUUID() {
+			//fmt.Printf("sector@%d does not look like a node\n", pos)
+			continue
+		}
+
+		stored := nodeRef.Data.Head.Checksum
+		calced := btrfs.CRC32c(nodeBuf[binstruct.StaticSize(btrfs.CSum{}):])
+		if stored != calced {
+			fn(nodeRef, fmt.Errorf("sector@%d: looks like a node but is corrupt: checksum doesn't match: stored=%s calculated=%s",
+				pos, stored, calced))
+			continue
+		}
+
+		// parse (main)
+
 		if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
 			fn(nil, fmt.Errorf("sector@%d: %w", pos, err))
 			continue
 		}
 
 		// finally, process the node
-
-		if nodeRef.Data.Head.Checksum != btrfs.CRC32c(nodeBuf[0x20:]) {
-			fn(nodeRef, fmt.Errorf("sector@%d looks like a node but is corrupt (checksum doesn't match)", pos))
-			continue
-		}
 
 		fn(nodeRef, nil)
 

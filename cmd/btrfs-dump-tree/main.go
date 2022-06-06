@@ -41,7 +41,7 @@ func Main(imgfilename string) (err error) {
 	}
 
 	if err := fs.Init(); err != nil {
-		return err
+		fmt.Printf("(error) %v\n", err)
 	}
 
 	superblock, err := fs.Superblock()
