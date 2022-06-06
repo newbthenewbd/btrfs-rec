@@ -11,7 +11,7 @@ import (
 // ScanForNodes mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device(), except it doesn't do
 // anything but log when it finds a node.
-func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfs.PhysicalAddr, btrfs.Node], error)) error {
+func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfs.PhysicalAddr, btrfs.Node], error), prog func(btrfs.PhysicalAddr)) error {
 	devSize, err := dev.Size()
 	if err != nil {
 		return err
@@ -27,6 +27,10 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
 			//fmt.Printf("sector@%d is a superblock\n", pos)
 			continue
+		}
+
+		if prog != nil {
+			prog(pos)
 		}
 
 		// read

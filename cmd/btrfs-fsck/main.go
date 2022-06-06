@@ -78,10 +78,12 @@ func Main(imgfilename string) (err error) {
 	}
 	reconstructedChunks := make(map[btrfs.LogicalAddr][]reconstructedStripe)
 	for _, dev := range fs.Devices {
-		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes\n", dev.Name())
+		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
 		superblock, _ := dev.Superblock()
 		foundNodes := make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
 		var lostAndFoundChunks []btrfs.SysChunk
+		devSize, _ := dev.Size()
+		lastProgress := -1
 		if err := btrfsmisc.ScanForNodes(dev, superblock.Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
 			if err != nil {
 				fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
@@ -107,6 +109,12 @@ func Main(imgfilename string) (err error) {
 						Chunk: chunk,
 					})
 				}
+			}
+		}, func(pos btrfs.PhysicalAddr) {
+			pct := int(100 * float64(pos) / float64(devSize))
+			if pct != lastProgress {
+				fmt.Printf("Pass 1: ... dev[%q] scanned %v%%\n", dev.Name(), pct)
+				lastProgress = pct
 			}
 		}); err != nil {
 			return err
