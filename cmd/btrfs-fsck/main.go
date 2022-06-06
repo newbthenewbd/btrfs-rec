@@ -70,86 +70,88 @@ func Main(imgfilename string) (err error) {
 		fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
 	}
 
-	fmt.Printf("Pass 1: ... scanning for nodes\n")
-	foundNodes := make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
-	var lostAndFoundChunks []btrfs.SysChunk
-	if err := btrfsmisc.ScanForNodes(fs.Devices[0], superblock.Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
-		if err != nil {
-			fmt.Println(err)
-			return
+	for _, dev := range fs.Devices {
+		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes\n", dev.Name())
+		foundNodes := make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
+		var lostAndFoundChunks []btrfs.SysChunk
+		if err := btrfsmisc.ScanForNodes(dev, superblock.Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+			if err != nil {
+				fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
+				return
+			}
+			foundNodes[nodeRef.Data.Head.Addr] = append(foundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
+			_, alreadyVisited := visitedChunkNodes[nodeRef.Data.Head.Addr]
+			if nodeRef.Data.Head.Owner == btrfs.CHUNK_TREE_OBJECTID && !alreadyVisited {
+				for i, item := range nodeRef.Data.BodyLeaf {
+					if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+						continue
+					}
+					chunk, ok := item.Body.(btrfsitem.Chunk)
+					if !ok {
+						fmt.Printf("Pass 1: ... dev[%q] node@%d: item %d: error: type is CHUNK_ITEM_KEY, but struct is %T\n",
+							dev.Name(), nodeRef.Addr, i, item.Body)
+						continue
+					}
+					fmt.Printf("Pass 1: ... dev[%q] node@%d: item %d: found chunk\n",
+						dev.Name(), nodeRef.Addr, i)
+					lostAndFoundChunks = append(lostAndFoundChunks, btrfs.SysChunk{
+						Key:   item.Head.Key,
+						Chunk: chunk,
+					})
+				}
+			}
+		}); err != nil {
+			return err
 		}
-		foundNodes[nodeRef.Data.Head.Addr] = append(foundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
-		_, alreadyVisited := visitedChunkNodes[nodeRef.Data.Head.Addr]
-		if nodeRef.Data.Head.Owner == btrfs.CHUNK_TREE_OBJECTID && !alreadyVisited {
-			for i, item := range nodeRef.Data.BodyLeaf {
-				if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-					continue
+
+		fmt.Printf("Pass 1: ... dev[%q] re-inserting lost+found chunks\n", dev.Name())
+		if len(lostAndFoundChunks) > 0 {
+			panic("TODO")
+		}
+
+		fmt.Printf("Pass 1: ... dev[%q] re-constructing stripes for lost+found nodes\n", dev.Name())
+		lostAndFoundNodes := make(map[btrfs.PhysicalAddr]btrfs.LogicalAddr)
+		for laddr, readPaddrs := range foundNodes {
+			resolvedPaddrs, _ := fs.Resolve(laddr)
+			for _, readPaddr := range readPaddrs {
+				if _, ok := resolvedPaddrs[btrfs.QualifiedPhysicalAddr{
+					Dev:  superblock.Data.DevItem.DevUUID,
+					Addr: readPaddr,
+				}]; !ok {
+					lostAndFoundNodes[readPaddr] = laddr
 				}
-				chunk, ok := item.Body.(btrfsitem.Chunk)
-				if !ok {
-					fmt.Printf("Pass 1: node@%d: item %d: error: type is CHUNK_ITEM_KEY, but struct is %T\n",
-						nodeRef.Addr, i, item.Body)
-					continue
-				}
-				fmt.Printf("Pass 1: node@%d: item %d: found chunk\n",
-					nodeRef.Addr, i)
-				lostAndFoundChunks = append(lostAndFoundChunks, btrfs.SysChunk{
-					Key:   item.Head.Key,
-					Chunk: chunk,
+			}
+		}
+		sortedPaddrs := make([]btrfs.PhysicalAddr, 0, len(lostAndFoundNodes))
+		for paddr := range lostAndFoundNodes {
+			sortedPaddrs = append(sortedPaddrs, paddr)
+		}
+		sort.Slice(sortedPaddrs, func(i, j int) bool {
+			return sortedPaddrs[i] < sortedPaddrs[j]
+		})
+		type stripe struct {
+			PAddr btrfs.PhysicalAddr
+			LAddr btrfs.LogicalAddr
+			Size  uint64
+		}
+		var stripes []stripe
+		for _, paddr := range sortedPaddrs {
+			var lastStripe *stripe
+			if len(stripes) > 0 {
+				lastStripe = &stripes[len(stripes)-1]
+			}
+			if lastStripe != nil && (lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size)) == paddr {
+				lastStripe.Size += uint64(superblock.Data.NodeSize)
+			} else {
+				stripes = append(stripes, stripe{
+					PAddr: paddr,
+					LAddr: lostAndFoundNodes[paddr],
+					Size:  uint64(superblock.Data.NodeSize),
 				})
 			}
 		}
-	}); err != nil {
-		return err
+		fmt.Printf("Pass 1: ... dev[%q] reconstructed stripes: %#v\n", dev.Name(), stripes)
 	}
-
-	fmt.Printf("Pass 1: ... re-inserting lost+found chunks\n")
-	if len(lostAndFoundChunks) > 0 {
-		panic("TODO")
-	}
-
-	fmt.Printf("Pass 1: ... re-constructing stripes for lost+found nodes\n")
-	lostAndFoundNodes := make(map[btrfs.PhysicalAddr]btrfs.LogicalAddr)
-	for laddr, readPaddrs := range foundNodes {
-		resolvedPaddrs, _ := fs.Resolve(laddr)
-		for _, readPaddr := range readPaddrs {
-			if _, ok := resolvedPaddrs[btrfs.QualifiedPhysicalAddr{
-				Dev:  superblock.Data.DevItem.DevUUID,
-				Addr: readPaddr,
-			}]; !ok {
-				lostAndFoundNodes[readPaddr] = laddr
-			}
-		}
-	}
-	sortedPaddrs := make([]btrfs.PhysicalAddr, 0, len(lostAndFoundNodes))
-	for paddr := range lostAndFoundNodes {
-		sortedPaddrs = append(sortedPaddrs, paddr)
-	}
-	sort.Slice(sortedPaddrs, func(i, j int) bool {
-		return sortedPaddrs[i] < sortedPaddrs[j]
-	})
-	type stripe struct {
-		PAddr btrfs.PhysicalAddr
-		LAddr btrfs.LogicalAddr
-		Size  uint64
-	}
-	var stripes []stripe
-	for _, paddr := range sortedPaddrs {
-		var lastStripe *stripe
-		if len(stripes) > 0 {
-			lastStripe = &stripes[len(stripes)-1]
-		}
-		if lastStripe != nil && (lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size)) == paddr {
-			lastStripe.Size += uint64(superblock.Data.NodeSize)
-		} else {
-			stripes = append(stripes, stripe{
-				PAddr: paddr,
-				LAddr: lostAndFoundNodes[paddr],
-				Size:  uint64(superblock.Data.NodeSize),
-			})
-		}
-	}
-	fmt.Printf("Pass 1: ... reconstructed stripes: %#v\n", stripes)
 
 	fmt.Printf("\nPass 2: ?????????????????????????\n") ////////////////////////////////////////
 	/*
