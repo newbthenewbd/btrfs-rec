@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"encoding/hex"
 	"strings"
 )
@@ -17,8 +16,4 @@ func (uuid UUID) String() string {
 		str[16:20],
 		str[20:32],
 	}, "-")
-}
-
-func (a UUID) Equal(b UUID) bool {
-	return bytes.Equal(a[:], b[:])
 }

@@ -83,7 +83,7 @@ func (sb Superblock) ValidateChecksum() error {
 	if err != nil {
 		return err
 	}
-	if !calced.Equal(stored) {
+	if calced != stored {
 		return fmt.Errorf("superblock checksum mismatch: stored=%s calculated=%s",
 			stored, calced)
 	}
@@ -226,4 +226,6 @@ var incompatFlagNames = []string{
 }
 
 func (f IncompatFlags) Has(req IncompatFlags) bool { return f&req == req }
-func (f IncompatFlags) String() string             { return util.BitfieldString(f, incompatFlagNames, util.HexLower) }
+func (f IncompatFlags) String() string {
+	return util.BitfieldString(f, incompatFlagNames, util.HexLower)
+}

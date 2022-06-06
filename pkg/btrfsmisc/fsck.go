@@ -35,11 +35,11 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock) error {
 		if _, err := binstruct.Unmarshal(nodeBuf, &nodeHeader); err != nil {
 			return fmt.Errorf("sector@%d: %w", pos, err)
 		}
-		if !nodeHeader.MetadataUUID.Equal(sb.EffectiveMetadataUUID()) {
+		if nodeHeader.MetadataUUID != sb.EffectiveMetadataUUID() {
 			//fmt.Printf("sector@%d does not look like a node\n", pos)
 			continue
 		}
-		if !nodeHeader.Checksum.Equal(btrfs.CRC32c(nodeBuf[0x20:])) {
+		if nodeHeader.Checksum != btrfs.CRC32c(nodeBuf[0x20:]) {
 			fmt.Printf("sector@%d looks like a node but is corrupt (checksum doesn't match)\n", pos)
 			continue
 		}

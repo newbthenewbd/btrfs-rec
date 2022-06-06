@@ -229,7 +229,7 @@ func (node Node) ValidateChecksum() error {
 	if err != nil {
 		return err
 	}
-	if !calced.Equal(stored) {
+	if calced != stored {
 		return fmt.Errorf("node checksum mismatch: stored=%s calculated=%s",
 			stored, calced)
 	}
@@ -273,7 +273,7 @@ func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
 
 	// sanity checking
 
-	if !node.Head.MetadataUUID.Equal(sb.Data.EffectiveMetadataUUID()) {
+	if node.Head.MetadataUUID != sb.Data.EffectiveMetadataUUID() {
 		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: does not look like a node", addr)
 	}
 
@@ -284,7 +284,7 @@ func (fs *FS) ReadNode(addr LogicalAddr) (util.Ref[LogicalAddr, Node], error) {
 
 	stored := node.Head.Checksum
 	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
-	if !calced.Equal(stored) {
+	if calced != stored {
 		return ret, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
 			addr, stored, calced)
 	}
