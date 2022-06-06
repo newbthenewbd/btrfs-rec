@@ -3,6 +3,7 @@ package btrfs
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"reflect"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
@@ -153,22 +154,21 @@ func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	return done, nil
 }
 
-func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
-	type physicalAddr struct {
-		Dev  UUID
-		Addr PhysicalAddr
-	}
+type QualifiedPhysicalAddr struct {
+	Dev  UUID
+	Addr PhysicalAddr
+}
 
-	paddrs := make(map[physicalAddr]struct{})
+func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen uint64) {
+	paddrs = make(map[QualifiedPhysicalAddr]struct{})
+	maxlen = math.MaxUint64
 
 	for _, chunk := range fs.chunks {
 		if chunk.Key.Offset <= uint64(laddr) && uint64(laddr) < chunk.Key.Offset+uint64(chunk.Chunk.Size) {
 			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
-			if offsetWithinChunk+uint64(len(dat)) > chunk.Chunk.Size {
-				dat = dat[:chunk.Chunk.Size-offsetWithinChunk]
-			}
+			maxlen = util.Min(maxlen, chunk.Chunk.Size-offsetWithinChunk)
 			for _, stripe := range chunk.Chunk.Stripes {
-				paddrs[physicalAddr{
+				paddrs[QualifiedPhysicalAddr{
 					Dev:  stripe.DeviceUUID,
 					Addr: PhysicalAddr(stripe.Offset + offsetWithinChunk),
 				}] = struct{}{}
@@ -176,8 +176,16 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 		}
 	}
 
+	return paddrs, maxlen
+}
+
+func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
+	paddrs, maxlen := fs.Resolve(laddr)
 	if len(paddrs) == 0 {
 		return 0, fmt.Errorf("could not map logical address %v", laddr)
+	}
+	if uint64(len(dat)) > maxlen {
+		dat = dat[:maxlen]
 	}
 
 	buf := make([]byte, len(dat))
