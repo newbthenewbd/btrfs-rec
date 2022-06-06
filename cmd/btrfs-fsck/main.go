@@ -73,7 +73,8 @@ func Main(imgfilename string) (err error) {
 
 	type reconstructedStripe struct {
 		Size uint64
-		Addr btrfs.QualifiedPhysicalAddr
+		Dev  *btrfs.Device
+		Addr btrfs.PhysicalAddr
 	}
 	reconstructedChunks := make(map[btrfs.LogicalAddr][]reconstructedStripe)
 	for _, dev := range fs.Devices {
@@ -161,10 +162,8 @@ func Main(imgfilename string) (err error) {
 		for _, stripe := range stripes {
 			reconstructedChunks[stripe.LAddr] = append(reconstructedChunks[stripe.LAddr], reconstructedStripe{
 				Size: stripe.Size,
-				Addr: btrfs.QualifiedPhysicalAddr{
-					Dev:  superblock.Data.DevItem.DevUUID,
-					Addr: stripe.PAddr,
-				},
+				Dev:  dev,
+				Addr: stripe.PAddr,
 			})
 		}
 	}
@@ -191,6 +190,23 @@ func Main(imgfilename string) (err error) {
 		},
 	}
 	itemOff := uint32(uint64(superblock.Data.NodeSize) - uint64(binstruct.StaticSize(btrfs.ItemHeader{})))
+	for _, dev := range fs.Devices {
+		itemSize := uint32(binstruct.StaticSize(btrfsitem.Dev{}))
+		itemOff -= itemSize
+		superblock, _ := dev.Superblock()
+		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
+			Head: btrfs.ItemHeader{
+				Key: btrfs.Key{
+					ObjectID: btrfs.DEV_ITEMS_OBJECTID,
+					ItemType: btrfsitem.DEV_ITEM_KEY,
+					Offset:   1, // ???
+				},
+				DataOffset: itemOff,
+				DataSize:   itemSize,
+			},
+			Body: superblock.Data.DevItem,
+		})
+	}
 	for laddr, stripes := range reconstructedChunks {
 		stripeSize := stripes[0].Size
 		for _, stripe := range stripes {
@@ -200,11 +216,20 @@ func Main(imgfilename string) (err error) {
 		}
 		itemSize := uint32(binstruct.StaticSize(btrfsitem.ChunkHeader{}) + (len(stripes) * binstruct.StaticSize(btrfsitem.ChunkStripe{})))
 		itemOff -= itemSize
+		chunkStripes := make([]btrfsitem.ChunkStripe, len(stripes))
+		for i := range stripes {
+			superblock, _ := stripes[i].Dev.Superblock()
+			chunkStripes[i] = btrfsitem.ChunkStripe{
+				DeviceID:   superblock.Data.DevItem.DeviceID,
+				DeviceUUID: superblock.Data.DevItem.DevUUID,
+				Offset:     stripes[i].Addr,
+			}
+		}
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{
 				Key: btrfs.Key{
-					ObjectID: TODO,
-					ItemType: TODO,
+					ObjectID: btrfs.FIRST_CHUNK_TREE_OBJECTID,
+					ItemType: btrfsitem.CHUNK_ITEM_KEY,
 					Offset:   uint64(laddr),
 				},
 				DataOffset: itemOff,
@@ -216,13 +241,13 @@ func Main(imgfilename string) (err error) {
 					Owner:          btrfs.EXTENT_TREE_OBJECTID,
 					StripeLen:      65536, // ???
 					Type:           TODO,
-					IOOptimalAlign: TODO,
-					IOOptimalWidth: TODO,
-					IOMinSize:      TODO,
+					IOOptimalAlign: superblock.Data.DevItem.IOOptimalAlign,
+					IOOptimalWidth: superblock.Data.DevItem.IOOptimalWidth,
+					IOMinSize:      superblock.Data.DevItem.IOMinSize,
 					NumStripes:     uint16(len(stripes)),
 					SubStripes:     1,
 				},
-				Stripes: stripes,
+				Stripes: chunkStripes,
 			},
 		})
 	}
