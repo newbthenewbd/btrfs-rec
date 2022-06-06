@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 
+	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
@@ -172,55 +173,64 @@ func Main(imgfilename string) (err error) {
 	// store that node at the root node of the chunk tree.  This
 	// isn't true in general, but it's true of my particular
 	// filesystem.
-	/*
-		reconstructedNode := &util.Ref[btrfs.LogicalAddr, btrfs.Node]{
-			File: fs,
-			Addr: superblock.Data.ChunkTree,
-			Data: btrfs.Node{
-				Size: superblock.Data.NodeSize,
-				Head: btrfs.NodeHeader{
-					MetadataUUID: superblock.Data.EffectiveMetadataUUID(),
-					Addr:         superblock.Data.ChunkTree,
-					Flags:        btrfs.NodeWritten,
-					//BackrefRef: ???,
-					//ChunkTreeUUID: ???,
-					Generation: superblock.Data.ChunkRootGeneration,
-					Owner:      btrfs.CHUNK_TREE_OBJECTID,
-					Level:      0,
-				},
+	reconstructedNode := &util.Ref[btrfs.LogicalAddr, btrfs.Node]{
+		File: fs,
+		Addr: superblock.Data.ChunkTree,
+		Data: btrfs.Node{
+			Size: superblock.Data.NodeSize,
+			Head: btrfs.NodeHeader{
+				MetadataUUID: superblock.Data.EffectiveMetadataUUID(),
+				Addr:         superblock.Data.ChunkTree,
+				Flags:        btrfs.NodeWritten,
+				//BackrefRef: ???,
+				//ChunkTreeUUID: ???,
+				Generation: superblock.Data.ChunkRootGeneration,
+				Owner:      btrfs.CHUNK_TREE_OBJECTID,
+				Level:      0,
 			},
-		}
-		itemOff := superblock.Data.NodeSize - binstruct.StaticSize(btrfs.ItemHeader{})
-		for laddr, stripes := range reconstructedChunks {
-			stripeSize := stripes[0].Size
-			for i, stripe := range stripes {
-				if stripes.Size != stripeSize {
-					panic("mismatch")
-				}
+		},
+	}
+	itemOff := uint32(uint64(superblock.Data.NodeSize) - uint64(binstruct.StaticSize(btrfs.ItemHeader{})))
+	for laddr, stripes := range reconstructedChunks {
+		stripeSize := stripes[0].Size
+		for _, stripe := range stripes {
+			if stripe.Size != stripeSize {
+				panic("mismatch")
 			}
-			itemSize := binstruct.StaticSize(btrfsitem.ChunkHeader) + (len(stripes) * binstruct.StaticSize(btrfsitem.ChunkStripe))
-			itemOff -= itemSize
-			reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
-				Head: btrfs.ItemHeader{
-					Key:        TODO,
-					DataOffset: itemOff,
-					DataSize:   itemSize,
-				},
-				Body: btrfsitem.Chunk{
-					Head: btrfsitem.ChunkHeader{
-						Size: stripeSize,
-						Owner: 2,
-						StripeLen:
-					Stripes: stripes,
-				},
-			})
 		}
-		reconstructedNode.Data.Head.NumItems = len(reconstructedNode.Data.BodyLeaf)
-		reconstructedNode.Data.Head.Checksum, err = reconstructedNode.Data.CalculateChecksum()
-		if err != nil {
-			fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
-		}
-	*/
+		itemSize := uint32(binstruct.StaticSize(btrfsitem.ChunkHeader{}) + (len(stripes) * binstruct.StaticSize(btrfsitem.ChunkStripe{})))
+		itemOff -= itemSize
+		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
+			Head: btrfs.ItemHeader{
+				Key: btrfs.Key{
+					ObjectID: TODO,
+					ItemType: TODO,
+					Offset:   uint64(laddr),
+				},
+				DataOffset: itemOff,
+				DataSize:   itemSize,
+			},
+			Body: btrfsitem.Chunk{
+				Head: btrfsitem.ChunkHeader{
+					Size:           stripeSize,
+					Owner:          btrfs.EXTENT_TREE_OBJECTID,
+					StripeLen:      65536, // ???
+					Type:           TODO,
+					IOOptimalAlign: TODO,
+					IOOptimalWidth: TODO,
+					IOMinSize:      TODO,
+					NumStripes:     uint16(len(stripes)),
+					SubStripes:     1,
+				},
+				Stripes: stripes,
+			},
+		})
+	}
+	reconstructedNode.Data.Head.NumItems = uint32(len(reconstructedNode.Data.BodyLeaf))
+	reconstructedNode.Data.Head.Checksum, err = reconstructedNode.Data.CalculateChecksum()
+	if err != nil {
+		fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
+	}
 
 	fmt.Printf("\nPass 2: ?????????????????????????\n") ////////////////////////////////////////
 	/*
