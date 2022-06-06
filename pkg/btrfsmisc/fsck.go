@@ -82,5 +82,9 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 		pos += btrfs.PhysicalAddr(sb.NodeSize) - btrfs.PhysicalAddr(sb.SectorSize)
 	}
 
+	if prog != nil {
+		prog(devSize)
+	}
+
 	return nil
 }

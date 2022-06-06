@@ -70,7 +70,7 @@ func Main(imgfilename string) (err error) {
 				nodeRef.Addr, nodeRef.Data.Head.Addr,
 				nodeRef.Data.Head.Generation, nodeRef.Data.Head.Owner, nodeRef.Data.Head.Level)
 		}
-	}); err != nil {
+	}, nil); err != nil {
 		return err
 	}
 

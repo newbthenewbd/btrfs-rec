@@ -112,8 +112,9 @@ func Main(imgfilename string) (err error) {
 			}
 		}, func(pos btrfs.PhysicalAddr) {
 			pct := int(100 * float64(pos) / float64(devSize))
-			if pct != lastProgress {
-				fmt.Printf("Pass 1: ... dev[%q] scanned %v%%\n", dev.Name(), pct)
+			if pct != lastProgress || pos == devSize {
+				fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found %d nodes)\n",
+					dev.Name(), pct, len(foundNodes))
 				lastProgress = pct
 			}
 		}); err != nil {
@@ -265,10 +266,10 @@ func Main(imgfilename string) (err error) {
 		fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
 	}
 	if err := reconstructedNode.Write(); err != nil {
-		fmt.Printf("Pass 1: ... write new node: error:: %v\n", err)
+		fmt.Printf("Pass 1: ... write new node: error: %v\n", err)
 	}
 
-	fmt.Printf("\nPass 2: ?????????????????????????\n") ////////////////////////////////////////
+	fmt.Printf("\nPass 2: orphaned nodes\n") ///////////////////////////////////////////////////
 	/*
 
 		fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",

@@ -43,14 +43,9 @@ func (r *Ref[A, T]) Read() error {
 }
 
 func (r *Ref[A, T]) Write() error {
-	size := binstruct.StaticSize(r.Data)
 	buf, err := binstruct.Marshal(r.Data)
 	if err != nil {
 		return err
-	}
-	if len(buf) != size {
-		return fmt.Errorf("util.Ref[%T].Write: expected to want to write %d bytes, but got %d bytes to write",
-			r.Data, size, len(buf))
 	}
 	if _, err = r.File.WriteAt(buf, r.Addr); err != nil {
 		return err
