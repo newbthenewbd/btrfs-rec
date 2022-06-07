@@ -52,7 +52,7 @@ func Main(imgfilename string) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("superblock checksum: %x\n", sum)
+	fmt.Printf("superblock checksum: %v\n", sum)
 	spew.Dump(superblocks[0].Data)
 
 	syschunks, err := superblocks[0].Data.ParseSysChunkArray()

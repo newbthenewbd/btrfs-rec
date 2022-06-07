@@ -146,6 +146,11 @@ func (node Node) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be greater than %d",
 			binstruct.StaticSize(NodeHeader{}))
 	}
+	if node.Head.Level > 0 {
+		node.Head.NumItems = uint32(len(node.BodyInternal))
+	} else {
+		node.Head.NumItems = uint32(len(node.BodyLeaf))
+	}
 
 	buf := make([]byte, node.Size)
 

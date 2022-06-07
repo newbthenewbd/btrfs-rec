@@ -277,11 +277,11 @@ func printHeaderInfo(node btrfs.Node) {
 		node.Head.Flags,
 		node.Head.BackrefRev)
 
-	fmt.Printf("checksum stored %x\n", node.Head.Checksum)
+	fmt.Printf("checksum stored %v\n", node.Head.Checksum)
 	if calcSum, err := node.CalculateChecksum(); err != nil {
 		fmt.Printf("checksum calced %v\n", err)
 	} else {
-		fmt.Printf("checksum calced %x\n", calcSum)
+		fmt.Printf("checksum calced %v\n", calcSum)
 	}
 
 	fmt.Printf("fs uuid %s\n", node.Head.MetadataUUID)

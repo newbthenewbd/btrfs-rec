@@ -311,7 +311,7 @@ func pass1WriteReconstructedChunks(
 	for i, laddr := range sortedLAddrs {
 		chunk := fsReconstructedChunks[laddr]
 		for j, stripe := range chunk.Stripes {
-			fmt.Printf("Pass 1: chunk[%d].stripe[%d] = { laddr=0x%0x ⇒ { dev_id=%v, paddr=0x%0x }, size=0x%0x }\n",
+			fmt.Printf("Pass 1: chunks[%d].stripes[%d] = { laddr=0x%0x => { dev_id=%d, paddr=0x%0x }, size=0x%0x }\n",
 				i, j, laddr, stripe.DeviceID, stripe.Offset, chunk.Size)
 		}
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
