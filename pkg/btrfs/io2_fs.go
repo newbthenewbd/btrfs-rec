@@ -125,10 +125,20 @@ func (fs *FS) Init() error {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 		for _, chunk := range syschunks {
+			dbgf("a\n")
 			fs.chunks = append(fs.chunks, chunk)
 		}
+		dbgf("b\n")
 		if err := fs.WalkTree(sb.Data.ChunkTree, WalkTreeHandler{
+			Node: func(node *util.Ref[LogicalAddr, Node], err error) error {
+				dbgf("c\n")
+				if node != nil {
+					dbgf("DBG: init: node=%#v\n", node.Data)
+				}
+				return err
+			},
 			Item: func(key Key, body btrfsitem.Item) error {
+				dbgf("d\n")
 				if key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 					return nil
 				}
@@ -150,12 +160,28 @@ type QualifiedPhysicalAddr struct {
 	Addr PhysicalAddr
 }
 
+var Dbg = false
+
+func dbgf(format string, a ...any) {
+	if Dbg {
+		fmt.Printf(format, a...)
+	}
+}
+
 func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen uint64) {
 	paddrs = make(map[QualifiedPhysicalAddr]struct{})
 	maxlen = math.MaxUint64
 
-	for _, chunk := range fs.chunks {
+	dbgf("DBG: resolving 0x%0x\n", laddr)
+	for i, chunk := range fs.chunks {
+		dbgf("DBG: chunk %d: 0x%0x <= 0x%0x < 0x%0x (%d stripes) ==> ",
+			i,
+			chunk.Key.Offset,
+			uint64(laddr),
+			chunk.Key.Offset+uint64(chunk.Chunk.Head.Size),
+			len(chunk.Chunk.Stripes))
 		if chunk.Key.Offset <= uint64(laddr) && uint64(laddr) < chunk.Key.Offset+uint64(chunk.Chunk.Head.Size) {
+			dbgf("true\n")
 			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
 			maxlen = util.Min(maxlen, chunk.Chunk.Head.Size-offsetWithinChunk)
 			for _, stripe := range chunk.Chunk.Stripes {
@@ -164,6 +190,8 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 					Addr: stripe.Offset + PhysicalAddr(offsetWithinChunk),
 				}] = struct{}{}
 			}
+		} else {
+			dbgf("false\n")
 		}
 	}
 

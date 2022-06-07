@@ -349,6 +349,7 @@ func pass1WriteReconstructedChunks(
 		fmt.Printf("Pass 1: ... write new node: error: %v\n", err)
 	}
 
+	btrfs.Dbg = true
 	if err := fs.Init(); err != nil {
 		fmt.Printf("Pass 1: ... re-init mappings: %v\n", err)
 	}
