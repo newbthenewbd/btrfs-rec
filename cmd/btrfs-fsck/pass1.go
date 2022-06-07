@@ -1,7 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	iofs "io/fs"
+	"os"
 	"sort"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
@@ -78,6 +82,46 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 }
 
 func pass1ScanOneDev(
+	dev *btrfs.Device,
+	superblock btrfs.Superblock,
+	visitedChunkNodes map[btrfs.LogicalAddr]struct{},
+) (
+	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
+	lostAndFoundChunks []btrfs.SysChunk,
+	err error,
+) {
+	type rec struct {
+		DevFoundNodes         map[btrfs.LogicalAddr][]btrfs.PhysicalAddr
+		DevLostAndFoundChunks []btrfs.SysChunk
+	}
+	var obj rec
+
+	const jsonFilename = "/home/lukeshu/btrfs/pass1.json"
+
+	bs, err := os.ReadFile(jsonFilename)
+	if err != nil {
+		if errors.Is(err, iofs.ErrNotExist) {
+			obj.DevFoundNodes, obj.DevLostAndFoundChunks, err = pass1ScanOneDev_x(dev, superblock, visitedChunkNodes)
+			if err != nil {
+				panic(err)
+			}
+			bs, err := json.Marshal(obj)
+			if err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(jsonFilename, bs, 0600); err != nil {
+				panic(err)
+			}
+		}
+		return nil, nil, err
+	}
+	if err := json.Unmarshal(bs, &obj); err != nil {
+		return nil, nil, err
+	}
+	return obj.DevFoundNodes, obj.DevLostAndFoundChunks, nil
+}
+
+func pass1ScanOneDev_x(
 	dev *btrfs.Device,
 	superblock btrfs.Superblock,
 	visitedChunkNodes map[btrfs.LogicalAddr]struct{},
