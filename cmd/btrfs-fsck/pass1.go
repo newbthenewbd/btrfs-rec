@@ -41,7 +41,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	})
 	for _, dev := range fs.Devices {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
-		devSuperblock, devFoundNodes, devLostAndFoundChunks, err := pass1ScanOneDev(dev, visitedChunkNodes)
+		devFoundNodes, devLostAndFoundChunks, err := pass1ScanOneDev(dev, superblock.Data, visitedChunkNodes)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +52,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		}
 
 		fmt.Printf("Pass 1: ... dev[%q] re-constructing stripes for lost+found nodes\n", dev.Name())
-		devReconstructedChunks := pass1ReconstructChunksOneDev(fs, devSuperblock, devFoundNodes)
+		devReconstructedChunks := pass1ReconstructChunksOneDev(fs, dev, devFoundNodes)
 
 		// merge those results in to the total-fs results
 		for laddr := range devFoundNodes {
@@ -72,28 +72,26 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	}
 
 	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
-	pass1WriteReconstructedChunks(fs, fsReconstructedChunks)
+	pass1WriteReconstructedChunks(fs, superblock.Data, fsReconstructedChunks)
 
 	return fsFoundNodes, nil
 }
 
 func pass1ScanOneDev(
 	dev *btrfs.Device,
+	superblock btrfs.Superblock,
 	visitedChunkNodes map[btrfs.LogicalAddr]struct{},
 ) (
-	superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblock],
 	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
 	lostAndFoundChunks []btrfs.SysChunk,
 	err error,
 ) {
 	foundNodes = make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
 
-	superblock, _ = dev.Superblock()
-
 	devSize, _ := dev.Size()
 	lastProgress := -1
 
-	err = btrfsmisc.ScanForNodes(dev, superblock.Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+	err = btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
 			return
@@ -133,7 +131,7 @@ func pass1ScanOneDev(
 
 func pass1ReconstructChunksOneDev(
 	fs *btrfs.FS,
-	superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblock],
+	dev *btrfs.Device,
 	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
 ) (
 	chunks map[btrfs.LogicalAddr]struct {
@@ -141,6 +139,8 @@ func pass1ReconstructChunksOneDev(
 		Stripes []btrfsitem.ChunkStripe
 	},
 ) {
+	superblock, _ := dev.Superblock()
+
 	// find the subset of `foundNodes` that are lost
 	lostAndFoundNodes := make(map[btrfs.PhysicalAddr]btrfs.LogicalAddr)
 	for laddr, readPaddrs := range foundNodes {
@@ -214,13 +214,12 @@ func pass1ReconstructChunksOneDev(
 
 func pass1WriteReconstructedChunks(
 	fs *btrfs.FS,
+	superblock btrfs.Superblock,
 	fsReconstructedChunks map[btrfs.LogicalAddr]struct {
 		Size    uint64
 		Stripes []btrfsitem.ChunkStripe
 	},
 ) {
-	superblock, _ := fs.Superblock()
-
 	// FIXME(lukeshu): OK, so this just assumes that all the
 	// reconstructed stripes fit in one node, and that we can just
 	// store that node at the root node of the chunk tree.  This
@@ -228,16 +227,16 @@ func pass1WriteReconstructedChunks(
 	// filesystem.
 	reconstructedNode := &util.Ref[btrfs.LogicalAddr, btrfs.Node]{
 		File: fs,
-		Addr: superblock.Data.ChunkTree,
+		Addr: superblock.ChunkTree,
 		Data: btrfs.Node{
-			Size: superblock.Data.NodeSize,
+			Size: superblock.NodeSize,
 			Head: btrfs.NodeHeader{
-				MetadataUUID: superblock.Data.EffectiveMetadataUUID(),
-				Addr:         superblock.Data.ChunkTree,
+				MetadataUUID: superblock.EffectiveMetadataUUID(),
+				Addr:         superblock.ChunkTree,
 				Flags:        btrfs.NodeWritten,
 				//BackrefRef: ???,
 				//ChunkTreeUUID: ???,
-				Generation: superblock.Data.ChunkRootGeneration,
+				Generation: superblock.ChunkRootGeneration,
 				Owner:      btrfs.CHUNK_TREE_OBJECTID,
 				Level:      0,
 			},
@@ -271,9 +270,9 @@ func pass1WriteReconstructedChunks(
 					Owner:          btrfs.EXTENT_TREE_OBJECTID,
 					StripeLen:      65536, // ???
 					Type:           0,     // TODO
-					IOOptimalAlign: superblock.Data.DevItem.IOOptimalAlign,
-					IOOptimalWidth: superblock.Data.DevItem.IOOptimalWidth,
-					IOMinSize:      superblock.Data.DevItem.IOMinSize,
+					IOOptimalAlign: superblock.DevItem.IOOptimalAlign,
+					IOOptimalWidth: superblock.DevItem.IOOptimalWidth,
+					IOMinSize:      superblock.DevItem.IOMinSize,
 					NumStripes:     uint16(len(chunk.Stripes)),
 					SubStripes:     1,
 				},
