@@ -13,7 +13,6 @@ import (
 type FS struct {
 	Devices []*Device
 
-	initErr  error
 	uuid2dev map[UUID]*Device
 	chunks   []SysChunk
 
@@ -95,15 +94,12 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 }
 
 func (fs *FS) Init() error {
-	if fs.uuid2dev != nil {
-		return fs.initErr
-	}
 	fs.uuid2dev = make(map[UUID]*Device, len(fs.Devices))
+	fs.chunks = nil
 	for _, dev := range fs.Devices {
 		sbs, err := dev.Superblocks()
 		if err != nil {
-			fs.initErr = fmt.Errorf("file %q: %w", dev.Name(), err)
-			return fs.initErr
+			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 
 		a := sbs[0].Data
@@ -114,22 +110,19 @@ func (fs *FS) Init() error {
 			b.Checksum = CSum{}
 			b.Self = 0
 			if !reflect.DeepEqual(a, b) {
-				fs.initErr = fmt.Errorf("file %q: superblock %d disagrees with superblock 0",
+				return fmt.Errorf("file %q: superblock %d disagrees with superblock 0",
 					dev.Name(), i+1)
-				return fs.initErr
 			}
 		}
 		sb := sbs[0]
 		if other, exists := fs.uuid2dev[sb.Data.DevItem.DevUUID]; exists {
-			fs.initErr = fmt.Errorf("file %q and file %q have the same device ID: %v",
+			return fmt.Errorf("file %q and file %q have the same device ID: %v",
 				other.Name(), dev.Name(), sb.Data.DevItem.DevUUID)
-			return fs.initErr
 		}
 		fs.uuid2dev[sb.Data.DevItem.DevUUID] = dev
 		syschunks, err := sb.Data.ParseSysChunkArray()
 		if err != nil {
-			fs.initErr = fmt.Errorf("file %q: %w", dev.Name(), err)
-			return fs.initErr
+			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 		for _, chunk := range syschunks {
 			fs.chunks = append(fs.chunks, chunk)
@@ -146,8 +139,7 @@ func (fs *FS) Init() error {
 				return nil
 			},
 		}); err != nil {
-			fs.initErr = err
-			return fs.initErr
+			return err
 		}
 	}
 	return nil
