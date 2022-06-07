@@ -35,7 +35,7 @@ func (o InodeRefList) MarshalBinary() ([]byte, error) {
 
 type InodeRef struct {
 	Index         int64  `bin:"off=0x0, siz=0x8"`
-	NameLen       uint16 `bin:"off=0x8, siz=0x2"`
+	NameLen       uint16 `bin:"off=0x8, siz=0x2"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0xa"`
 	Name          []byte `bin:"-"`
 }

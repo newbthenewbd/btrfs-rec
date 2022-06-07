@@ -39,8 +39,8 @@ func (o DirList) MarshalBinary() ([]byte, error) {
 type Dir struct {
 	Location      internal.Key `bin:"off=0x0, siz=0x11"`
 	TransID       int64        `bin:"off=0x11, siz=8"`
-	DataLen       uint16       `bin:"off=0x19, siz=2"`
-	NameLen       uint16       `bin:"off=0x1b, siz=2"`
+	DataLen       uint16       `bin:"off=0x19, siz=2"` // [ignored-when-writing]
+	NameLen       uint16       `bin:"off=0x1b, siz=2"` // [ignored-when-writing]
 	Type          FileType     `bin:"off=0x1d, siz=1"`
 	binstruct.End `bin:"off=0x1e"`
 	Data          []byte `bin:"-"`

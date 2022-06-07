@@ -11,35 +11,6 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
-type Node struct {
-	// Some context from the parent filesystem
-	Size uint32 // superblock.NodeSize
-
-	// The node's header (always present)
-	Head NodeHeader
-
-	// The node's body (which one of these is present depends on
-	// the node's type, as specified in the header)
-	BodyInternal []KeyPointer // for internal nodes
-	BodyLeaf     []Item       // for leave nodes
-
-	Padding []byte
-}
-
-type NodeHeader struct {
-	Checksum      CSum        `bin:"off=0x0,  siz=0x20"` // Checksum of everything after this field (from 20 to the end of the node)
-	MetadataUUID  UUID        `bin:"off=0x20, siz=0x10"` // FS UUID
-	Addr          LogicalAddr `bin:"off=0x30, siz=0x8"`  // Logical address of this node
-	Flags         NodeFlags   `bin:"off=0x38, siz=0x7"`
-	BackrefRev    uint8       `bin:"off=0x3f, siz=0x1"`
-	ChunkTreeUUID UUID        `bin:"off=0x40, siz=0x10"` // Chunk tree UUID
-	Generation    Generation  `bin:"off=0x50, siz=0x8"`  // Generation
-	Owner         ObjID       `bin:"off=0x58, siz=0x8"`  // The ID of the tree that contains this node
-	NumItems      uint32      `bin:"off=0x60, siz=0x4"`  // Number of items
-	Level         uint8       `bin:"off=0x64, siz=0x1"`  // Level (0 for leaf nodes)
-	binstruct.End `bin:"off=0x65"`
-}
-
 type NodeFlags uint64
 
 func (NodeFlags) BinaryStaticSize() int {
@@ -76,23 +47,35 @@ var nodeFlagNames = []string{
 func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
 func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames, util.HexLower) }
 
-type KeyPointer struct {
-	Key           Key         `bin:"off=0x0, siz=0x11"`
-	BlockPtr      LogicalAddr `bin:"off=0x11, siz=0x8"`
-	Generation    Generation  `bin:"off=0x19, siz=0x8"`
-	binstruct.End `bin:"off=0x21"`
+// Node: main //////////////////////////////////////////////////////////////////////////////////////
+
+type Node struct {
+	// Some context from the parent filesystem
+	Size uint32 // superblock.NodeSize
+
+	// The node's header (always present)
+	Head NodeHeader
+
+	// The node's body (which one of these is present depends on
+	// the node's type, as specified in the header)
+	BodyInternal []KeyPointer // for internal nodes
+	BodyLeaf     []Item       // for leave nodes
+
+	Padding []byte
 }
 
-type ItemHeader struct {
-	Key           Key    `bin:"off=0x0, siz=0x11"`
-	DataOffset    uint32 `bin:"off=0x11, siz=0x4"` // relative to the end of the header (0x65)
-	DataSize      uint32 `bin:"off=0x15, siz=0x4"`
-	binstruct.End `bin:"off=0x19"`
-}
-
-type Item struct {
-	Head ItemHeader
-	Body btrfsitem.Item
+type NodeHeader struct {
+	Checksum      CSum        `bin:"off=0x0,  siz=0x20"`
+	MetadataUUID  UUID        `bin:"off=0x20, siz=0x10"`
+	Addr          LogicalAddr `bin:"off=0x30, siz=0x8"` // Logical address of this node
+	Flags         NodeFlags   `bin:"off=0x38, siz=0x7"`
+	BackrefRev    uint8       `bin:"off=0x3f, siz=0x1"`
+	ChunkTreeUUID UUID        `bin:"off=0x40, siz=0x10"`
+	Generation    Generation  `bin:"off=0x50, siz=0x8"`
+	Owner         ObjID       `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
+	NumItems      uint32      `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
+	Level         uint8       `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
+	binstruct.End `bin:"off=0x65"`
 }
 
 // MaxItems returns the maximum possible valid value of
@@ -104,120 +87,6 @@ func (node Node) MaxItems() uint32 {
 	} else {
 		return bodyBytes / uint32(binstruct.StaticSize(ItemHeader{}))
 	}
-}
-
-func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
-	node.BodyInternal = nil
-	node.BodyLeaf = nil
-	node.Padding = nil
-	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
-	if err != nil {
-		return n, err
-	}
-	if node.Head.Level > 0 {
-		// internal node
-		for i := uint32(0); i < node.Head.NumItems; i++ {
-			var item KeyPointer
-			_n, err := binstruct.Unmarshal(nodeBuf[n:], &item)
-			n += _n
-			if err != nil {
-				return n, fmt.Errorf("(internal): item %d: %w", i, err)
-			}
-			node.BodyInternal = append(node.BodyInternal, item)
-		}
-		node.Padding = nodeBuf[n:]
-		return len(nodeBuf), nil
-	} else {
-		// leaf node
-		firstRead := len(nodeBuf)
-		lastRead := 0
-		for i := uint32(0); i < node.Head.NumItems; i++ {
-			var item Item
-			_n, err := binstruct.Unmarshal(nodeBuf[n:], &item.Head)
-			n += _n
-			if err != nil {
-				return n, fmt.Errorf("(leaf): item %d: %w", i, err)
-			}
-
-			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
-			dataSize := int(item.Head.DataSize)
-			if dataOff+dataSize > len(nodeBuf) {
-				return util.Max(n, lastRead), fmt.Errorf("(leaf): item references byte %d, but node only has %d bytes",
-					dataOff+dataSize, len(nodeBuf))
-			}
-			dataBuf := nodeBuf[dataOff : dataOff+dataSize]
-			firstRead = util.Min(firstRead, dataOff)
-			lastRead = util.Max(lastRead, dataOff+dataSize)
-			item.Body = btrfsitem.UnmarshalItem(item.Head.Key, dataBuf)
-
-			node.BodyLeaf = append(node.BodyLeaf, item)
-		}
-		node.Padding = nodeBuf[n:firstRead]
-		return util.Max(n, lastRead), nil
-	}
-}
-
-func (node Node) MarshalBinary() ([]byte, error) {
-	if node.Size == 0 {
-		return nil, fmt.Errorf("Node.MarshalBinary: .Size must be set")
-	}
-
-	ret := make([]byte, node.Size)
-
-	dat, err := binstruct.Marshal(node.Head)
-	if err != nil {
-		return dat, err
-	}
-	if node.Head.Level > 0 {
-		// internal node
-		for _, item := range node.BodyInternal {
-			bs, err := binstruct.Marshal(item)
-			dat = append(dat, bs...)
-			if err != nil {
-				return dat, err
-			}
-		}
-		dat = append(dat, node.Padding...)
-		if copy(ret, dat) < len(dat) {
-			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
-				len(dat), node.Size)
-		}
-	} else {
-		// leaf node
-		if copy(ret, dat) < len(dat) {
-			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
-				len(dat), node.Size)
-		}
-		n := len(dat)
-		minData := len(ret)
-		for _, item := range node.BodyLeaf {
-			dat, err = binstruct.Marshal(item.Head)
-			if err != nil {
-				return ret, err
-			}
-			if copy(ret[n:], dat) < len(dat) {
-				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
-					n+len(dat), node.Size)
-			}
-			n += len(dat)
-
-			dat, err := binstruct.Marshal(item.Body)
-			if err != nil {
-				return ret, err
-			}
-			dataOff := binstruct.StaticSize(NodeHeader{}) + int(item.Head.DataOffset)
-			minData = util.Min(minData, dataOff)
-			if copy(ret[dataOff:], dat) < len(dat) {
-				return ret, fmt.Errorf("btrfs.Node.MarshalBinary: need at least %d bytes, but .Size is only %d",
-					dataOff+len(dat), node.Size)
-			}
-		}
-		if copy(ret[n:minData], node.Padding) < len(node.Padding) {
-			return ret, fmt.Errorf("btrfs.Node.MarshalBinary: not enough room left for padding")
-		}
-
-	}
-	return ret, nil
 }
 
 func (node Node) CalculateChecksum() (CSum, error) {
@@ -241,6 +110,194 @@ func (node Node) ValidateChecksum() error {
 	return nil
 }
 
+func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
+	*node = Node{
+		Size: uint32(len(nodeBuf)),
+	}
+	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
+	if err != nil {
+		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: %w", err)
+	}
+	if node.Head.Level > 0 {
+		_n, err := node.unmarshalInternal(nodeBuf[n:])
+		n += _n
+		if err != nil {
+			return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: internal: %w", err)
+		}
+	} else {
+		_n, err := node.unmarshalLeaf(nodeBuf[n:])
+		n += _n
+		if err != nil {
+			return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: leaf: %w", err)
+		}
+	}
+	if n != len(nodeBuf) {
+		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: left over data: got %d bytes but only consumed %d",
+			len(nodeBuf), n)
+	}
+	return n, nil
+}
+
+func (node Node) MarshalBinary() ([]byte, error) {
+	if node.Size == 0 {
+		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be set")
+	}
+	if node.Size <= uint32(binstruct.StaticSize(NodeHeader{})) {
+		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be greater than %d",
+			binstruct.StaticSize(NodeHeader{}))
+	}
+
+	buf := make([]byte, node.Size)
+
+	if bs, err := binstruct.Marshal(node.Head); err != nil {
+		return buf, err
+	} else if len(bs) != binstruct.StaticSize(NodeHeader{}) {
+		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: header is %d bytes but expected %d",
+			len(bs), binstruct.StaticSize(NodeHeader{}))
+	} else {
+		copy(buf, bs)
+	}
+
+	if node.Head.Level > 0 {
+		if err := node.marshalInternalTo(buf[binstruct.StaticSize(NodeHeader{}):]); err != nil {
+			return buf, err
+		}
+	} else {
+		if err := node.marshalLeafTo(buf[binstruct.StaticSize(NodeHeader{}):]); err != nil {
+			return buf, err
+		}
+	}
+
+	return buf, nil
+}
+
+// Node: "internal" ////////////////////////////////////////////////////////////////////////////////
+
+type KeyPointer struct {
+	Key           Key         `bin:"off=0x0, siz=0x11"`
+	BlockPtr      LogicalAddr `bin:"off=0x11, siz=0x8"`
+	Generation    Generation  `bin:"off=0x19, siz=0x8"`
+	binstruct.End `bin:"off=0x21"`
+}
+
+func (node *Node) unmarshalInternal(bodyBuf []byte) (int, error) {
+	n := 0
+	for i := uint32(0); i < node.Head.NumItems; i++ {
+		var item KeyPointer
+		_n, err := binstruct.Unmarshal(bodyBuf[n:], &item)
+		n += _n
+		if err != nil {
+			return n, fmt.Errorf("item %d: %w", i, err)
+		}
+		node.BodyInternal = append(node.BodyInternal, item)
+	}
+	node.Padding = bodyBuf[n:]
+	return len(bodyBuf), nil
+}
+
+func (node *Node) marshalInternalTo(bodyBuf []byte) error {
+	n := 0
+	for i, item := range node.BodyInternal {
+		bs, err := binstruct.Marshal(item)
+		if err != nil {
+			return fmt.Errorf("item %d: %w", i, err)
+		}
+		if copy(bodyBuf[n:], bs) < len(bs) {
+			return fmt.Errorf("item %d: not enough space: need at least %d+%d=%d bytes, but only have %d",
+				n, len(bs), n+len(bs), len(bodyBuf))
+		}
+		n += len(bs)
+	}
+	if copy(bodyBuf[n:], node.Padding) < len(node.Padding) {
+		return fmt.Errorf("padding: not enough space: need at least %d+%d=%d bytes, but only have %d",
+			n, len(node.Padding), n+len(node.Padding), len(bodyBuf))
+	}
+	return nil
+}
+
+// Node: "leaf" ////////////////////////////////////////////////////////////////////////////////////
+
+type Item struct {
+	Head ItemHeader
+	Body btrfsitem.Item
+}
+
+type ItemHeader struct {
+	Key           Key    `bin:"off=0x0, siz=0x11"`
+	DataOffset    uint32 `bin:"off=0x11, siz=0x4"` // [ignored-when-writing] relative to the end of the header (0x65)
+	DataSize      uint32 `bin:"off=0x15, siz=0x4"` // [ignored-when-writing]
+	binstruct.End `bin:"off=0x19"`
+}
+
+func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
+	head := 0
+	tail := len(bodyBuf)
+	for i := uint32(0); i < node.Head.NumItems; i++ {
+		var item Item
+
+		n, err := binstruct.Unmarshal(bodyBuf[head:], &item.Head)
+		head += n
+		if err != nil {
+			return 0, fmt.Errorf("item %d: head: %w", i, err)
+		}
+		if head > tail {
+			return 0, fmt.Errorf("item %d: head: end_offset=0x%0x is in the body section (offset>0x%0x)",
+				i, head, tail)
+		}
+
+		dataOff := int(item.Head.DataOffset)
+		if dataOff < head {
+			return 0, fmt.Errorf("item %d: body: beg_offset=0x%0x is in the head section (offset<0x%0x)",
+				i, dataOff, head)
+		}
+		dataSize := int(item.Head.DataSize)
+		if dataOff+dataSize != tail {
+			return 0, fmt.Errorf("item %d: body: end_offset=0x%0x is not cur_tail=0x%0x)",
+				i, dataOff+dataSize, tail)
+		}
+		tail = dataOff
+		dataBuf := bodyBuf[dataOff : dataOff+dataSize]
+		item.Body = btrfsitem.UnmarshalItem(item.Head.Key, dataBuf)
+
+		node.BodyLeaf = append(node.BodyLeaf, item)
+	}
+
+	node.Padding = bodyBuf[head:tail]
+	return len(bodyBuf), nil
+}
+
+func (node *Node) marshalLeafTo(bodyBuf []byte) error {
+	head := 0
+	tail := len(bodyBuf)
+	for i, item := range node.BodyLeaf {
+		itemBodyBuf, err := binstruct.Marshal(item.Body)
+		if err != nil {
+			return fmt.Errorf("item %d: body: %w", i, err)
+		}
+		item.Head.DataSize = uint32(len(itemBodyBuf))
+		item.Head.DataOffset = uint32(tail - len(itemBodyBuf))
+		itemHeadBuf, err := binstruct.Marshal(item.Head)
+		if err != nil {
+			return fmt.Errorf("item %d: head: %w", i, err)
+		}
+
+		if tail-head < len(itemHeadBuf)+len(itemBodyBuf) {
+			return fmt.Errorf("item %d: not enough space: need at least (head_len:%d)+(body_len:%d)=%d free bytes, but only have %d",
+				i, len(itemHeadBuf), len(itemBodyBuf), len(itemHeadBuf)+len(itemBodyBuf), tail-head)
+		}
+
+		copy(bodyBuf[head:], itemHeadBuf)
+		head += len(itemHeadBuf)
+		tail -= len(itemBodyBuf)
+		copy(bodyBuf[tail:], itemBodyBuf)
+	}
+	if copy(bodyBuf[head:tail], node.Padding) < len(node.Padding) {
+		return fmt.Errorf("padding: not enough space: need at least %d free bytes, but only have %d",
+			len(node.Padding), tail-head)
+	}
+	return nil
+}
+
 func (node *Node) LeafFreeSpace() uint32 {
 	if node.Head.Level > 0 {
 		panic(fmt.Errorf("Node.LeafFreeSpace: not a leaf node"))
@@ -254,59 +311,69 @@ func (node *Node) LeafFreeSpace() uint32 {
 	return freeSpace
 }
 
-func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
-	}
+// Tie Nodes in to the FS //////////////////////////////////////////////////////////////////////////
 
-	// read
+var ErrNotANode = errors.New("does not look like a node")
 
-	nodeBuf := make([]byte, sb.Data.NodeSize)
+func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB func(LogicalAddr) error) (*util.Ref[Addr, Node], error) {
+	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
 		return nil, err
 	}
 
 	// parse (early)
 
-	nodeRef := &util.Ref[LogicalAddr, Node]{
+	nodeRef := &util.Ref[Addr, Node]{
 		File: fs,
 		Addr: addr,
-		Data: Node{
-			Size: sb.Data.NodeSize,
-		},
 	}
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
 	}
 
 	// sanity checking
 
-	if nodeRef.Data.Head.MetadataUUID != sb.Data.EffectiveMetadataUUID() {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: node@%d: does not look like a node", addr)
+	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
+		return nil, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, ErrNotANode)
 	}
 
 	stored := nodeRef.Data.Head.Checksum
 	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
 	if stored != calced {
-		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: checksum mismatch: stored=%s calculated=%s",
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: looks like a node but is corrupt: checksum mismatch: stored=%s calculated=%s",
 			addr, stored, calced)
 	}
 
-	if nodeRef.Data.Head.Addr != addr {
-		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: read from laddr=%d but claims to be at laddr=%d",
-			addr, addr, nodeRef.Data.Head.Addr)
+	if laddrCB != nil {
+		if err := laddrCB(nodeRef.Data.Head.Addr); err != nil {
+			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", err)
+		}
 	}
 
 	// parse (main)
 
 	if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.FS.ReadNode: node@%d: %w", addr, err)
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
 	}
 
 	// return
 
 	return nodeRef, nil
+}
+
+func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
+	}
+
+	return ReadNode[LogicalAddr](fs, sb.Data, addr, func(claimAddr LogicalAddr) error {
+		if claimAddr != addr {
+			return fmt.Errorf("read from laddr=%d but claims to be at laddr=%d",
+				addr, claimAddr)
+		}
+		return nil
+	})
 }
 
 type WalkTreeHandler struct {
