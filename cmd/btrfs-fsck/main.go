@@ -291,3 +291,40 @@ func Main(imgfilename string) (err error) {
 	*/
 	return nil
 }
+
+func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
+	origItem := cbs.Item
+	cbs.Item = func(key btrfs.Key, body btrfsitem.Item) error {
+		if key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+			root, ok := body.(btrfsitem.Root)
+			if !ok {
+				errCb(fmt.Errorf("ROOT_ITEM_KEY is a %T, not a btrfsitem.Root", body))
+			} else if err := fs.WalkTree(root.ByteNr, cbs); err != nil {
+				errCb(err)
+			}
+		}
+		if origItem != nil {
+			return origItem(key, body)
+		}
+		return nil
+	}
+
+	superblock, err := fs.Superblock()
+	if err != nil {
+		errCb(err)
+		return
+	}
+
+	if err := fs.WalkTree(superblock.Data.RootTree, cbs); err != nil {
+		errCb(err)
+	}
+	if err := fs.WalkTree(superblock.Data.ChunkTree, cbs); err != nil {
+		errCb(err)
+	}
+	if err := fs.WalkTree(superblock.Data.LogTree, cbs); err != nil {
+		errCb(err)
+	}
+	if err := fs.WalkTree(superblock.Data.BlockGroupRoot, cbs); err != nil {
+		errCb(err)
+	}
+}
