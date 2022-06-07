@@ -170,16 +170,16 @@ func pass1ReconstructChunksOneDev(
 		LAddr btrfs.LogicalAddr
 		Size  uint64
 	}
-	var stripes []stripe
+	var stripes []*stripe
 	for _, paddr := range sortedPaddrs {
 		var lastStripe *stripe
 		if len(stripes) > 0 {
-			lastStripe = &stripes[len(stripes)-1]
+			lastStripe = stripes[len(stripes)-1]
 		}
 		if lastStripe != nil && (lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size)) == paddr {
 			lastStripe.Size += uint64(superblock.Data.NodeSize)
 		} else {
-			stripes = append(stripes, stripe{
+			stripes = append(stripes, &stripe{
 				PAddr: paddr,
 				LAddr: lostAndFoundNodes[paddr],
 				Size:  uint64(superblock.Data.NodeSize),
@@ -242,6 +242,7 @@ func pass1WriteReconstructedChunks(
 			},
 		},
 	}
+
 	for _, dev := range fs.Devices {
 		superblock, _ := dev.Superblock()
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
@@ -255,7 +256,20 @@ func pass1WriteReconstructedChunks(
 			Body: superblock.Data.DevItem,
 		})
 	}
-	for laddr, chunk := range fsReconstructedChunks {
+
+	sortedLAddrs := make([]btrfs.LogicalAddr, 0, len(fsReconstructedChunks))
+	for laddr := range fsReconstructedChunks {
+		sortedLAddrs = append(sortedLAddrs, laddr)
+	}
+	sort.Slice(sortedLAddrs, func(i, j int) bool {
+		return sortedLAddrs[i] < sortedLAddrs[j]
+	})
+	for i, laddr := range sortedLAddrs {
+		chunk := fsReconstructedChunks[laddr]
+		for j, stripe := range chunk.Stripes {
+			fmt.Printf("Pass 1: chunk[%d].stripe[%d] = { laddr=0x%0x ⇒ { dev_id=%v, paddr=0x%0x }, size=0x%0x }\n",
+				i, j, laddr, stripe.DeviceID, stripe.Offset, chunk.Size)
+		}
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{
 				Key: btrfs.Key{
@@ -280,11 +294,13 @@ func pass1WriteReconstructedChunks(
 			},
 		})
 	}
+
 	var err error
 	reconstructedNode.Data.Head.Checksum, err = reconstructedNode.Data.CalculateChecksum()
 	if err != nil {
 		fmt.Printf("Pass 1: ... new node checksum: error: %v\n", err)
 	}
+
 	if err := reconstructedNode.Write(); err != nil {
 		fmt.Printf("Pass 1: ... write new node: error: %v\n", err)
 	}

@@ -9,7 +9,7 @@ import (
 type CSum [0x20]byte
 
 func (csum CSum) String() string {
-	return fmt.Sprintf("%x", csum)
+	return fmt.Sprintf("%x", [0x20]byte(csum))
 }
 
 func CRC32c(data []byte) CSum {

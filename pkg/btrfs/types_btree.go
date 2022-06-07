@@ -204,7 +204,7 @@ func (node *Node) marshalInternalTo(bodyBuf []byte) error {
 		}
 		if copy(bodyBuf[n:], bs) < len(bs) {
 			return fmt.Errorf("item %d: not enough space: need at least %d+%d=%d bytes, but only have %d",
-				n, len(bs), n+len(bs), len(bodyBuf))
+				i, n, len(bs), n+len(bs), len(bodyBuf))
 		}
 		n += len(bs)
 	}
@@ -346,7 +346,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 
 	if laddrCB != nil {
 		if err := laddrCB(nodeRef.Data.Head.Addr); err != nil {
-			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", err)
+			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
 		}
 	}
 
@@ -410,34 +410,36 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 		}
 		return fmt.Errorf("btrfs.FS.WalkTree: %w", err)
 	}
-	for _, item := range node.Data.BodyInternal {
-		if cbs.PreKeyPointer != nil {
-			if err := cbs.PreKeyPointer(item); err != nil {
-				if errors.Is(err, iofs.SkipDir) {
-					continue
+	if node != nil {
+		for _, item := range node.Data.BodyInternal {
+			if cbs.PreKeyPointer != nil {
+				if err := cbs.PreKeyPointer(item); err != nil {
+					if errors.Is(err, iofs.SkipDir) {
+						continue
+					}
+					return err
 				}
+			}
+			if err := fs.WalkTree(item.BlockPtr, cbs); err != nil {
 				return err
 			}
-		}
-		if err := fs.WalkTree(item.BlockPtr, cbs); err != nil {
-			return err
-		}
-		if cbs.PostKeyPointer != nil {
-			if err := cbs.PostKeyPointer(item); err != nil {
-				if errors.Is(err, iofs.SkipDir) {
-					continue
+			if cbs.PostKeyPointer != nil {
+				if err := cbs.PostKeyPointer(item); err != nil {
+					if errors.Is(err, iofs.SkipDir) {
+						continue
+					}
+					return err
 				}
-				return err
 			}
 		}
-	}
-	for _, item := range node.Data.BodyLeaf {
-		if cbs.Item != nil {
-			if err := cbs.Item(item.Head.Key, item.Body); err != nil {
-				if errors.Is(err, iofs.SkipDir) {
-					continue
+		for _, item := range node.Data.BodyLeaf {
+			if cbs.Item != nil {
+				if err := cbs.Item(item.Head.Key, item.Body); err != nil {
+					if errors.Is(err, iofs.SkipDir) {
+						continue
+					}
+					return fmt.Errorf("btrfs.FS.WalkTree: callback: %w", err)
 				}
-				return fmt.Errorf("btrfs.FS.WalkTree: callback: %w", err)
 			}
 		}
 	}
