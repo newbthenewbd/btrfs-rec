@@ -70,5 +70,5 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 		}
 	}
 
-	fmt.Printf("Pass 2: orphanedNodes=%#v\n", orphanedNodes)
+	//fmt.Printf("Pass 2: orphanedNodes=%#v\n", orphanedNodes)
 }
