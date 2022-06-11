@@ -213,7 +213,7 @@ func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := fs.Resolve(laddr)
 	if len(paddrs) == 0 {
-		return 0, fmt.Errorf("could not map logical address %v", laddr)
+		return 0, fmt.Errorf("read: could not map logical address %v", laddr)
 	}
 	if uint64(len(dat)) > maxlen {
 		dat = dat[:maxlen]
@@ -255,7 +255,7 @@ func (fs *FS) WriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 func (fs *FS) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := fs.Resolve(laddr)
 	if len(paddrs) == 0 {
-		return 0, fmt.Errorf("could not map logical address %v", laddr)
+		return 0, fmt.Errorf("write: could not map logical address %v", laddr)
 	}
 	if uint64(len(dat)) > maxlen {
 		dat = dat[:maxlen]
