@@ -11,7 +11,7 @@ import (
 
 func main() {
 	if err := Main(os.Args[1]); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: error: %v\n", os.Args[0], err)
+		fmt.Fprintf(os.Stderr, "%v: error: %v\n", os.Args[0], err)
 		os.Exit(1)
 	}
 }
@@ -49,7 +49,7 @@ func Main(imgfilename string) (err error) {
 		return err
 	}
 
-	fmt.Printf("btrfs-progs v%s \n", version)
+	fmt.Printf("btrfs-progs v%v \n", version)
 	if superblock.Data.RootTree != 0 {
 		fmt.Printf("root tree\n")
 		if err := btrfsmisc.PrintTree(fs, superblock.Data.RootTree); err != nil {
@@ -102,14 +102,14 @@ func Main(imgfilename string) (err error) {
 			if !ok {
 				treeName = "file"
 			}
-			fmt.Printf("%s tree %s \n", treeName, btrfsmisc.FmtKey(key))
+			fmt.Printf("%v tree %v \n", treeName, btrfsmisc.FmtKey(key))
 			return btrfsmisc.PrintTree(fs, body.(btrfsitem.Root).ByteNr)
 		},
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("total bytes %d\n", superblock.Data.TotalBytes)
-	fmt.Printf("bytes used %d\n", superblock.Data.BytesUsed)
+	fmt.Printf("total bytes %v\n", superblock.Data.TotalBytes)
+	fmt.Printf("bytes used %v\n", superblock.Data.BytesUsed)
 	fmt.Printf("uuid %v\n", superblock.Data.FSUUID)
 
 	return nil

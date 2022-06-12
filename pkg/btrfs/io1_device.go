@@ -56,7 +56,7 @@ func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) 
 				Addr: addr,
 			}
 			if err := superblock.Read(); err != nil {
-				return nil, fmt.Errorf("superblock %d: %w", i, err)
+				return nil, fmt.Errorf("superblock %v: %w", i, err)
 			}
 			ret = append(ret, superblock)
 		}
@@ -79,11 +79,11 @@ func (dev *Device) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 
 	for i, sb := range sbs {
 		if err := sb.Data.ValidateChecksum(); err != nil {
-			return nil, fmt.Errorf("superblock %d: %w", i, err)
+			return nil, fmt.Errorf("superblock %v: %w", i, err)
 		}
 		if i > 0 {
 			if !sb.Data.Equal(sbs[0].Data) {
-				return nil, fmt.Errorf("superblock %d and superblock %d disagree", 0, i)
+				return nil, fmt.Errorf("superblock %v and superblock %v disagree", 0, i)
 			}
 		}
 	}

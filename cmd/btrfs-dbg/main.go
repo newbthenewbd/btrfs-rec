@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if err := Main(os.Args[1]); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: error: %v\n", os.Args[0], err)
+		fmt.Fprintf(os.Stderr, "%v: error: %v\n", os.Args[0], err)
 		os.Exit(1)
 	}
 }
@@ -65,7 +65,7 @@ func Main(imgfilename string) (err error) {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Printf("node@%d: physical_addr=0x%0X logical_addr=0x%0X generation=%d owner=%v level=%d\n",
+			fmt.Printf("node@%v: physical_addr=%v logical_addr=%v generation=%v owner=%v level=%v\n",
 				nodeRef.Addr,
 				nodeRef.Addr, nodeRef.Data.Head.Addr,
 				nodeRef.Data.Head.Generation, nodeRef.Data.Head.Owner, nodeRef.Data.Head.Level)

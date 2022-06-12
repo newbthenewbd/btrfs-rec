@@ -76,11 +76,11 @@ func (sh structHandler) Unmarshal(dat []byte, dst reflect.Value) (int, error) {
 			if _n >= 0 {
 				n += _n
 			}
-			return n, fmt.Errorf("struct %q field %d %q: %w",
+			return n, fmt.Errorf("struct %q field %v %q: %w",
 				sh.name, i, field.name, err)
 		}
 		if _n != field.siz {
-			return n, fmt.Errorf("struct %q field %d %q: consumed %d bytes but should have consumed %d bytes",
+			return n, fmt.Errorf("struct %q field %v %q: consumed %v bytes but should have consumed %v bytes",
 				sh.name, i, field.name, _n, field.siz)
 		}
 		n += _n
@@ -97,7 +97,7 @@ func (sh structHandler) Marshal(val reflect.Value) ([]byte, error) {
 		bs, err := Marshal(val.Field(i).Interface())
 		ret = append(ret, bs...)
 		if err != nil {
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				sh.name, i, field.name, err)
 		}
 	}
@@ -115,13 +115,13 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 
 		if fieldInfo.Anonymous && fieldInfo.Type != endType {
 			err := fmt.Errorf("binstruct does not support embedded fields")
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				ret.name, i, fieldInfo.Name, err)
 		}
 
 		fieldTag, err := parseStructTag(fieldInfo.Tag.Get("bin"))
 		if err != nil {
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				ret.name, i, fieldInfo.Name, err)
 		}
 		if fieldTag.skip {
@@ -133,8 +133,8 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 		}
 
 		if fieldTag.off != curOffset {
-			err := fmt.Errorf("tag says off=0x%x but curOffset=0x%x", fieldTag.off, curOffset)
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			err := fmt.Errorf("tag says off=%#x but curOffset=%#x", fieldTag.off, curOffset)
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				ret.name, i, fieldInfo.Name, err)
 		}
 		if fieldInfo.Type == endType {
@@ -143,13 +143,13 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 
 		fieldSize, err := staticSize(fieldInfo.Type)
 		if err != nil {
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				ret.name, i, fieldInfo.Name, err)
 		}
 
 		if fieldTag.siz != fieldSize {
-			err := fmt.Errorf("tag says siz=0x%x but StaticSize(typ)=0x%x", fieldTag.siz, fieldSize)
-			return ret, fmt.Errorf("struct %q field %d %q: %w",
+			err := fmt.Errorf("tag says siz=%#x but StaticSize(typ)=%#x", fieldTag.siz, fieldSize)
+			return ret, fmt.Errorf("struct %q field %v %q: %w",
 				ret.name, i, fieldInfo.Name, err)
 		}
 		curOffset += fieldTag.siz

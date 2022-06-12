@@ -18,13 +18,13 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 	}
 
 	if sb.NodeSize < sb.SectorSize {
-		return fmt.Errorf("node_size(%d) < sector_size(%d)",
+		return fmt.Errorf("node_size(%v) < sector_size(%v)",
 			sb.NodeSize, sb.SectorSize)
 	}
 
 	for pos := btrfs.PhysicalAddr(0); pos+btrfs.PhysicalAddr(sb.NodeSize) < devSize; pos += btrfs.PhysicalAddr(sb.SectorSize) {
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
-			//fmt.Printf("sector@%d is a superblock\n", pos)
+			//fmt.Printf("sector@%v is a superblock\n", pos)
 			continue
 		}
 

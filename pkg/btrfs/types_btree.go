@@ -104,7 +104,7 @@ func (node Node) ValidateChecksum() error {
 		return err
 	}
 	if calced != stored {
-		return fmt.Errorf("node checksum mismatch: stored=%s calculated=%s",
+		return fmt.Errorf("node checksum mismatch: stored=%v calculated=%v",
 			stored, calced)
 	}
 	return nil
@@ -132,7 +132,7 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 		}
 	}
 	if n != len(nodeBuf) {
-		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: left over data: got %d bytes but only consumed %d",
+		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: left over data: got %v bytes but only consumed %v",
 			len(nodeBuf), n)
 	}
 	return n, nil
@@ -143,7 +143,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be set")
 	}
 	if node.Size <= uint32(binstruct.StaticSize(NodeHeader{})) {
-		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be greater than %d",
+		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be greater than %v",
 			binstruct.StaticSize(NodeHeader{}))
 	}
 	if node.Head.Level > 0 {
@@ -157,7 +157,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	if bs, err := binstruct.Marshal(node.Head); err != nil {
 		return buf, err
 	} else if len(bs) != binstruct.StaticSize(NodeHeader{}) {
-		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: header is %d bytes but expected %d",
+		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: header is %v bytes but expected %v",
 			len(bs), binstruct.StaticSize(NodeHeader{}))
 	} else {
 		copy(buf, bs)
@@ -192,7 +192,7 @@ func (node *Node) unmarshalInternal(bodyBuf []byte) (int, error) {
 		_n, err := binstruct.Unmarshal(bodyBuf[n:], &item)
 		n += _n
 		if err != nil {
-			return n, fmt.Errorf("item %d: %w", i, err)
+			return n, fmt.Errorf("item %v: %w", i, err)
 		}
 		node.BodyInternal = append(node.BodyInternal, item)
 	}
@@ -205,16 +205,16 @@ func (node *Node) marshalInternalTo(bodyBuf []byte) error {
 	for i, item := range node.BodyInternal {
 		bs, err := binstruct.Marshal(item)
 		if err != nil {
-			return fmt.Errorf("item %d: %w", i, err)
+			return fmt.Errorf("item %v: %w", i, err)
 		}
 		if copy(bodyBuf[n:], bs) < len(bs) {
-			return fmt.Errorf("item %d: not enough space: need at least %d+%d=%d bytes, but only have %d",
+			return fmt.Errorf("item %v: not enough space: need at least %v+%v=%v bytes, but only have %v",
 				i, n, len(bs), n+len(bs), len(bodyBuf))
 		}
 		n += len(bs)
 	}
 	if copy(bodyBuf[n:], node.Padding) < len(node.Padding) {
-		return fmt.Errorf("padding: not enough space: need at least %d+%d=%d bytes, but only have %d",
+		return fmt.Errorf("padding: not enough space: need at least %v+%v=%v bytes, but only have %v",
 			n, len(node.Padding), n+len(node.Padding), len(bodyBuf))
 	}
 	return nil
@@ -243,21 +243,21 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 		n, err := binstruct.Unmarshal(bodyBuf[head:], &item.Head)
 		head += n
 		if err != nil {
-			return 0, fmt.Errorf("item %d: head: %w", i, err)
+			return 0, fmt.Errorf("item %v: head: %w", i, err)
 		}
 		if head > tail {
-			return 0, fmt.Errorf("item %d: head: end_offset=0x%0x is in the body section (offset>0x%0x)",
+			return 0, fmt.Errorf("item %v: head: end_offset=%#x is in the body section (offset>%#x)",
 				i, head, tail)
 		}
 
 		dataOff := int(item.Head.DataOffset)
 		if dataOff < head {
-			return 0, fmt.Errorf("item %d: body: beg_offset=0x%0x is in the head section (offset<0x%0x)",
+			return 0, fmt.Errorf("item %v: body: beg_offset=%#x is in the head section (offset<%#x)",
 				i, dataOff, head)
 		}
 		dataSize := int(item.Head.DataSize)
 		if dataOff+dataSize != tail {
-			return 0, fmt.Errorf("item %d: body: end_offset=0x%0x is not cur_tail=0x%0x)",
+			return 0, fmt.Errorf("item %v: body: end_offset=%#x is not cur_tail=%#x)",
 				i, dataOff+dataSize, tail)
 		}
 		tail = dataOff
@@ -277,17 +277,17 @@ func (node *Node) marshalLeafTo(bodyBuf []byte) error {
 	for i, item := range node.BodyLeaf {
 		itemBodyBuf, err := binstruct.Marshal(item.Body)
 		if err != nil {
-			return fmt.Errorf("item %d: body: %w", i, err)
+			return fmt.Errorf("item %v: body: %w", i, err)
 		}
 		item.Head.DataSize = uint32(len(itemBodyBuf))
 		item.Head.DataOffset = uint32(tail - len(itemBodyBuf))
 		itemHeadBuf, err := binstruct.Marshal(item.Head)
 		if err != nil {
-			return fmt.Errorf("item %d: head: %w", i, err)
+			return fmt.Errorf("item %v: head: %w", i, err)
 		}
 
 		if tail-head < len(itemHeadBuf)+len(itemBodyBuf) {
-			return fmt.Errorf("item %d: not enough space: need at least (head_len:%d)+(body_len:%d)=%d free bytes, but only have %d",
+			return fmt.Errorf("item %v: not enough space: need at least (head_len:%v)+(body_len:%v)=%v free bytes, but only have %v",
 				i, len(itemHeadBuf), len(itemBodyBuf), len(itemHeadBuf)+len(itemBodyBuf), tail-head)
 		}
 
@@ -297,7 +297,7 @@ func (node *Node) marshalLeafTo(bodyBuf []byte) error {
 		copy(bodyBuf[tail:], itemBodyBuf)
 	}
 	if copy(bodyBuf[head:tail], node.Padding) < len(node.Padding) {
-		return fmt.Errorf("padding: not enough space: need at least %d free bytes, but only have %d",
+		return fmt.Errorf("padding: not enough space: need at least %v free bytes, but only have %v",
 			len(node.Padding), tail-head)
 	}
 	return nil
@@ -333,32 +333,32 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 		Addr: addr,
 	}
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
 
 	// sanity checking
 
 	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
-		return nil, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, ErrNotANode)
+		return nil, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, ErrNotANode)
 	}
 
 	stored := nodeRef.Data.Head.Checksum
 	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
 	if stored != calced {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: looks like a node but is corrupt: checksum mismatch: stored=%s calculated=%s",
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
 			addr, stored, calced)
 	}
 
 	if laddrCB != nil {
 		if err := laddrCB(nodeRef.Data.Head.Addr); err != nil {
-			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
+			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 		}
 	}
 
 	// parse (main)
 
 	if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%d: %w", addr, err)
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
 
 	// return
@@ -374,7 +374,7 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 
 	return ReadNode[LogicalAddr](fs, sb.Data, addr, func(claimAddr LogicalAddr) error {
 		if claimAddr != addr {
-			return fmt.Errorf("read from laddr=%d but claims to be at laddr=%d",
+			return fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
 				addr, claimAddr)
 		}
 		return nil

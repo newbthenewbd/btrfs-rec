@@ -36,7 +36,7 @@ func (r *Ref[A, T]) Read() error {
 		return err
 	}
 	if n != size {
-		return fmt.Errorf("util.Ref[%T].Read: left over data: read %d bytes but only consumed %d",
+		return fmt.Errorf("util.Ref[%T].Read: left over data: read %v bytes but only consumed %v",
 			r.Data, size, n)
 	}
 	return nil

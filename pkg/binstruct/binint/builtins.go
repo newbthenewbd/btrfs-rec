@@ -7,7 +7,7 @@ import (
 
 func needNBytes(t interface{}, dat []byte, n int) error {
 	if len(dat) < n {
-		return fmt.Errorf("%T.UnmarshalBinary: need at least %d bytes, only have %d", t, n, len(dat))
+		return fmt.Errorf("%T.UnmarshalBinary: need at least %v bytes, only have %v", t, n, len(dat))
 	}
 	return nil
 }

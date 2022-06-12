@@ -68,7 +68,7 @@ func (id ObjID) Format(typ ItemType) string {
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
 	case UUID_SUBVOL_KEY, UUID_RECEIVED_SUBVOL_KEY:
-		return fmt.Sprintf("0x%016x", uint64(id))
+		return fmt.Sprintf("%#016x", uint64(id))
 	case DEV_ITEM_KEY:
 		names := map[ObjID]string{
 			BALANCE_OBJECTID:         "BALANCE",

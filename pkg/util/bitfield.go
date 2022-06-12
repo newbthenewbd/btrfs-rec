@@ -36,7 +36,7 @@ func BitfieldString[T ~uint8 | ~uint16 | ~uint32 | ~uint64](bitfield T, bitnames
 				if i < len(bitnames) {
 					out.WriteString(bitnames[i])
 				} else {
-					fmt.Fprintf(&out, "(1<<%d)", i)
+					fmt.Fprintf(&out, "(1<<%v)", i)
 				}
 				first = false
 			}

@@ -65,7 +65,7 @@ func UnmarshalItem(key internal.Key, dat []byte) Item {
 	if n < len(dat) {
 		return Error{
 			Dat: dat,
-			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): left over data: got %d bytes but only consumed %d",
+			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): left over data: got %v bytes but only consumed %v",
 				key.ItemType, len(dat), n),
 		}
 	}

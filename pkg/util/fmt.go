@@ -16,13 +16,13 @@ func FmtStateString(st fmt.State, verb rune) string {
 		}
 	}
 	if width, ok := st.Width(); ok {
-		fmt.Fprintf(&ret, "%d", width)
+		fmt.Fprintf(&ret, "%v", width)
 	}
 	if prec, ok := st.Precision(); ok {
 		if prec == 0 {
 			ret.WriteByte('.')
 		} else {
-			fmt.Fprintf(&ret, ".%d", prec)
+			fmt.Fprintf(&ret, ".%v", prec)
 		}
 	}
 	ret.WriteRune(verb)

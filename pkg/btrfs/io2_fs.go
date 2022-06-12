@@ -23,9 +23,9 @@ type FS struct {
 func (fs *FS) Name() string {
 	sb, err := fs.Superblock()
 	if err != nil {
-		return fmt.Sprintf("fs_uuid=%s", "(unreadable)")
+		return fmt.Sprintf("fs_uuid=%v", "(unreadable)")
 	}
-	return fmt.Sprintf("fs_uuid=%s", sb.Data.FSUUID)
+	return fmt.Sprintf("fs_uuid=%v", sb.Data.FSUUID)
 }
 
 func (fs *FS) Size() (LogicalAddr, error) {
@@ -76,13 +76,13 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 		}
 
 		if err := sb.Data.ValidateChecksum(); err != nil {
-			return nil, fmt.Errorf("file %q superblock %d: %w", sb.File.Name(), sbi, err)
+			return nil, fmt.Errorf("file %q superblock %v: %w", sb.File.Name(), sbi, err)
 		}
 		if i > 0 {
 			// This is probably wrong, but lots of my
 			// multi-device code is probably wrong.
 			if !sb.Data.Equal(sbs[0].Data) {
-				return nil, fmt.Errorf("file %q superblock %d and file %q superblock %d disagree",
+				return nil, fmt.Errorf("file %q superblock %v and file %q superblock %v disagree",
 					sbs[0].File.Name(), 0,
 					sb.File.Name(), sbi)
 			}
@@ -110,7 +110,7 @@ func (fs *FS) Init() error {
 			b.Checksum = CSum{}
 			b.Self = 0
 			if !reflect.DeepEqual(a, b) {
-				return fmt.Errorf("file %q: superblock %d disagrees with superblock 0",
+				return fmt.Errorf("file %q: superblock %v disagrees with superblock 0",
 					dev.Name(), i+1)
 			}
 		}
@@ -158,12 +158,12 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 	maxlen = math.MaxUint64
 
 	for _, chunk := range fs.chunks {
-		low := chunk.Key.Offset
-		high := chunk.Key.Offset + uint64(chunk.Chunk.Head.Size)
-		match := low <= uint64(laddr) && uint64(laddr) < high
+		low := LogicalAddr(chunk.Key.Offset)
+		high := low + LogicalAddr(chunk.Chunk.Head.Size)
+		match := low <= laddr && laddr < high
 		if dbg2 {
-			fmt.Printf("DBG: 0x%0x <= 0x%0x < 0x%0x : %v\n",
-				low, uint64(laddr), high, match)
+			fmt.Printf("DBG: %v <= %v < %v : %v\n",
+				low, laddr, high, match)
 		}
 		if match {
 			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
@@ -213,16 +213,16 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	for paddr := range paddrs {
 		dev, ok := fs.uuid2dev[paddr.Dev]
 		if !ok {
-			return 0, fmt.Errorf("device=%s does not exist", paddr.Dev)
+			return 0, fmt.Errorf("device=%v does not exist", paddr.Dev)
 		}
 		if _, err := dev.ReadAt(buf, paddr.Addr); err != nil {
-			return 0, fmt.Errorf("read device=%s paddr=%v: %w", paddr.Dev, paddr.Addr, err)
+			return 0, fmt.Errorf("read device=%v paddr=%v: %w", paddr.Dev, paddr.Addr, err)
 		}
 		if first {
 			copy(dat, buf)
 		} else {
 			if !bytes.Equal(dat, buf) {
-				return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%d", laddr, len(dat))
+				return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
 			}
 		}
 	}
@@ -253,10 +253,10 @@ func (fs *FS) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	for paddr := range paddrs {
 		dev, ok := fs.uuid2dev[paddr.Dev]
 		if !ok {
-			return 0, fmt.Errorf("device=%s does not exist", paddr.Dev)
+			return 0, fmt.Errorf("device=%v does not exist", paddr.Dev)
 		}
 		if _, err := dev.WriteAt(dat, paddr.Addr); err != nil {
-			return 0, fmt.Errorf("write device=%s paddr=%v: %w", paddr.Dev, paddr.Addr, err)
+			return 0, fmt.Errorf("write device=%v paddr=%v: %w", paddr.Dev, paddr.Addr, err)
 		}
 	}
 	return len(dat), nil

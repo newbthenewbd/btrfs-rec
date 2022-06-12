@@ -149,11 +149,11 @@ func pass1ScanOneDev_x(
 				}
 				chunk, ok := item.Body.(btrfsitem.Chunk)
 				if !ok {
-					fmt.Printf("Pass 1: ... dev[%q] node@%d: item %d: error: type is CHUNK_ITEM_KEY, but struct is %T\n",
+					fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: error: type is CHUNK_ITEM_KEY, but struct is %T\n",
 						dev.Name(), nodeRef.Addr, i, item.Body)
 					continue
 				}
-				fmt.Printf("Pass 1: ... dev[%q] node@%d: item %d: found chunk\n",
+				fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: found chunk\n",
 					dev.Name(), nodeRef.Addr, i)
 				lostAndFoundChunks = append(lostAndFoundChunks, btrfs.SysChunk{
 					Key:   item.Head.Key,
@@ -164,7 +164,7 @@ func pass1ScanOneDev_x(
 	}, func(pos btrfs.PhysicalAddr) {
 		pct := int(100 * float64(pos) / float64(devSize))
 		if pct != lastProgress || pos == devSize {
-			fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found %d nodes)\n",
+			fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found %v nodes)\n",
 				dev.Name(), pct, len(foundNodes))
 			lastProgress = pct
 		}
@@ -311,8 +311,8 @@ func pass1WriteReconstructedChunks(
 	for i, laddr := range sortedLAddrs {
 		chunk := fsReconstructedChunks[laddr]
 		for j, stripe := range chunk.Stripes {
-			fmt.Printf("Pass 1: chunks[%d].stripes[%d] = { laddr=0x%0x => { dev_id=%d, paddr=0x%0x }, size=0x%0x }\n",
-				i, j, laddr, stripe.DeviceID, stripe.Offset, chunk.Size)
+			fmt.Printf("Pass 1: chunks[%v].stripes[%v] = { laddr=%v => { dev_id=%v, paddr=%v }, size=%v }\n",
+				i, j, laddr, stripe.DeviceID, stripe.Offset, btrfs.LogicalAddr(chunk.Size))
 		}
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{

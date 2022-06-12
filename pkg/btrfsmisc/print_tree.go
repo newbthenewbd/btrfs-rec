@@ -25,7 +25,7 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 	printHeaderInfo(node)
 	if node.Head.Level > 0 { // internal
 		for _, item := range node.BodyInternal {
-			fmt.Printf("\t%s block %d gen %d\n",
+			fmt.Printf("\t%v block %v gen %v\n",
 				FmtKey(item.Key),
 				item.BlockPtr,
 				item.Generation)
@@ -37,84 +37,84 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 		}
 	} else { // leaf
 		for i, item := range node.BodyLeaf {
-			fmt.Printf("\titem %d %s itemoff %d itemsize %d\n",
+			fmt.Printf("\titem %v %v itemoff %v itemsize %v\n",
 				i,
 				FmtKey(item.Head.Key),
 				item.Head.DataOffset,
 				item.Head.DataSize)
 			switch body := item.Body.(type) {
 			case btrfsitem.FreeSpaceHeader:
-				fmt.Printf("\t\tlocation %s\n", FmtKey(body.Location))
-				fmt.Printf("\t\tcache generation %d entries %d bitmaps %d\n",
+				fmt.Printf("\t\tlocation %v\n", FmtKey(body.Location))
+				fmt.Printf("\t\tcache generation %v entries %v bitmaps %v\n",
 					body.Generation, body.NumEntries, body.NumBitmaps)
 			case btrfsitem.Inode:
 				fmt.Printf(""+
-					"\t\tgeneration %d transid %d size %d nbytes %d\n"+
-					"\t\tblock group %d mode %o links %d uid %d gid %d rdev %d\n"+
-					"\t\tsequence %d flags %v\n",
+					"\t\tgeneration %v transid %v size %v nbytes %v\n"+
+					"\t\tblock group %v mode %o links %v uid %v gid %v rdev %v\n"+
+					"\t\tsequence %v flags %v\n",
 					body.Generation, body.TransID, body.Size, body.NumBytes,
 					body.BlockGroup, body.Mode, body.NLink, body.UID, body.GID, body.RDev,
 					body.Sequence, body.Flags)
-				fmt.Printf("\t\tatime %s\n", fmtTime(body.ATime))
-				fmt.Printf("\t\tctime %s\n", fmtTime(body.CTime))
-				fmt.Printf("\t\tmtime %s\n", fmtTime(body.MTime))
-				fmt.Printf("\t\totime %s\n", fmtTime(body.OTime))
+				fmt.Printf("\t\tatime %v\n", fmtTime(body.ATime))
+				fmt.Printf("\t\tctime %v\n", fmtTime(body.CTime))
+				fmt.Printf("\t\tmtime %v\n", fmtTime(body.MTime))
+				fmt.Printf("\t\totime %v\n", fmtTime(body.OTime))
 			case btrfsitem.InodeRefList:
 				for _, ref := range body {
-					fmt.Printf("\t\tindex %d namelen %d name: %s\n",
+					fmt.Printf("\t\tindex %v namelen %v name: %s\n",
 						ref.Index, ref.NameLen, ref.Name)
 				}
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
 			case btrfsitem.DirList:
 				for _, dir := range body {
-					fmt.Printf("\t\tlocation %s type %v\n",
+					fmt.Printf("\t\tlocation %v type %v\n",
 						FmtKey(dir.Location), dir.Type)
-					fmt.Printf("\t\ttransid %d data_len %d name_len %d\n",
+					fmt.Printf("\t\ttransid %v data_len %v name_len %v\n",
 						dir.TransID, dir.DataLen, dir.NameLen)
 					fmt.Printf("\t\tname: %s\n", dir.Name)
 					if len(dir.Data) > 0 {
-						fmt.Printf("\t\tdata %s\n", dir.Data)
+						fmt.Printf("\t\tdata %v\n", dir.Data)
 					}
 				}
 			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			//	// TODO
 			case btrfsitem.Root:
-				fmt.Printf("\t\tgeneration %d root_dirid %d bytenr %d byte_limit %d bytes_used %d\n",
+				fmt.Printf("\t\tgeneration %v root_dirid %v bytenr %d byte_limit %v bytes_used %v\n",
 					body.Generation, body.RootDirID, body.ByteNr, body.ByteLimit, body.BytesUsed)
-				fmt.Printf("\t\tlast_snapshot %d flags %s refs %d\n",
+				fmt.Printf("\t\tlast_snapshot %v flags %v refs %v\n",
 					body.LastSnapshot, body.Flags, body.Refs)
-				fmt.Printf("\t\tdrop_progress %s drop_level %d\n",
+				fmt.Printf("\t\tdrop_progress %v drop_level %v\n",
 					FmtKey(body.DropProgress), body.DropLevel)
-				fmt.Printf("\t\tlevel %d generation_v2 %d\n",
+				fmt.Printf("\t\tlevel %v generation_v2 %v\n",
 					body.Level, body.GenerationV2)
 				if body.Generation == body.GenerationV2 {
-					fmt.Printf("\t\tuuid %s\n", body.UUID)
-					fmt.Printf("\t\tparent_uuid %s\n", body.ParentUUID)
-					fmt.Printf("\t\treceived_uuid %s\n", body.ReceivedUUID)
-					fmt.Printf("\t\tctransid %d otransid %d stransid %d rtransid %d\n",
+					fmt.Printf("\t\tuuid %v\n", body.UUID)
+					fmt.Printf("\t\tparent_uuid %v\n", body.ParentUUID)
+					fmt.Printf("\t\treceived_uuid %v\n", body.ReceivedUUID)
+					fmt.Printf("\t\tctransid %v otransid %v stransid %v rtransid %v\n",
 						body.CTransID, body.OTransID, body.STransID, body.RTransID)
-					fmt.Printf("\t\tctime %s\n", fmtTime(body.CTime))
-					fmt.Printf("\t\totime %s\n", fmtTime(body.OTime))
-					fmt.Printf("\t\tstime %s\n", fmtTime(body.STime))
-					fmt.Printf("\t\trtime %s\n", fmtTime(body.RTime))
+					fmt.Printf("\t\tctime %v\n", fmtTime(body.CTime))
+					fmt.Printf("\t\totime %v\n", fmtTime(body.OTime))
+					fmt.Printf("\t\tstime %v\n", fmtTime(body.STime))
+					fmt.Printf("\t\trtime %v\n", fmtTime(body.RTime))
 				}
 			//case btrfsitem.ROOT_REF_KEY:
 			//	// TODO
 			//case btrfsitem.ROOT_BACKREF_KEY:
 			//	// TODO
 			case btrfsitem.Extent:
-				fmt.Printf("\t\trefs %d gen %d flags %v\n",
+				fmt.Printf("\t\trefs %v gen %v flags %v\n",
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
 				if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
-					fmt.Printf("\t\ttree block %s level %d\n",
+					fmt.Printf("\t\ttree block %v level %v\n",
 						FmtKey(body.Info.Key), body.Info.Level)
 				}
 				printExtentInlineRefs(body.Refs)
 			case btrfsitem.Metadata:
-				fmt.Printf("\t\trefs %d gen %d flags %v\n",
+				fmt.Printf("\t\trefs %v gen %v flags %v\n",
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
-				fmt.Printf("\t\ttree block skinny level %d\n", item.Head.Key.Offset)
+				fmt.Printf("\t\ttree block skinny level %v\n", item.Head.Key.Offset)
 				printExtentInlineRefs(body.Refs)
 			//case btrfsitem.EXTENT_DATA_REF_KEY:
 			//	// TODO
@@ -123,24 +123,24 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//case btrfsitem.EXTENT_CSUM_KEY:
 			//	// TODO
 			case btrfsitem.FileExtent:
-				fmt.Printf("\t\tgeneration %d type %v\n",
+				fmt.Printf("\t\tgeneration %v type %v\n",
 					body.Generation, body.Type)
 				switch body.Type {
 				case btrfsitem.FILE_EXTENT_INLINE:
-					fmt.Printf("\t\tinline extent data size %d ram_bytes %d compression %v\n",
+					fmt.Printf("\t\tinline extent data size %v ram_bytes %v compression %v\n",
 						len(body.BodyInline), body.RAMBytes, body.Compression)
 				case btrfsitem.FILE_EXTENT_PREALLOC:
-					fmt.Printf("\t\tprealloc data disk byte %d nr %d\n",
+					fmt.Printf("\t\tprealloc data disk byte %v nr %v\n",
 						body.BodyPrealloc.DiskByteNr,
 						body.BodyPrealloc.DiskNumBytes)
-					fmt.Printf("\t\tprealloc data offset %d nr %d\n",
+					fmt.Printf("\t\tprealloc data offset %v nr %v\n",
 						body.BodyPrealloc.Offset,
 						body.BodyPrealloc.NumBytes)
 				case btrfsitem.FILE_EXTENT_REG:
-					fmt.Printf("\t\textent data disk byte %d nr %d\n",
+					fmt.Printf("\t\textent data disk byte %v nr %v\n",
 						body.BodyReg.DiskByteNr,
 						body.BodyReg.DiskNumBytes)
-					fmt.Printf("\t\textenti data offset %d nr %d ram %d\n",
+					fmt.Printf("\t\textenti data offset %v nr %v ram %v\n",
 						body.BodyReg.Offset,
 						body.BodyReg.NumBytes,
 						body.RAMBytes)
@@ -150,34 +150,34 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					fmt.Printf("\t\t(error) unknown file extent type %v", body.Type)
 				}
 			case btrfsitem.BlockGroup:
-				fmt.Printf("\t\tblock group used %d chunk_objectid %d flags %v\n",
+				fmt.Printf("\t\tblock group used %v chunk_objectid %v flags %v\n",
 					body.Used, body.ChunkObjectID, body.Flags)
 			case btrfsitem.FreeSpaceInfo:
-				fmt.Printf("\t\tfree space info extent count %d flags %d\n",
+				fmt.Printf("\t\tfree space info extent count %v flags %v\n",
 					body.ExtentCount, body.Flags)
 			case btrfsitem.FreeSpaceBitmap:
 				fmt.Printf("\t\tfree space bitmap\n")
 			case btrfsitem.Chunk:
-				fmt.Printf("\t\tlength %d owner %d stripe_len %d type %v\n",
+				fmt.Printf("\t\tlength %v owner %d stripe_len %v type %v\n",
 					body.Head.Size, body.Head.Owner, body.Head.StripeLen, body.Head.Type)
-				fmt.Printf("\t\tio_align %d io_width %d sector_size %d\n",
+				fmt.Printf("\t\tio_align %v io_width %v sector_size %v\n",
 					body.Head.IOOptimalAlign, body.Head.IOOptimalWidth, body.Head.IOMinSize)
-				fmt.Printf("\t\tnum_stripes %d sub_stripes %d\n",
+				fmt.Printf("\t\tnum_stripes %v sub_stripes %v\n",
 					body.Head.NumStripes, body.Head.SubStripes)
 				for i, stripe := range body.Stripes {
-					fmt.Printf("\t\t\tstripe %d devid %d offset %d\n",
+					fmt.Printf("\t\t\tstripe %v devid %d offset %d\n",
 						i, stripe.DeviceID, stripe.Offset)
-					fmt.Printf("\t\t\tdev_uuid %s\n",
+					fmt.Printf("\t\t\tdev_uuid %v\n",
 						stripe.DeviceUUID)
 				}
 			case btrfsitem.Dev:
 				fmt.Printf(""+
-					"\t\tdevid %d total_bytes %d bytes_used %d\n"+
-					"\t\tio_align %d io_width %d sector_size %d type %d\n"+
-					"\t\tgeneration %d start_offset %d dev_group %d\n"+
-					"\t\tseek_speed %d bandwidth %d\n"+
-					"\t\tuuid %s\n"+
-					"\t\tfsid %s\n",
+					"\t\tdevid %d total_bytes %v bytes_used %v\n"+
+					"\t\tio_align %v io_width %v sector_size %v type %v\n"+
+					"\t\tgeneration %v start_offset %v dev_group %v\n"+
+					"\t\tseek_speed %v bandwidth %v\n"+
+					"\t\tuuid %v\n"+
+					"\t\tfsid %v\n",
 					body.DeviceID, body.NumBytes, body.NumBytesUsed,
 					body.IOOptimalAlign, body.IOOptimalWidth, body.IOMinSize, body.Type,
 					body.Generation, body.StartOffset, body.DevGroup,
@@ -186,9 +186,9 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					body.FSUUID)
 			case btrfsitem.DevExtent:
 				fmt.Printf(""+
-					"\t\tdev extent chunk_tree %d\n"+
-					"\t\tchunk_objectid %d chunk_offset %d length %d\n"+
-					"\t\tchunk_tree_uuid %s\n",
+					"\t\tdev extent chunk_tree %v\n"+
+					"\t\tchunk_objectid %v chunk_offset %v length %v\n"+
+					"\t\tchunk_tree_uuid %v\n",
 					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
 					body.ChunkTreeUUID)
 			//case btrfsitem.QGROUP_STATUS_KEY:
@@ -205,19 +205,19 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			//case btrfsitem.STRING_ITEM_KEY:
 			//	// TODO
 			case btrfsitem.DevStats:
-				fmt.Printf("\t\tpersistent item objectid %s offset %d\n",
+				fmt.Printf("\t\tpersistent item objectid %v offset %v\n",
 					item.Head.Key.ObjectID.Format(item.Head.Key.ItemType), item.Head.Key.Offset)
 				switch item.Head.Key.ObjectID {
 				case btrfs.DEV_STATS_OBJECTID:
 					fmt.Printf("\t\tdevice stats\n")
-					fmt.Printf("\t\twrite_errs %d read_errs %d flush_errs %d corruption_errs %d generation %d\n",
+					fmt.Printf("\t\twrite_errs %v read_errs %v flush_errs %v corruption_errs %v generation %v\n",
 						body.Values[btrfsitem.DEV_STAT_WRITE_ERRS],
 						body.Values[btrfsitem.DEV_STAT_READ_ERRS],
 						body.Values[btrfsitem.DEV_STAT_FLUSH_ERRS],
 						body.Values[btrfsitem.DEV_STAT_CORRUPTION_ERRS],
 						body.Values[btrfsitem.DEV_STAT_GENERATION_ERRS])
 				default:
-					fmt.Printf("\t\tunknown persistent item objectid %d\n", item.Head.Key.ObjectID)
+					fmt.Printf("\t\tunknown persistent item objectid %v\n", item.Head.Key.ObjectID)
 				}
 			//case btrfsitem.TEMPORARY_ITEM_KEY:
 			//	// TODO
@@ -255,23 +255,23 @@ func printHeaderInfo(node btrfs.Node) {
 	var typename string
 	if node.Head.Level > 0 { // internal node
 		typename = "node"
-		fmt.Printf("node %d level %d items %d free space %d",
+		fmt.Printf("node %v level %v items %v free space %v",
 			node.Head.Addr,
 			node.Head.Level,
 			node.Head.NumItems,
 			node.MaxItems()-node.Head.NumItems)
 	} else { // leaf node
 		typename = "leaf"
-		fmt.Printf("leaf %d items %d free space %d",
+		fmt.Printf("leaf %d items %v free space %v",
 			node.Head.Addr,
 			node.Head.NumItems,
 			node.LeafFreeSpace())
 	}
-	fmt.Printf(" generation %d owner %v\n",
+	fmt.Printf(" generation %v owner %v\n",
 		node.Head.Generation,
 		node.Head.Owner)
 
-	fmt.Printf("%s %d flags %s backref revision %d\n",
+	fmt.Printf("%v %d flags %v backref revision %v\n",
 		typename,
 		node.Head.Addr,
 		node.Head.Flags,
@@ -284,8 +284,8 @@ func printHeaderInfo(node btrfs.Node) {
 		fmt.Printf("checksum calced %v\n", calcSum)
 	}
 
-	fmt.Printf("fs uuid %s\n", node.Head.MetadataUUID)
-	fmt.Printf("chunk uuid %s\n", node.Head.ChunkTreeUUID)
+	fmt.Printf("fs uuid %v\n", node.Head.MetadataUUID)
+	fmt.Printf("chunk uuid %v\n", node.Head.ChunkTreeUUID)
 }
 
 // printExtentInlineRefs mimics part of btrfs-progs kernel-shared/print-tree.c:print_extent_item()
@@ -298,16 +298,16 @@ func printExtentInlineRefs(refs []btrfsitem.ExtentInlineRef) {
 				fmt.Printf("\t\ttree block backref root %v\n",
 					btrfs.ObjID(ref.Offset))
 			case btrfsitem.SHARED_BLOCK_REF_KEY:
-				fmt.Printf("\t\tshared block backref parent %d\n",
+				fmt.Printf("\t\tshared block backref parent %v\n",
 					ref.Offset)
 			default:
 				fmt.Printf("\t\t(error) unexpected empty sub-item type: %v\n", ref.Type)
 			}
 		case btrfsitem.ExtentDataRef:
-			fmt.Printf("\t\textent data backref root %v objectid %d offset %d count %d\n",
+			fmt.Printf("\t\textent data backref root %v objectid %v offset %v count %v\n",
 				subitem.Root, subitem.ObjectID, subitem.Offset, subitem.Count)
 		case btrfsitem.SharedDataRef:
-			fmt.Printf("\t\tshared data backref parent %d count %d\n",
+			fmt.Printf("\t\tshared data backref parent %v count %v\n",
 				ref.Offset, subitem.Count)
 		default:
 			fmt.Printf("\t\t(error) unexpected sub-item type: %T\n", subitem)
@@ -318,25 +318,25 @@ func printExtentInlineRefs(refs []btrfsitem.ExtentInlineRef) {
 // mimics print-tree.c:btrfs_print_key()
 func FmtKey(key btrfs.Key) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "key (%s %v", key.ObjectID.Format(key.ItemType), key.ItemType)
+	fmt.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
 	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("not implemented")
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
-		fmt.Fprintf(&out, " 0x%016x)", key.Offset)
+		fmt.Fprintf(&out, " %v)", btrfs.PhysicalAddr(key.Offset))
 	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
 	default:
 		if key.Offset == util.MaxUint64pp-1 {
 			fmt.Fprintf(&out, " -1)")
 		} else {
-			fmt.Fprintf(&out, " %d)", key.Offset)
+			fmt.Fprintf(&out, " %v)", key.Offset)
 		}
 	}
 	return out.String()
 }
 
 func fmtTime(t btrfs.Time) string {
-	return fmt.Sprintf("%d.%d (%s)",
+	return fmt.Sprintf("%v.%v (%v)",
 		t.Sec, t.NSec, t.ToStd().Format("2006-01-02 15:04:05"))
 }

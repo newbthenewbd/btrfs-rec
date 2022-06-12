@@ -84,7 +84,7 @@ func (sb Superblock) ValidateChecksum() error {
 		return err
 	}
 	if calced != stored {
-		return fmt.Errorf("superblock checksum mismatch: stored=%s calculated=%s",
+		return fmt.Errorf("superblock checksum mismatch: stored=%v calculated=%v",
 			stored, calced)
 	}
 	return nil
