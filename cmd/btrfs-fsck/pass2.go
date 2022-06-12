@@ -9,14 +9,31 @@ import (
 )
 
 func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
+	var treeName string
+	origErrCb := errCb
+	errCb = func(err error) {
+		origErrCb(fmt.Errorf("%v: %w", treeName, err))
+	}
+
+	var foundTrees []struct {
+		Name string
+		Root btrfs.LogicalAddr
+	}
 	origItem := cbs.Item
 	cbs.Item = func(path btrfs.WalkTreePath, item btrfs.Item) error {
 		if item.Head.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			root, ok := item.Body.(btrfsitem.Root)
 			if !ok {
 				errCb(fmt.Errorf("%v: ROOT_ITEM_KEY is a %T, not a btrfsitem.Root", path, item.Body))
-			} else if err := fs.WalkTree(root.ByteNr, cbs); err != nil {
-				errCb(fmt.Errorf("%v: tree %v: %w", path, item.Head.Key.ObjectID.Format(0), err))
+			} else {
+				foundTrees = append(foundTrees, struct {
+					Name string
+					Root btrfs.LogicalAddr
+				}{
+					Name: fmt.Sprintf("found tree %v at [%v %v]",
+						item.Head.Key.ObjectID.Format(0), treeName, path),
+					Root: root.ByteNr,
+				})
 			}
 		}
 		if origItem != nil {
@@ -25,23 +42,49 @@ func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
 		return nil
 	}
 
+	origNode := cbs.Node
+	cbs.Node = func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+		if err != nil {
+			errCb(fmt.Errorf("%v: %w", path, err))
+		}
+		if node != nil && origNode != nil {
+			return origNode(path, node, nil)
+		}
+		return nil
+	}
+
+	treeName = "superblock"
 	superblock, err := fs.Superblock()
 	if err != nil {
-		errCb(fmt.Errorf("superblock: %w", err))
+		errCb(err)
 		return
 	}
 
+	treeName = "root tree"
 	if err := fs.WalkTree(superblock.Data.RootTree, cbs); err != nil {
-		errCb(fmt.Errorf("root tree: %w", err))
+		errCb(err)
 	}
+
+	treeName = "chunk tree"
 	if err := fs.WalkTree(superblock.Data.ChunkTree, cbs); err != nil {
-		errCb(fmt.Errorf("chunk tree: %w", err))
+		errCb(err)
 	}
+
+	treeName = "log tree"
 	if err := fs.WalkTree(superblock.Data.LogTree, cbs); err != nil {
-		errCb(fmt.Errorf("log tree: %w", err))
+		errCb(err)
 	}
+
+	treeName = "block group tree"
 	if err := fs.WalkTree(superblock.Data.BlockGroupRoot, cbs); err != nil {
-		errCb(fmt.Errorf("block group tree: %w", err))
+		errCb(err)
+	}
+
+	for _, tree := range foundTrees {
+		treeName = tree.Name
+		if err := fs.WalkTree(tree.Root, cbs); err != nil {
+			errCb(err)
+		}
 	}
 }
 
@@ -51,16 +94,11 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	walkFS(fs, btrfs.WalkTreeHandler{
 		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
-			if err != nil {
-				fmt.Printf("Pass 2: node error: %v: %v\n", path, err)
-			}
-			if node != nil {
-				visitedNodes[node.Addr] = struct{}{}
-			}
+			visitedNodes[node.Addr] = struct{}{}
 			return nil
 		},
 	}, func(err error) {
-		fmt.Printf("Pass 2: walk error: %v\n", err)
+		fmt.Printf("Pass 2: error: %v\n", err)
 	})
 
 	orphanedNodes := make(map[btrfs.LogicalAddr]struct{})
