@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
+	"math"
 	"strings"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
@@ -391,6 +393,17 @@ type WalkTreePathElem struct {
 	// points at, or 0 if this is a leaf item and nothing is
 	// being pointed at.
 	NodeAddr LogicalAddr
+	// NodeLevel is the expected or actual level of the node at
+	// NodeAddr, or 255 if there is no knowledge of the level.
+	NodeLevel uint8
+}
+
+func (elem WalkTreePathElem) writeNodeTo(w io.Writer) {
+	if elem.NodeLevel != math.MaxUint8 {
+		fmt.Fprintf(w, "node:%d@%v", elem.NodeLevel, elem.NodeAddr)
+	} else {
+		fmt.Fprintf(w, "node@%v", elem.NodeAddr)
+	}
 }
 
 // - The first element will always have an ItemIdx of -1.
@@ -404,11 +417,12 @@ func (path WalkTreePath) String() string {
 		return "(empty-path)"
 	}
 	var ret strings.Builder
-	fmt.Fprintf(&ret, "node@%v", path[0].NodeAddr)
+	path[0].writeNodeTo(&ret)
 	for _, elem := range path[1:] {
 		fmt.Fprintf(&ret, "[%v]", elem.ItemIdx)
 		if elem.NodeAddr != 0 {
-			fmt.Fprintf(&ret, "->node@%v", elem.NodeAddr)
+			ret.WriteString("->")
+			elem.writeNodeTo(&ret)
 		}
 	}
 	return ret.String()
@@ -442,8 +456,9 @@ type WalkTreeHandler struct {
 func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 	path := WalkTreePath{
 		WalkTreePathElem{
-			ItemIdx:  -1,
-			NodeAddr: nodeAddr,
+			ItemIdx:   -1,
+			NodeAddr:  nodeAddr,
+			NodeLevel: math.MaxUint8,
 		},
 	}
 	return fs.walkTree(path, cbs)
@@ -463,6 +478,13 @@ func (fs *FS) walkTree(path WalkTreePath, cbs WalkTreeHandler) error {
 		}
 	}
 	node, err := fs.ReadNode(path[len(path)-1].NodeAddr)
+	if node != nil {
+		if exp := path[len(path)-1].NodeLevel; exp != math.MaxUint8 && node.Data.Head.Level != exp && err == nil {
+			err = fmt.Errorf("btrfs.FS.WalkTree: node@%v: expected level %v but has level %v",
+				node.Addr, exp, node.Data.Head.Level)
+		}
+		path[len(path)-1].NodeLevel = node.Data.Head.Level
+	}
 	if cbs.Node != nil {
 		err = cbs.Node(path, node, err)
 	}
@@ -475,8 +497,9 @@ func (fs *FS) walkTree(path WalkTreePath, cbs WalkTreeHandler) error {
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
 			itemPath := append(path, WalkTreePathElem{
-				ItemIdx:  i,
-				NodeAddr: item.BlockPtr,
+				ItemIdx:   i,
+				NodeAddr:  item.BlockPtr,
+				NodeLevel: node.Data.Head.Level - 1,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	iofs "io/fs"
+	"sort"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
@@ -30,7 +32,7 @@ func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
 					Name string
 					Root btrfs.LogicalAddr
 				}{
-					Name: fmt.Sprintf("found tree %v at [%v %v]",
+					Name: fmt.Sprintf("tree %v (via %v %v)",
 						item.Head.Key.ObjectID.Format(0), treeName, path),
 					Root: root.ByteNr,
 				})
@@ -98,15 +100,44 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 			return nil
 		},
 	}, func(err error) {
-		fmt.Printf("Pass 2: error: %v\n", err)
+		fmt.Printf("Pass 2: walk FS: error: %v\n", err)
 	})
 
-	orphanedNodes := make(map[btrfs.LogicalAddr]struct{})
+	orphanedNodes := make(map[btrfs.LogicalAddr]int)
 	for foundNode := range foundNodes {
 		if _, visited := visitedNodes[foundNode]; !visited {
-			orphanedNodes[foundNode] = struct{}{}
+			orphanedNodes[foundNode] = 0
 		}
 	}
 
-	//fmt.Printf("Pass 2: orphanedNodes=%#v\n", orphanedNodes)
+	for nodeAddr := range orphanedNodes {
+		if err := fs.WalkTree(nodeAddr, btrfs.WalkTreeHandler{
+			Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+				nodeAddr := path[len(path)-1].NodeAddr
+				orphanedNodes[nodeAddr] = orphanedNodes[nodeAddr] + 1
+				visitCnt := orphanedNodes[nodeAddr]
+				if visitCnt > 1 {
+					return iofs.SkipDir
+				}
+				return nil
+			},
+		}); err != nil {
+			fmt.Printf("Pass 2: walk orphans: error: %v\n", err)
+		}
+	}
+	var orphanedRoots []btrfs.LogicalAddr
+	for node, cnt := range orphanedNodes {
+		switch cnt {
+		case 0:
+			panic("x")
+		case 1:
+			orphanedRoots = append(orphanedRoots, node)
+		}
+	}
+	sort.Slice(orphanedRoots, func(i, j int) bool {
+		return orphanedRoots[i] < orphanedRoots[j]
+	})
+	for _, node := range orphanedRoots {
+		fmt.Printf("Pass 2: orphaned root: %v\n", node)
+	}
 }
