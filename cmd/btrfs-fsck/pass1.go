@@ -25,8 +25,9 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	fmt.Printf("Pass 1: ... walking chunk tree\n")
 	visitedChunkNodes := make(map[btrfs.LogicalAddr]struct{})
 	if err := fs.WalkTree(superblock.Data.ChunkTree, btrfs.WalkTreeHandler{
-		Node: func(node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
+				err = fmt.Errorf("%v: %w", path, err)
 				fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
 			}
 			if node != nil {

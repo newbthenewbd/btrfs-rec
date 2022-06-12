@@ -10,17 +10,17 @@ import (
 
 func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
 	origItem := cbs.Item
-	cbs.Item = func(key btrfs.Key, body btrfsitem.Item) error {
-		if key.ItemType == btrfsitem.ROOT_ITEM_KEY {
-			root, ok := body.(btrfsitem.Root)
+	cbs.Item = func(path btrfs.WalkTreePath, item btrfs.Item) error {
+		if item.Head.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+			root, ok := item.Body.(btrfsitem.Root)
 			if !ok {
-				errCb(fmt.Errorf("ROOT_ITEM_KEY is a %T, not a btrfsitem.Root", body))
+				errCb(fmt.Errorf("%v: ROOT_ITEM_KEY is a %T, not a btrfsitem.Root", path, item.Body))
 			} else if err := fs.WalkTree(root.ByteNr, cbs); err != nil {
-				errCb(fmt.Errorf("tree %v: %w", key.ObjectID.Format(0), err))
+				errCb(fmt.Errorf("%v: tree %v: %w", path, item.Head.Key.ObjectID.Format(0), err))
 			}
 		}
 		if origItem != nil {
-			return origItem(key, body)
+			return origItem(path, item)
 		}
 		return nil
 	}
@@ -50,9 +50,9 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	walkFS(fs, btrfs.WalkTreeHandler{
-		Node: func(node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
-				fmt.Printf("Pass 2: node error: %v\n", err)
+				fmt.Printf("Pass 2: node error: %v: %v\n", path, err)
 			}
 			if node != nil {
 				visitedNodes[node.Addr] = struct{}{}

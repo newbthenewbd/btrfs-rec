@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	iofs "io/fs"
+	"strings"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
@@ -381,33 +382,89 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 	})
 }
 
-type WalkTreeHandler struct {
-	// Callbacks for entire nodes
-	PreNode  func(LogicalAddr) error
-	Node     func(*util.Ref[LogicalAddr, Node], error) error
-	PostNode func(*util.Ref[LogicalAddr, Node]) error
-	// Callbacks for items on internal nodes
-	PreKeyPointer  func(KeyPointer) error
-	PostKeyPointer func(KeyPointer) error
-	// Callbacks for items on leaf nodes
-	Item func(Key, btrfsitem.Item) error
+// A WalkTreePathElem essentially represents a KeyPointer.
+type WalkTreePathElem struct {
+	// ItemIdx is the index of this KeyPointer in the parent Node;
+	// or -1 if this is the root and there is no KeyPointer.
+	ItemIdx int
+	// NodeAddr is the address of the node that the KeyPointer
+	// points at, or 0 if this is a leaf item and nothing is
+	// being pointed at.
+	NodeAddr LogicalAddr
 }
 
+// - The first element will always have an ItemIdx of -1.
+//
+// - For .Item() callbacks, the last element will always have a
+//   NodeAddr of 0.
+type WalkTreePath []WalkTreePathElem
+
+func (path WalkTreePath) String() string {
+	if len(path) == 0 {
+		return "(empty-path)"
+	}
+	var ret strings.Builder
+	fmt.Fprintf(&ret, "node@%v", path[0].NodeAddr)
+	for _, elem := range path[1:] {
+		fmt.Fprintf(&ret, "[%v]", elem.ItemIdx)
+		if elem.NodeAddr != 0 {
+			fmt.Fprintf(&ret, "->node@%v", elem.NodeAddr)
+		}
+	}
+	return ret.String()
+}
+
+type WalkTreeHandler struct {
+	// Callbacks for entire nodes
+	PreNode  func(WalkTreePath) error
+	Node     func(WalkTreePath, *util.Ref[LogicalAddr, Node], error) error
+	PostNode func(WalkTreePath, *util.Ref[LogicalAddr, Node]) error
+	// Callbacks for items on internal nodes
+	PreKeyPointer  func(WalkTreePath, KeyPointer) error
+	PostKeyPointer func(WalkTreePath, KeyPointer) error
+	// Callbacks for items on leaf nodes
+	Item func(WalkTreePath, Item) error
+}
+
+// The lifecycle of callbacks is:
+//
+//     001 .PreNode()
+//     002 (read node)
+//     003 .Node()
+//         for item in node.items:
+//           if internal:
+//     004     .PreKeyPointer()
+//     005     (recurse)
+//     006     .PostKeyPointer()
+//           else:
+//     004     .Item()
+//     007 .PostNode()
 func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
-	if nodeAddr == 0 {
+	path := WalkTreePath{
+		WalkTreePathElem{
+			ItemIdx:  -1,
+			NodeAddr: nodeAddr,
+		},
+	}
+	return fs.walkTree(path, cbs)
+}
+
+func (fs *FS) walkTree(path WalkTreePath, cbs WalkTreeHandler) error {
+	if path[len(path)-1].NodeAddr == 0 {
 		return nil
 	}
+
 	if cbs.PreNode != nil {
-		if err := cbs.PreNode(nodeAddr); err != nil {
+		if err := cbs.PreNode(path); err != nil {
 			if errors.Is(err, iofs.SkipDir) {
 				return nil
 			}
 			return err
 		}
 	}
-	node, err := fs.ReadNode(nodeAddr)
+	node, err := fs.ReadNode(path[len(path)-1].NodeAddr)
 	if cbs.Node != nil {
-		err = cbs.Node(node, err)
+		err = cbs.Node(path, node, err)
 	}
 	if err != nil {
 		if errors.Is(err, iofs.SkipDir) {
@@ -416,20 +473,24 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 		return fmt.Errorf("btrfs.FS.WalkTree: %w", err)
 	}
 	if node != nil {
-		for _, item := range node.Data.BodyInternal {
+		for i, item := range node.Data.BodyInternal {
+			itemPath := append(path, WalkTreePathElem{
+				ItemIdx:  i,
+				NodeAddr: item.BlockPtr,
+			})
 			if cbs.PreKeyPointer != nil {
-				if err := cbs.PreKeyPointer(item); err != nil {
+				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
 					if errors.Is(err, iofs.SkipDir) {
 						continue
 					}
 					return err
 				}
 			}
-			if err := fs.WalkTree(item.BlockPtr, cbs); err != nil {
+			if err := fs.walkTree(itemPath, cbs); err != nil {
 				return err
 			}
 			if cbs.PostKeyPointer != nil {
-				if err := cbs.PostKeyPointer(item); err != nil {
+				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
 					if errors.Is(err, iofs.SkipDir) {
 						continue
 					}
@@ -437,9 +498,12 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 				}
 			}
 		}
-		for _, item := range node.Data.BodyLeaf {
+		for i, item := range node.Data.BodyLeaf {
 			if cbs.Item != nil {
-				if err := cbs.Item(item.Head.Key, item.Body); err != nil {
+				itemPath := append(path, WalkTreePathElem{
+					ItemIdx: i,
+				})
+				if err := cbs.Item(itemPath, item); err != nil {
 					if errors.Is(err, iofs.SkipDir) {
 						continue
 					}
@@ -449,7 +513,7 @@ func (fs *FS) WalkTree(nodeAddr LogicalAddr, cbs WalkTreeHandler) error {
 		}
 	}
 	if cbs.PostNode != nil {
-		if err := cbs.PostNode(node); err != nil {
+		if err := cbs.PostNode(path, node); err != nil {
 			if errors.Is(err, iofs.SkipDir) {
 				return nil
 			}

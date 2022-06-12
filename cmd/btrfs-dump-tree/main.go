@@ -75,8 +75,8 @@ func Main(imgfilename string) (err error) {
 		}
 	}
 	if err := fs.WalkTree(superblock.Data.RootTree, btrfs.WalkTreeHandler{
-		Item: func(key btrfs.Key, body btrfsitem.Item) error {
-			if key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+		Item: func(_ btrfs.WalkTreePath, item btrfs.Item) error {
+			if item.Head.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 				return nil
 			}
 			treeName, ok := map[btrfs.ObjID]string{
@@ -98,12 +98,12 @@ func Main(imgfilename string) (err error) {
 				btrfs.FREE_SPACE_TREE_OBJECTID:  "free space",
 				btrfs.MULTIPLE_OBJECTIDS:        "multiple",
 				btrfs.BLOCK_GROUP_TREE_OBJECTID: "block group",
-			}[key.ObjectID]
+			}[item.Head.Key.ObjectID]
 			if !ok {
 				treeName = "file"
 			}
-			fmt.Printf("%v tree %v \n", treeName, btrfsmisc.FmtKey(key))
-			return btrfsmisc.PrintTree(fs, body.(btrfsitem.Root).ByteNr)
+			fmt.Printf("%v tree %v \n", treeName, btrfsmisc.FmtKey(item.Head.Key))
+			return btrfsmisc.PrintTree(fs, item.Body.(btrfsitem.Root).ByteNr)
 		},
 	}); err != nil {
 		return err

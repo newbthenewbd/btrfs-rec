@@ -14,29 +14,25 @@ import (
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
 func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
-	nodeRef, err := fs.ReadNode(root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	}
-	if nodeRef == nil {
-		return nil
-	}
-	node := nodeRef.Data
-	printHeaderInfo(node)
-	if node.Head.Level > 0 { // internal
-		for _, item := range node.BodyInternal {
+	return fs.WalkTree(root, btrfs.WalkTreeHandler{
+		Node: func(path btrfs.WalkTreePath, nodeRef *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v: %v\n", path, err)
+			}
+			if nodeRef != nil {
+				printHeaderInfo(nodeRef.Data)
+			}
+			return nil
+		},
+		PreKeyPointer: func(_ btrfs.WalkTreePath, item btrfs.KeyPointer) error {
 			fmt.Printf("\t%v block %v gen %v\n",
 				FmtKey(item.Key),
 				item.BlockPtr,
 				item.Generation)
-		}
-		for _, item := range node.BodyInternal {
-			if err := PrintTree(fs, item.BlockPtr); err != nil {
-				return err
-			}
-		}
-	} else { // leaf
-		for i, item := range node.BodyLeaf {
+			return nil
+		},
+		Item: func(path btrfs.WalkTreePath, item btrfs.Item) error {
+			i := path[len(path)-1].ItemIdx
 			fmt.Printf("\titem %v %v itemoff %v itemsize %v\n",
 				i,
 				FmtKey(item.Head.Key),
@@ -245,9 +241,9 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			default:
 				fmt.Printf("\t\t(error) unhandled item type: %T\n", body)
 			}
-		}
-	}
-	return nil
+			return nil
+		},
+	})
 }
 
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
