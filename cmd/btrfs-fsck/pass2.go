@@ -48,6 +48,8 @@ func walkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
 func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	fmt.Printf("\nPass 2: orphaned nodes\n")
 
+	btrfs.Dbg = true
+
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	walkFS(fs, btrfs.WalkTreeHandler{
 		Node: func(node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
