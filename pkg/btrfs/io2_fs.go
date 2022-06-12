@@ -150,9 +150,6 @@ type QualifiedPhysicalAddr struct {
 	Addr PhysicalAddr
 }
 
-var Dbg = false
-var dbg2 = false
-
 func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen uint64) {
 	paddrs = make(map[QualifiedPhysicalAddr]struct{})
 	maxlen = math.MaxUint64
@@ -160,12 +157,7 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 	for _, chunk := range fs.chunks {
 		low := LogicalAddr(chunk.Key.Offset)
 		high := low + LogicalAddr(chunk.Chunk.Head.Size)
-		match := low <= laddr && laddr < high
-		if dbg2 {
-			fmt.Printf("DBG: %v <= %v < %v : %v\n",
-				low, laddr, high, match)
-		}
-		if match {
+		if low <= laddr && laddr < high {
 			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
 			maxlen = util.Min(maxlen, chunk.Chunk.Head.Size-offsetWithinChunk)
 			for _, stripe := range chunk.Chunk.Stripes {
@@ -175,11 +167,6 @@ func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struc
 				}] = struct{}{}
 			}
 		}
-	}
-	if Dbg && len(paddrs) == 0 {
-		dbg2 = true
-		fs.Resolve(laddr)
-		panic(fmt.Errorf("could not resolve %v", laddr))
 	}
 
 	return paddrs, maxlen
@@ -200,9 +187,7 @@ func (fs *FS) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := fs.Resolve(laddr)
 	if len(paddrs) == 0 {
-		err := fmt.Errorf("read: could not map logical address %v", laddr)
-		panic(err)
-		//return 0, err
+		return 0, fmt.Errorf("read: could not map logical address %v", laddr)
 	}
 	if uint64(len(dat)) > maxlen {
 		dat = dat[:maxlen]
