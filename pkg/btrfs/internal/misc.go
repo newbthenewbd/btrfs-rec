@@ -6,11 +6,7 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 )
 
-type (
-	PhysicalAddr int64
-	LogicalAddr  int64
-	Generation   uint64
-)
+type Generation uint64
 
 type Key struct {
 	ObjectID      ObjID    `bin:"off=0x0, siz=0x8"` // Each tree has its own set of Object IDs.
