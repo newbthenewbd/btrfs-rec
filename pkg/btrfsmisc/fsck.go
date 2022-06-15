@@ -9,8 +9,9 @@ import (
 )
 
 // ScanForNodes mimics btrfs-progs
-// cmds/rescue-chunk-recover.c:scan_one_device(), except it doesn't do
-// anything but log when it finds a node.
+// cmds/rescue-chunk-recover.c:scan_one_device(), except rather than
+// doing something itself when it finds a node, it simply calls a
+// callback function.
 func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfs.PhysicalAddr, btrfs.Node], error), prog func(btrfs.PhysicalAddr)) error {
 	devSize, err := dev.Size()
 	if err != nil {
