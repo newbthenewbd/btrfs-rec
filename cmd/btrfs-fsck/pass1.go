@@ -22,22 +22,22 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		fmt.Printf("Pass 1: ... init chunk tree: error: %v\n", err)
 	}
 
-	fmt.Printf("Pass 1: ... walking chunk tree\n")
-	visitedChunkNodes := make(map[btrfs.LogicalAddr]struct{})
-	if err := fs.WalkTree(superblock.Data.ChunkTree, btrfs.WalkTreeHandler{
+	fmt.Printf("Pass 1: ... walking fs\n")
+	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
+	btrfsmisc.WalkFS(fs, btrfs.WalkTreeHandler{
 		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
 				err = fmt.Errorf("%v: %w", path, err)
-				fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
+				fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
 			}
 			if node != nil {
-				visitedChunkNodes[node.Addr] = struct{}{}
+				visitedNodes[node.Addr] = struct{}{}
 			}
 			return err
 		},
-	}); err != nil {
-		fmt.Printf("Pass 1: ... walk chunk tree: error: %v\n", err)
-	}
+	}, func(err error) {
+		fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
+	})
 
 	fsFoundNodes := make(map[btrfs.LogicalAddr]struct{})
 	fsReconstructedChunks := make(map[btrfs.LogicalAddr]struct {
@@ -46,21 +46,27 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	})
 	for _, dev := range fs.Devices {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
-		devFoundNodes, devLostAndFoundChunks, err := pass1ScanOneDev(dev, superblock.Data, visitedChunkNodes)
+		devResult, err := pass1ScanOneDev(dev, superblock.Data)
 		if err != nil {
 			return nil, err
 		}
 
 		fmt.Printf("Pass 1: ... dev[%q] re-inserting lost+found chunks\n", dev.Name())
-		if len(devLostAndFoundChunks) > 0 {
+		if len(devResult.FoundChunks) > 0 {
+			panic("TODO")
+		}
+		if len(devResult.FoundBlockGroups) > 0 {
+			panic("TODO")
+		}
+		if len(devResult.FoundDevExtents) > 0 {
 			panic("TODO")
 		}
 
 		fmt.Printf("Pass 1: ... dev[%q] re-constructing stripes for lost+found nodes\n", dev.Name())
-		devReconstructedChunks := pass1ReconstructChunksOneDev(fs, dev, devFoundNodes)
+		devReconstructedChunks := pass1ReconstructChunksOneDev(fs, dev, devResult.FoundNodes)
 
 		// merge those results in to the total-fs results
-		for laddr := range devFoundNodes {
+		for laddr := range devResult.FoundNodes {
 			fsFoundNodes[laddr] = struct{}{}
 		}
 		for laddr, _chunk := range devReconstructedChunks {
@@ -82,31 +88,35 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	return fsFoundNodes, nil
 }
 
-func pass1ScanOneDev(
-	dev *btrfs.Device,
-	superblock btrfs.Superblock,
-	visitedChunkNodes map[btrfs.LogicalAddr]struct{},
-) (
-	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
-	lostAndFoundChunks []btrfs.SysChunk,
-	err error,
-) {
-	type rec struct {
-		DevFoundNodes         map[btrfs.LogicalAddr][]btrfs.PhysicalAddr
-		DevLostAndFoundChunks []btrfs.SysChunk
-	}
-	var obj rec
+type pass1ScanOneDevResult struct {
+	FoundNodes       map[btrfs.LogicalAddr][]btrfs.PhysicalAddr
+	FoundChunks      []btrfs.SysChunk
+	FoundBlockGroups []sysBlockGroup
+	FoundDevExtents  []sysDevExtent
+}
 
-	const jsonFilename = "/home/lukeshu/btrfs/pass1.json"
+type sysBlockGroup struct {
+	Key btrfs.Key
+	BG  btrfsitem.BlockGroup
+}
 
+type sysDevExtent struct {
+	Key    btrfs.Key
+	DevExt btrfsitem.DevExtent
+}
+
+func pass1ScanOneDev(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
+	const jsonFilename = "/home/lukeshu/btrfs/pass1v2.json"
+
+	var result pass1ScanOneDevResult
 	bs, err := os.ReadFile(jsonFilename)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
-			obj.DevFoundNodes, obj.DevLostAndFoundChunks, err = pass1ScanOneDev_x(dev, superblock, visitedChunkNodes)
+			result, err := pass1ScanOneDev_x(dev, superblock)
 			if err != nil {
 				panic(err)
 			}
-			bs, err := json.Marshal(obj)
+			bs, err := json.Marshal(result)
 			if err != nil {
 				panic(err)
 			}
@@ -114,64 +124,85 @@ func pass1ScanOneDev(
 				panic(err)
 			}
 		}
-		return nil, nil, err
+		return result, err
 	}
-	if err := json.Unmarshal(bs, &obj); err != nil {
-		return nil, nil, err
+	if err := json.Unmarshal(bs, &result); err != nil {
+		return result, err
 	}
-	return obj.DevFoundNodes, obj.DevLostAndFoundChunks, nil
+	return result, nil
 }
 
-func pass1ScanOneDev_x(
-	dev *btrfs.Device,
-	superblock btrfs.Superblock,
-	visitedChunkNodes map[btrfs.LogicalAddr]struct{},
-) (
-	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
-	lostAndFoundChunks []btrfs.SysChunk,
-	err error,
-) {
-	foundNodes = make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr)
+func pass1ScanOneDev_x(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
+	result := pass1ScanOneDevResult{
+		FoundNodes: make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr),
+	}
 
 	devSize, _ := dev.Size()
 	lastProgress := -1
 
-	err = btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+	err := btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
 			return
 		}
-		foundNodes[nodeRef.Data.Head.Addr] = append(foundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
-		_, alreadyVisited := visitedChunkNodes[nodeRef.Data.Head.Addr]
-		if nodeRef.Data.Head.Owner == btrfs.CHUNK_TREE_OBJECTID && !alreadyVisited {
-			for i, item := range nodeRef.Data.BodyLeaf {
-				if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-					continue
-				}
+		result.FoundNodes[nodeRef.Data.Head.Addr] = append(result.FoundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
+		for i, item := range nodeRef.Data.BodyLeaf {
+			switch item.Head.Key.ItemType {
+			case btrfsitem.CHUNK_ITEM_KEY:
 				chunk, ok := item.Body.(btrfsitem.Chunk)
 				if !ok {
 					fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: error: type is CHUNK_ITEM_KEY, but struct is %T\n",
 						dev.Name(), nodeRef.Addr, i, item.Body)
 					continue
 				}
-				fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: found chunk\n",
-					dev.Name(), nodeRef.Addr, i)
-				lostAndFoundChunks = append(lostAndFoundChunks, btrfs.SysChunk{
+				//fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: found chunk\n",
+				//	dev.Name(), nodeRef.Addr, i)
+				result.FoundChunks = append(result.FoundChunks, btrfs.SysChunk{
 					Key:   item.Head.Key,
 					Chunk: chunk,
+				})
+			case btrfsitem.BLOCK_GROUP_ITEM_KEY:
+				bg, ok := item.Body.(btrfsitem.BlockGroup)
+				if !ok {
+					fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: error: type is BLOCK_GROUP_ITEM_KEY, but struct is %T\n",
+						dev.Name(), nodeRef.Addr, i, item.Body)
+					continue
+				}
+				//fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: found block group\n",
+				//	dev.Name(), nodeRef.Addr, i)
+				result.FoundBlockGroups = append(result.FoundBlockGroups, sysBlockGroup{
+					Key: item.Head.Key,
+					BG:  bg,
+				})
+			case btrfsitem.DEV_EXTENT_KEY:
+				devext, ok := item.Body.(btrfsitem.DevExtent)
+				if !ok {
+					fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: error: type is DEV_EXTENT_KEY, but struct is %T\n",
+						dev.Name(), nodeRef.Addr, i, item.Body)
+					continue
+				}
+				//fmt.Printf("Pass 1: ... dev[%q] node@%v: item %v: found dev extent\n",
+				//	dev.Name(), nodeRef.Addr, i)
+				result.FoundDevExtents = append(result.FoundDevExtents, sysDevExtent{
+					Key:    item.Head.Key,
+					DevExt: devext,
 				})
 			}
 		}
 	}, func(pos btrfs.PhysicalAddr) {
 		pct := int(100 * float64(pos) / float64(devSize))
 		if pct != lastProgress || pos == devSize {
-			fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found %v nodes)\n",
-				dev.Name(), pct, len(foundNodes))
+			fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found: %v nodes, %v chunks, %v block groups, %v dev extents)\n",
+				dev.Name(), pct,
+				len(result.FoundNodes),
+				len(result.FoundChunks),
+				len(result.FoundBlockGroups),
+				len(result.FoundDevExtents))
 			lastProgress = pct
 		}
 	})
 
-	return
+	return result, err
 }
 
 func pass1ReconstructChunksOneDev(
