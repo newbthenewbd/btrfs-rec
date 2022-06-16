@@ -112,7 +112,7 @@ func pass1ScanOneDev(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanO
 	bs, err := os.ReadFile(jsonFilename)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
-			result, err := pass1ScanOneDev_x(dev, superblock)
+			result, err := pass1ScanOneDev_real(dev, superblock)
 			if err != nil {
 				panic(err)
 			}
@@ -123,16 +123,27 @@ func pass1ScanOneDev(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanO
 			if err := os.WriteFile(jsonFilename, bs, 0600); err != nil {
 				panic(err)
 			}
+			return result, nil
 		}
 		return result, err
 	}
 	if err := json.Unmarshal(bs, &result); err != nil {
 		return result, err
 	}
+	pass1ScanOneDev_printProgress(dev, 100, result)
 	return result, nil
 }
 
-func pass1ScanOneDev_x(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
+func pass1ScanOneDev_printProgress(dev *btrfs.Device, pct int, result pass1ScanOneDevResult) {
+	fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found: %v nodes, %v chunks, %v block groups, %v dev extents)\n",
+		dev.Name(), pct,
+		len(result.FoundNodes),
+		len(result.FoundChunks),
+		len(result.FoundBlockGroups),
+		len(result.FoundDevExtents))
+}
+
+func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
 	result := pass1ScanOneDevResult{
 		FoundNodes: make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr),
 	}
@@ -192,12 +203,7 @@ func pass1ScanOneDev_x(dev *btrfs.Device, superblock btrfs.Superblock) (pass1Sca
 	}, func(pos btrfs.PhysicalAddr) {
 		pct := int(100 * float64(pos) / float64(devSize))
 		if pct != lastProgress || pos == devSize {
-			fmt.Printf("Pass 1: ... dev[%q] scanned %v%% (found: %v nodes, %v chunks, %v block groups, %v dev extents)\n",
-				dev.Name(), pct,
-				len(result.FoundNodes),
-				len(result.FoundChunks),
-				len(result.FoundBlockGroups),
-				len(result.FoundDevExtents))
+			pass1ScanOneDev_printProgress(dev, pct, result)
 			lastProgress = pct
 		}
 	})
