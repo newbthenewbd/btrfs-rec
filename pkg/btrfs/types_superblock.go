@@ -37,7 +37,7 @@ type Superblock struct {
 	CompatFlags         uint64        `bin:"off=0xac, siz=0x8"` // compat_flags
 	CompatROFlags       uint64        `bin:"off=0xb4, siz=0x8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
 	IncompatFlags       IncompatFlags `bin:"off=0xbc, siz=0x8"` // incompat_flags - only implementations that support the flags can use the filesystem
-	ChecksumType        uint16        `bin:"off=0xc4, siz=0x2"` // csum_type - Btrfs currently uses the CRC32c little-endian hash function with seed -1.
+	ChecksumType        CSumType      `bin:"off=0xc4, siz=0x2"`
 
 	RootLevel  uint8 `bin:"off=0xc6, siz=0x1"` // root_level
 	ChunkLevel uint8 `bin:"off=0xc7, siz=0x1"` // chunk_root_level
@@ -74,7 +74,7 @@ func (sb Superblock) CalculateChecksum() (CSum, error) {
 	if err != nil {
 		return CSum{}, err
 	}
-	return CRC32c(data[binstruct.StaticSize(CSum{}):]), nil
+	return sb.ChecksumType.Sum(data[binstruct.StaticSize(CSum{}):])
 }
 
 func (sb Superblock) ValidateChecksum() error {

@@ -54,7 +54,8 @@ func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeF
 
 type Node struct {
 	// Some context from the parent filesystem
-	Size uint32 // superblock.NodeSize
+	Size         uint32   // superblock.NodeSize
+	ChecksumType CSumType // superblock.ChecksumType
 
 	// The node's header (always present)
 	Head NodeHeader
@@ -97,7 +98,7 @@ func (node Node) CalculateChecksum() (CSum, error) {
 	if err != nil {
 		return CSum{}, err
 	}
-	return CRC32c(data[binstruct.StaticSize(CSum{}):]), nil
+	return node.ChecksumType.Sum(data[binstruct.StaticSize(CSum{}):])
 }
 
 func (node Node) ValidateChecksum() error {
@@ -115,7 +116,8 @@ func (node Node) ValidateChecksum() error {
 
 func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 	*node = Node{
-		Size: uint32(len(nodeBuf)),
+		Size:         uint32(len(nodeBuf)),
+		ChecksumType: node.ChecksumType,
 	}
 	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
 	if err != nil {
@@ -334,6 +336,10 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	nodeRef := &util.Ref[Addr, Node]{
 		File: fs,
 		Addr: addr,
+		Data: Node{
+			Size:         sb.NodeSize,
+			ChecksumType: sb.ChecksumType,
+		},
 	}
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
@@ -346,7 +352,10 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	}
 
 	stored := nodeRef.Data.Head.Checksum
-	calced := CRC32c(nodeBuf[binstruct.StaticSize(CSum{}):])
+	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(CSum{}):])
+	if err != nil {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+	}
 	if stored != calced {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
 			addr, stored, calced)

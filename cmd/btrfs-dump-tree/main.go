@@ -16,7 +16,7 @@ func main() {
 	}
 }
 
-const version = "5.17"
+const version = "5.18.1"
 
 func Main(imgfilename string) (err error) {
 	maybeSetErr := func(_err error) {
@@ -49,7 +49,7 @@ func Main(imgfilename string) (err error) {
 		return err
 	}
 
-	fmt.Printf("btrfs-progs v%v \n", version)
+	fmt.Printf("btrfs-progs v%v\n", version)
 	if superblock.Data.RootTree != 0 {
 		fmt.Printf("root tree\n")
 		if err := btrfsmisc.PrintTree(fs, superblock.Data.RootTree); err != nil {
