@@ -11,6 +11,9 @@ import (
 )
 
 func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
+	if true {
+		return
+	}
 	fmt.Printf("\nPass 2: orphaned nodes\n")
 
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
