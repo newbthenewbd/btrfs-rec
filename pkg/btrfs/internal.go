@@ -11,6 +11,7 @@ type (
 	ObjID        = internal.ObjID
 	LogicalAddr  = internal.LogicalAddr
 	PhysicalAddr = internal.PhysicalAddr
+	AddrDelta    = internal.AddrDelta
 
 	// complex types
 

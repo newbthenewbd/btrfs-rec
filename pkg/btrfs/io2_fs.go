@@ -150,20 +150,20 @@ type QualifiedPhysicalAddr struct {
 	Addr PhysicalAddr
 }
 
-func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen uint64) {
+func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
 	paddrs = make(map[QualifiedPhysicalAddr]struct{})
-	maxlen = math.MaxUint64
+	maxlen = math.MaxInt64
 
 	for _, chunk := range fs.chunks {
 		low := LogicalAddr(chunk.Key.Offset)
-		high := low + LogicalAddr(chunk.Chunk.Head.Size)
+		high := low.Add(chunk.Chunk.Head.Size)
 		if low <= laddr && laddr < high {
-			offsetWithinChunk := uint64(laddr) - chunk.Key.Offset
+			offsetWithinChunk := laddr.Sub(low)
 			maxlen = util.Min(maxlen, chunk.Chunk.Head.Size-offsetWithinChunk)
 			for _, stripe := range chunk.Chunk.Stripes {
 				paddrs[QualifiedPhysicalAddr{
 					Dev:  stripe.DeviceUUID,
-					Addr: stripe.Offset + PhysicalAddr(offsetWithinChunk),
+					Addr: stripe.Offset.Add(offsetWithinChunk),
 				}] = struct{}{}
 			}
 		}
@@ -189,7 +189,7 @@ func (fs *FS) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	if len(paddrs) == 0 {
 		return 0, fmt.Errorf("read: could not map logical address %v", laddr)
 	}
-	if uint64(len(dat)) > maxlen {
+	if AddrDelta(len(dat)) > maxlen {
 		dat = dat[:maxlen]
 	}
 
@@ -231,7 +231,7 @@ func (fs *FS) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	if len(paddrs) == 0 {
 		return 0, fmt.Errorf("write: could not map logical address %v", laddr)
 	}
-	if uint64(len(dat)) > maxlen {
+	if AddrDelta(len(dat)) > maxlen {
 		dat = dat[:maxlen]
 	}
 

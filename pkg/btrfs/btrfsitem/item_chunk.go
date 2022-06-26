@@ -8,21 +8,24 @@ import (
 )
 
 // Maps logical address to physical.
+//
+// key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID
+// key.offset = logical_addr
 type Chunk struct { // CHUNK_ITEM=228
 	Head    ChunkHeader
 	Stripes []ChunkStripe
 }
 
 type ChunkHeader struct {
-	Size           uint64          `bin:"off=0x0,  siz=0x8"`
-	Owner          internal.ObjID  `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
-	StripeLen      uint64          `bin:"off=0x10, siz=0x8"` // ???
-	Type           BlockGroupFlags `bin:"off=0x18, siz=0x8"`
-	IOOptimalAlign uint32          `bin:"off=0x20, siz=0x4"`
-	IOOptimalWidth uint32          `bin:"off=0x24, siz=0x4"`
-	IOMinSize      uint32          `bin:"off=0x28, siz=0x4"` // sector size
-	NumStripes     uint16          `bin:"off=0x2c, siz=0x2"` // [ignored-when-writing]
-	SubStripes     uint16          `bin:"off=0x2e, siz=0x2"` // ???
+	Size           internal.AddrDelta `bin:"off=0x0,  siz=0x8"`
+	Owner          internal.ObjID     `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
+	StripeLen      uint64             `bin:"off=0x10, siz=0x8"` // ???
+	Type           BlockGroupFlags    `bin:"off=0x18, siz=0x8"`
+	IOOptimalAlign uint32             `bin:"off=0x20, siz=0x4"`
+	IOOptimalWidth uint32             `bin:"off=0x24, siz=0x4"`
+	IOMinSize      uint32             `bin:"off=0x28, siz=0x4"` // sector size
+	NumStripes     uint16             `bin:"off=0x2c, siz=0x2"` // [ignored-when-writing]
+	SubStripes     uint16             `bin:"off=0x2e, siz=0x2"` // ???
 	binstruct.End  `bin:"off=0x30"`
 }
 

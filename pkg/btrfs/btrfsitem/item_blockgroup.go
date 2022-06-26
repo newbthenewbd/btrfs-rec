@@ -6,6 +6,8 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
+// key.objectid = logical_addr
+// key.offset = size of chunk
 type BlockGroup struct { // BLOCK_GROUP_ITEM=192
 	Used          int64           `bin:"off=0, siz=8"`
 	ChunkObjectID internal.ObjID  `bin:"off=8, siz=8"`

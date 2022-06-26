@@ -9,6 +9,7 @@ import (
 type (
 	PhysicalAddr int64
 	LogicalAddr  int64
+	AddrDelta    int64
 )
 
 func formatAddr(addr int64, f fmt.State, verb rune) {
@@ -23,3 +24,10 @@ func formatAddr(addr int64, f fmt.State, verb rune) {
 
 func (a PhysicalAddr) Format(f fmt.State, verb rune) { formatAddr(int64(a), f, verb) }
 func (a LogicalAddr) Format(f fmt.State, verb rune)  { formatAddr(int64(a), f, verb) }
+func (d AddrDelta) Format(f fmt.State, verb rune)    { formatAddr(int64(d), f, verb) }
+
+func (a PhysicalAddr) Sub(b PhysicalAddr) AddrDelta { return AddrDelta(a - b) }
+func (a LogicalAddr) Sub(b LogicalAddr) AddrDelta   { return AddrDelta(a - b) }
+
+func (a PhysicalAddr) Add(b AddrDelta) PhysicalAddr { return a + PhysicalAddr(b) }
+func (a LogicalAddr) Add(b AddrDelta) LogicalAddr   { return a + LogicalAddr(b) }

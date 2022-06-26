@@ -41,7 +41,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 
 	fsFoundNodes := make(map[btrfs.LogicalAddr]struct{})
 	fsReconstructedChunks := make(map[btrfs.LogicalAddr]struct {
-		Size    uint64
+		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	})
 	for _, dev := range fs.Devices {
@@ -221,7 +221,7 @@ func pass1ReconstructChunksOneDev(
 	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
 ) (
 	chunks map[btrfs.LogicalAddr]struct {
-		Size    uint64
+		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	},
 ) {
@@ -254,7 +254,7 @@ func pass1ReconstructChunksOneDev(
 	type stripe struct {
 		PAddr btrfs.PhysicalAddr
 		LAddr btrfs.LogicalAddr
-		Size  uint64
+		Size  btrfs.AddrDelta
 	}
 	var stripes []*stripe
 	for _, paddr := range sortedPAddrs {
@@ -265,14 +265,14 @@ func pass1ReconstructChunksOneDev(
 			lastStripe = stripes[len(stripes)-1]
 		}
 		if lastStripe != nil &&
-			paddr == lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size) &&
-			laddr == lastStripe.LAddr+btrfs.LogicalAddr(lastStripe.Size) {
-			lastStripe.Size += uint64(superblock.Data.NodeSize)
+			paddr == lastStripe.PAddr.Add(lastStripe.Size) &&
+			laddr == lastStripe.LAddr.Add(lastStripe.Size) {
+			lastStripe.Size += btrfs.AddrDelta(superblock.Data.NodeSize)
 		} else {
 			stripes = append(stripes, &stripe{
 				PAddr: paddr,
 				LAddr: laddr,
-				Size:  uint64(superblock.Data.NodeSize),
+				Size:  btrfs.AddrDelta(superblock.Data.NodeSize),
 			})
 		}
 	}
@@ -280,7 +280,7 @@ func pass1ReconstructChunksOneDev(
 
 	// organize those stripes in to chunks
 	chunks = make(map[btrfs.LogicalAddr]struct {
-		Size    uint64
+		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	})
 	for _, stripe := range stripes {
@@ -303,7 +303,7 @@ func pass1ReconstructChunksOneDev(
 }
 
 func pass1PrintChunks(chunks map[btrfs.LogicalAddr]struct {
-	Size    uint64
+	Size    btrfs.AddrDelta
 	Stripes []btrfsitem.ChunkStripe
 }) {
 	laddrs := make([]btrfs.LogicalAddr, 0, len(chunks))
@@ -313,8 +313,8 @@ func pass1PrintChunks(chunks map[btrfs.LogicalAddr]struct {
 	sort.Slice(laddrs, func(i, j int) bool {
 		return laddrs[i] < laddrs[j]
 	})
-	lprev := btrfs.LogicalAddr(0)
-	pprev := btrfs.PhysicalAddr(0)
+	var lprev btrfs.LogicalAddr
+	var pprev btrfs.PhysicalAddr
 	for _, laddr := range laddrs {
 		ldelta := laddr - lprev
 		chunk := chunks[laddr]
@@ -327,25 +327,25 @@ func pass1PrintChunks(chunks map[btrfs.LogicalAddr]struct {
 			fmt.Printf("chunkstripe: laddr=%v (+%v) => paddr=%v (+%v) ; size=%v (%s)\n",
 				laddr, ldelta,
 				stripe.Offset, pdelta,
-				btrfs.PhysicalAddr(chunk.Size),
+				chunk.Size,
 				adj)
-			pprev = stripe.Offset + btrfs.PhysicalAddr(chunk.Size)
+			pprev = stripe.Offset.Add(chunk.Size)
 		}
-		lprev = laddr + btrfs.LogicalAddr(chunk.Size)
+		lprev = laddr.Add(chunk.Size)
 	}
 }
 
 func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	// organize in to a more manageable datastructure
 	type groupAttrs struct {
-		Size  btrfs.LogicalAddr
+		Size  btrfs.AddrDelta
 		Flags btrfsitem.BlockGroupFlags
 	}
 	groups := make(map[btrfs.LogicalAddr]groupAttrs)
 	for _, bg := range blockgroups {
 		laddr := btrfs.LogicalAddr(bg.Key.ObjectID)
 		attrs := groupAttrs{
-			Size:  btrfs.LogicalAddr(bg.Key.Offset),
+			Size:  btrfs.AddrDelta(bg.Key.Offset),
 			Flags: bg.BG.Flags,
 		}
 		// If there's a conflict, but they both say the same thing (existing == attrs),
@@ -369,7 +369,7 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	// cluster
 	type cluster struct {
 		LAddr btrfs.LogicalAddr
-		Size  btrfs.LogicalAddr
+		Size  btrfs.AddrDelta
 		Flags btrfsitem.BlockGroupFlags
 	}
 	var clusters []*cluster
@@ -380,7 +380,7 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 		if len(clusters) > 0 {
 			lastCluster = clusters[len(clusters)-1]
 		}
-		if lastCluster != nil && laddr == lastCluster.LAddr+lastCluster.Size && attrs.Flags == lastCluster.Flags {
+		if lastCluster != nil && laddr == lastCluster.LAddr.Add(lastCluster.Size) && attrs.Flags == lastCluster.Flags {
 			lastCluster.Size += attrs.Size
 		} else {
 			clusters = append(clusters, &cluster{
@@ -392,12 +392,12 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	}
 
 	// print
-	prev := btrfs.LogicalAddr(0)
+	var prev btrfs.LogicalAddr
 	for _, cluster := range clusters {
 		delta := cluster.LAddr - prev
 		fmt.Printf("blockgroup cluster: laddr=%v (+%v); size=%v ; flags=%v\n",
 			cluster.LAddr, delta, cluster.Size, cluster.Flags)
-		prev = cluster.LAddr + cluster.Size
+		prev = cluster.LAddr.Add(cluster.Size)
 	}
 }
 
@@ -405,7 +405,7 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 	// organize in to a more manageable datastructure
 	type extAttrs struct {
 		LAddr btrfs.LogicalAddr
-		Size  uint64
+		Size  btrfs.AddrDelta
 	}
 	exts := make(map[btrfs.PhysicalAddr]extAttrs)
 	for _, de := range devextents {
@@ -436,7 +436,7 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 	type stripe struct {
 		PAddr btrfs.PhysicalAddr
 		LAddr btrfs.LogicalAddr
-		Size  uint64
+		Size  btrfs.AddrDelta
 	}
 	var stripes []*stripe
 	for _, paddr := range sortedPAddrs {
@@ -447,8 +447,8 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 			lastStripe = stripes[len(stripes)-1]
 		}
 		if lastStripe != nil &&
-			paddr == lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size) &&
-			attrs.LAddr == lastStripe.LAddr+btrfs.LogicalAddr(lastStripe.Size) {
+			paddr == lastStripe.PAddr.Add(lastStripe.Size) &&
+			attrs.LAddr == lastStripe.LAddr.Add(lastStripe.Size) {
 			lastStripe.Size += attrs.Size
 		} else {
 			stripes = append(stripes, &stripe{
@@ -460,17 +460,17 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 	}
 
 	// print
-	lprev := btrfs.LogicalAddr(0)
-	pprev := btrfs.PhysicalAddr(0)
+	var lprev btrfs.LogicalAddr
+	var pprev btrfs.PhysicalAddr
 	for _, stripe := range stripes {
 		pdelta := stripe.PAddr - pprev
 		ldelta := stripe.LAddr - lprev
 		fmt.Printf("devextent cluster: paddr=%v (+%v) => laddr=%v (+%v) ; size=%v\n",
 			stripe.PAddr, pdelta,
 			stripe.LAddr, ldelta,
-			btrfs.PhysicalAddr(stripe.Size))
-		pprev = stripe.PAddr + btrfs.PhysicalAddr(stripe.Size)
-		lprev = stripe.LAddr + btrfs.LogicalAddr(stripe.Size)
+			stripe.Size)
+		pprev = stripe.PAddr.Add(stripe.Size)
+		lprev = stripe.LAddr.Add(stripe.Size)
 	}
 }
 
@@ -478,7 +478,7 @@ func pass1WriteReconstructedChunks(
 	fs *btrfs.FS,
 	superblock btrfs.Superblock,
 	fsReconstructedChunks map[btrfs.LogicalAddr]struct {
-		Size    uint64
+		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	},
 ) {
@@ -530,7 +530,7 @@ func pass1WriteReconstructedChunks(
 		chunk := fsReconstructedChunks[laddr]
 		for j, stripe := range chunk.Stripes {
 			fmt.Printf("Pass 1: chunks[%v].stripes[%v] = { laddr=%v => { dev_id=%v, paddr=%v }, size=%v }\n",
-				i, j, laddr, stripe.DeviceID, stripe.Offset, btrfs.LogicalAddr(chunk.Size))
+				i, j, laddr, stripe.DeviceID, stripe.Offset, chunk.Size)
 		}
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{
