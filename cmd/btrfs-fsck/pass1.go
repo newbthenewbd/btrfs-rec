@@ -229,25 +229,25 @@ func pass1ReconstructChunksOneDev(
 
 	// find the subset of `foundNodes` that are lost
 	lostAndFoundNodes := make(map[btrfs.PhysicalAddr]btrfs.LogicalAddr)
-	for laddr, readPaddrs := range foundNodes {
-		resolvedPaddrs, _ := fs.Resolve(laddr)
-		for _, readPaddr := range readPaddrs {
-			if _, ok := resolvedPaddrs[btrfs.QualifiedPhysicalAddr{
+	for laddr, readPAddrs := range foundNodes {
+		resolvedPAddrs, _ := fs.Resolve(laddr)
+		for _, readPAddr := range readPAddrs {
+			if _, ok := resolvedPAddrs[btrfs.QualifiedPhysicalAddr{
 				Dev:  superblock.Data.DevItem.DevUUID,
-				Addr: readPaddr,
+				Addr: readPAddr,
 			}]; !ok {
-				lostAndFoundNodes[readPaddr] = laddr
+				lostAndFoundNodes[readPAddr] = laddr
 			}
 		}
 	}
 
 	// sort the keys to that set
-	sortedPaddrs := make([]btrfs.PhysicalAddr, 0, len(lostAndFoundNodes))
+	sortedPAddrs := make([]btrfs.PhysicalAddr, 0, len(lostAndFoundNodes))
 	for paddr := range lostAndFoundNodes {
-		sortedPaddrs = append(sortedPaddrs, paddr)
+		sortedPAddrs = append(sortedPAddrs, paddr)
 	}
-	sort.Slice(sortedPaddrs, func(i, j int) bool {
-		return sortedPaddrs[i] < sortedPaddrs[j]
+	sort.Slice(sortedPAddrs, func(i, j int) bool {
+		return sortedPAddrs[i] < sortedPAddrs[j]
 	})
 
 	// build a list of stripes from that sorted set
@@ -257,7 +257,7 @@ func pass1ReconstructChunksOneDev(
 		Size  uint64
 	}
 	var stripes []*stripe
-	for _, paddr := range sortedPaddrs {
+	for _, paddr := range sortedPAddrs {
 		laddr := lostAndFoundNodes[paddr]
 
 		var lastStripe *stripe
@@ -358,33 +358,33 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	}
 
 	// sort the keys to that datastructure
-	sortedLaddrs := make([]btrfs.LogicalAddr, 0, len(groups))
+	sortedLAddrs := make([]btrfs.LogicalAddr, 0, len(groups))
 	for laddr := range groups {
-		sortedLaddrs = append(sortedLaddrs, laddr)
+		sortedLAddrs = append(sortedLAddrs, laddr)
 	}
-	sort.Slice(sortedLaddrs, func(i, j int) bool {
-		return sortedLaddrs[i] < sortedLaddrs[j]
+	sort.Slice(sortedLAddrs, func(i, j int) bool {
+		return sortedLAddrs[i] < sortedLAddrs[j]
 	})
 
 	// cluster
 	type cluster struct {
-		Laddr btrfs.LogicalAddr
+		LAddr btrfs.LogicalAddr
 		Size  btrfs.LogicalAddr
 		Flags btrfsitem.BlockGroupFlags
 	}
 	var clusters []*cluster
-	for _, laddr := range sortedLaddrs {
+	for _, laddr := range sortedLAddrs {
 		attrs := groups[laddr]
 
 		var lastCluster *cluster
 		if len(clusters) > 0 {
 			lastCluster = clusters[len(clusters)-1]
 		}
-		if lastCluster != nil && laddr == lastCluster.Laddr+lastCluster.Size && attrs.Flags == lastCluster.Flags {
+		if lastCluster != nil && laddr == lastCluster.LAddr+lastCluster.Size && attrs.Flags == lastCluster.Flags {
 			lastCluster.Size += attrs.Size
 		} else {
 			clusters = append(clusters, &cluster{
-				Laddr: laddr,
+				LAddr: laddr,
 				Size:  attrs.Size,
 				Flags: attrs.Flags,
 			})
@@ -394,17 +394,17 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	// print
 	prev := btrfs.LogicalAddr(0)
 	for _, cluster := range clusters {
-		delta := cluster.Laddr - prev
+		delta := cluster.LAddr - prev
 		fmt.Printf("blockgroup cluster: laddr=%v (+%v); size=%v ; flags=%v\n",
-			cluster.Laddr, delta, cluster.Size, cluster.Flags)
-		prev = cluster.Laddr + cluster.Size
+			cluster.LAddr, delta, cluster.Size, cluster.Flags)
+		prev = cluster.LAddr + cluster.Size
 	}
 }
 
 func pass1ProcessDevExtents(devextents []sysDevExtent) {
 	// organize in to a more manageable datastructure
 	type extAttrs struct {
-		Laddr btrfs.LogicalAddr
+		LAddr btrfs.LogicalAddr
 		Size  uint64
 	}
 	exts := make(map[btrfs.PhysicalAddr]extAttrs)
@@ -412,7 +412,7 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 		paddr := btrfs.PhysicalAddr(de.Key.Offset)
 		attrs := extAttrs{
 			Size:  de.DevExt.Length,
-			Laddr: de.DevExt.ChunkOffset,
+			LAddr: de.DevExt.ChunkOffset,
 		}
 		// If there's a conflict, but they both say the same thing (existing == attrs),
 		// then just ignore the dup.
@@ -424,12 +424,12 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 	}
 
 	// sort the keys to that datastructure
-	sortedPaddrs := make([]btrfs.PhysicalAddr, 0, len(exts))
+	sortedPAddrs := make([]btrfs.PhysicalAddr, 0, len(exts))
 	for paddr := range exts {
-		sortedPaddrs = append(sortedPaddrs, paddr)
+		sortedPAddrs = append(sortedPAddrs, paddr)
 	}
-	sort.Slice(sortedPaddrs, func(i, j int) bool {
-		return sortedPaddrs[i] < sortedPaddrs[j]
+	sort.Slice(sortedPAddrs, func(i, j int) bool {
+		return sortedPAddrs[i] < sortedPAddrs[j]
 	})
 
 	// cluster
@@ -439,7 +439,7 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 		Size  uint64
 	}
 	var stripes []*stripe
-	for _, paddr := range sortedPaddrs {
+	for _, paddr := range sortedPAddrs {
 		attrs := exts[paddr]
 
 		var lastStripe *stripe
@@ -448,12 +448,12 @@ func pass1ProcessDevExtents(devextents []sysDevExtent) {
 		}
 		if lastStripe != nil &&
 			paddr == lastStripe.PAddr+btrfs.PhysicalAddr(lastStripe.Size) &&
-			attrs.Laddr == lastStripe.LAddr+btrfs.LogicalAddr(lastStripe.Size) {
+			attrs.LAddr == lastStripe.LAddr+btrfs.LogicalAddr(lastStripe.Size) {
 			lastStripe.Size += attrs.Size
 		} else {
 			stripes = append(stripes, &stripe{
 				PAddr: paddr,
-				LAddr: attrs.Laddr,
+				LAddr: attrs.LAddr,
 				Size:  attrs.Size,
 			})
 		}
