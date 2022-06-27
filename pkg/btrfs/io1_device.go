@@ -15,6 +15,8 @@ type Device struct {
 	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
 }
 
+var _ util.File[PhysicalAddr] = (*Device)(nil)
+
 func (dev Device) Size() (PhysicalAddr, error) {
 	fi, err := dev.Stat()
 	if err != nil {
@@ -23,18 +25,18 @@ func (dev Device) Size() (PhysicalAddr, error) {
 	return PhysicalAddr(fi.Size()), nil
 }
 
-var SuperblockAddrs = []PhysicalAddr{
-	0x00_0001_0000, // 64KiB
-	0x00_0400_0000, // 64MiB
-	0x40_0000_0000, // 256GiB
-}
-
 func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
 	return dev.File.ReadAt(dat, int64(paddr))
 }
 
 func (dev *Device) WriteAt(dat []byte, paddr PhysicalAddr) (int, error) {
 	return dev.File.WriteAt(dat, int64(paddr))
+}
+
+var SuperblockAddrs = []PhysicalAddr{
+	0x00_0001_0000, // 64KiB
+	0x00_0400_0000, // 64MiB
+	0x40_0000_0000, // 256GiB
 }
 
 func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
