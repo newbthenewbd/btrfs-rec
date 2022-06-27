@@ -122,6 +122,12 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
 	}
 
+	// optimize
+	if len(logicalOverlaps) == 1 && reflect.DeepEqual(newChunk, logicalOverlaps[0]) &&
+		len(physicalOverlaps) == 1 && reflect.DeepEqual(newExt, physicalOverlaps[0]) {
+		return nil
+	}
+
 	// logical2physical
 	for _, chunk := range logicalOverlaps {
 		lv.logical2physical = util.RemoveAllFromSliceFunc(lv.logical2physical, func(otherChunk chunkMapping) bool {

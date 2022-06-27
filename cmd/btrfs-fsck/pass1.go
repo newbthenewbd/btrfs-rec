@@ -90,15 +90,46 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 	printProgress := func() {
 		pct := int(100 * float64(done) / float64(total))
 		if pct != lastProgress || done == total {
-			fmt.Printf("Pass 1: ... added %v%% of the mappings (%v/%v)\n",
-				pct, done, total)
+			fmt.Printf("Pass 1: ... added %v%% of the mappings (%v/%v=>%v)\n",
+				pct, done, total, len(fs.LV.Mappings()))
 			lastProgress = pct
 		}
 	}
 	printProgress()
 
-	for laddr, paddrs := range found.FoundNodes {
-		for _, paddr := range paddrs {
+	for _, chunk := range found.FoundChunks {
+		for _, mapping := range chunk.Chunk.Mappings(chunk.Key) {
+			if err := fs.LV.AddMapping(mapping); err != nil {
+				fmt.Printf("Pass 1: ... error: adding chunk: %v\n", err)
+			}
+			done++
+			printProgress()
+		}
+	}
+
+	for _, ext := range found.FoundDevExtents {
+		if err := fs.LV.AddMapping(ext.DevExt.Mapping(ext.Key)); err != nil {
+			fmt.Printf("Pass 1: ... error: adding devext: %v\n", err)
+		}
+		done++
+		printProgress()
+	}
+
+	// Do the nodes last to avoid bloating the mappings table too
+	// much.
+	//
+	// Sort them so that progress numbers are predictable.
+	laddrs := make([]btrfsvol.LogicalAddr, 0, len(found.FoundNodes))
+	for laddr := range found.FoundNodes {
+		laddrs = append(laddrs, laddr)
+	}
+	sort.Slice(laddrs, func(i, j int) bool {
+		// And sort them in reverse order to keep insertions
+		// fast.
+		return laddrs[i] > laddrs[j]
+	})
+	for _, laddr := range laddrs {
+		for _, paddr := range found.FoundNodes[laddr] {
 			if err := fs.LV.AddMapping(btrfsvol.Mapping{
 				LAddr: laddr,
 				PAddr: btrfsvol.QualifiedPhysicalAddr{
@@ -113,22 +144,6 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 			done++
 			printProgress()
 		}
-	}
-	for _, chunk := range found.FoundChunks {
-		for _, mapping := range chunk.Chunk.Mappings(chunk.Key) {
-			if err := fs.LV.AddMapping(mapping); err != nil {
-				fmt.Printf("Pass 1: ... error: adding chunk: %v\n", err)
-			}
-			done++
-			printProgress()
-		}
-	}
-	for _, ext := range found.FoundDevExtents {
-		if err := fs.LV.AddMapping(ext.DevExt.Mapping(ext.Key)); err != nil {
-			fmt.Printf("Pass 1: ... error: adding devext: %v\n", err)
-		}
-		done++
-		printProgress()
 	}
 }
 
