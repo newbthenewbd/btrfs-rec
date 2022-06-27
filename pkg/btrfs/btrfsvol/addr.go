@@ -1,4 +1,4 @@
-package internal
+package btrfsvol
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ func (a PhysicalAddr) Add(b AddrDelta) PhysicalAddr { return a + PhysicalAddr(b)
 func (a LogicalAddr) Add(b AddrDelta) LogicalAddr   { return a + LogicalAddr(b) }
 
 type QualifiedPhysicalAddr struct {
-	Dev  UUID
+	Dev  util.UUID
 	Addr PhysicalAddr
 }
 

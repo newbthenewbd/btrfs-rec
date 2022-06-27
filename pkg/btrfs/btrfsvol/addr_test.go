@@ -1,4 +1,4 @@
-package internal_test
+package btrfsvol_test
 
 import (
 	"fmt"
@@ -6,17 +6,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 )
 
 func TestAddrFormat(t *testing.T) {
 	t.Parallel()
 	type TestCase struct {
-		InputAddr internal.LogicalAddr
+		InputAddr btrfsvol.LogicalAddr
 		InputFmt  string
 		Output    string
 	}
-	addr := internal.LogicalAddr(0x3a41678000)
+	addr := btrfsvol.LogicalAddr(0x3a41678000)
 	testcases := map[string]TestCase{
 		"v":   TestCase{InputAddr: addr, InputFmt: "%v", Output: "0x0000003a41678000"},
 		"s":   TestCase{InputAddr: addr, InputFmt: "%s", Output: "0x0000003a41678000"},

@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 // Maps logical address to physical.
@@ -17,22 +19,22 @@ type Chunk struct { // CHUNK_ITEM=228
 }
 
 type ChunkHeader struct {
-	Size           internal.AddrDelta `bin:"off=0x0,  siz=0x8"`
-	Owner          internal.ObjID     `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
-	StripeLen      uint64             `bin:"off=0x10, siz=0x8"` // ???
-	Type           BlockGroupFlags    `bin:"off=0x18, siz=0x8"`
-	IOOptimalAlign uint32             `bin:"off=0x20, siz=0x4"`
-	IOOptimalWidth uint32             `bin:"off=0x24, siz=0x4"`
-	IOMinSize      uint32             `bin:"off=0x28, siz=0x4"` // sector size
-	NumStripes     uint16             `bin:"off=0x2c, siz=0x2"` // [ignored-when-writing]
-	SubStripes     uint16             `bin:"off=0x2e, siz=0x2"` // ???
+	Size           btrfsvol.AddrDelta       `bin:"off=0x0,  siz=0x8"`
+	Owner          internal.ObjID           `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
+	StripeLen      uint64                   `bin:"off=0x10, siz=0x8"` // ???
+	Type           btrfsvol.BlockGroupFlags `bin:"off=0x18, siz=0x8"`
+	IOOptimalAlign uint32                   `bin:"off=0x20, siz=0x4"`
+	IOOptimalWidth uint32                   `bin:"off=0x24, siz=0x4"`
+	IOMinSize      uint32                   `bin:"off=0x28, siz=0x4"` // sector size
+	NumStripes     uint16                   `bin:"off=0x2c, siz=0x2"` // [ignored-when-writing]
+	SubStripes     uint16                   `bin:"off=0x2e, siz=0x2"` // ???
 	binstruct.End  `bin:"off=0x30"`
 }
 
 type ChunkStripe struct {
 	DeviceID      internal.ObjID        `bin:"off=0x0,  siz=0x8"`
-	Offset        internal.PhysicalAddr `bin:"off=0x8,  siz=0x8"`
-	DeviceUUID    internal.UUID         `bin:"off=0x10, siz=0x10"`
+	Offset        btrfsvol.PhysicalAddr `bin:"off=0x8,  siz=0x8"`
+	DeviceUUID    util.UUID             `bin:"off=0x10, siz=0x10"`
 	binstruct.End `bin:"off=0x20"`
 }
 

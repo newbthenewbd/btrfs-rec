@@ -3,7 +3,6 @@ package btrfsvol
 import (
 	"fmt"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -12,7 +11,7 @@ type devextMapping struct {
 	PAddr PhysicalAddr
 	LAddr LogicalAddr
 	Size  AddrDelta
-	Flags *btrfsitem.BlockGroupFlags
+	Flags *BlockGroupFlags
 }
 
 // return -1 if 'a' is wholly to the left of 'b'

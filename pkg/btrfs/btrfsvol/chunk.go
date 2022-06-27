@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -13,7 +12,7 @@ type chunkMapping struct {
 	LAddr  LogicalAddr
 	PAddrs []QualifiedPhysicalAddr
 	Size   AddrDelta
-	Flags  *btrfsitem.BlockGroupFlags
+	Flags  *BlockGroupFlags
 }
 
 // return -1 if 'a' is wholly to the left of 'b'

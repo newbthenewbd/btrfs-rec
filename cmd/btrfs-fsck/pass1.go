@@ -10,6 +10,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -339,7 +340,7 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	// organize in to a more manageable datastructure
 	type groupAttrs struct {
 		Size  btrfs.AddrDelta
-		Flags btrfsitem.BlockGroupFlags
+		Flags btrfsvol.BlockGroupFlags
 	}
 	groups := make(map[btrfs.LogicalAddr]groupAttrs)
 	for _, bg := range blockgroups {
@@ -370,7 +371,7 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	type cluster struct {
 		LAddr btrfs.LogicalAddr
 		Size  btrfs.AddrDelta
-		Flags btrfsitem.BlockGroupFlags
+		Flags btrfsvol.BlockGroupFlags
 	}
 	var clusters []*cluster
 	for _, laddr := range sortedLAddrs {

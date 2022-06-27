@@ -7,16 +7,7 @@ import (
 	"reflect"
 	"sort"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 	"lukeshu.com/btrfs-tools/pkg/util"
-)
-
-type (
-	LogicalAddr           = internal.LogicalAddr
-	PhysicalAddr          = internal.PhysicalAddr
-	AddrDelta             = internal.AddrDelta
-	QualifiedPhysicalAddr = internal.QualifiedPhysicalAddr
 )
 
 type PhysicalVolume = util.File[PhysicalAddr]
@@ -24,10 +15,10 @@ type PhysicalVolume = util.File[PhysicalAddr]
 type LogicalVolume struct {
 	name string
 
-	uuid2pv map[internal.UUID]PhysicalVolume
+	uuid2pv map[util.UUID]PhysicalVolume
 
 	logical2physical []chunkMapping
-	physical2logical map[internal.UUID][]devextMapping
+	physical2logical map[util.UUID][]devextMapping
 }
 
 var _ util.File[LogicalAddr] = (*LogicalVolume)(nil)
@@ -48,9 +39,9 @@ func (lv *LogicalVolume) Size() (LogicalAddr, error) {
 	return lastChunk.LAddr.Add(lastChunk.Size), nil
 }
 
-func (lv *LogicalVolume) AddPhysicalVolume(uuid internal.UUID, dev PhysicalVolume) error {
+func (lv *LogicalVolume) AddPhysicalVolume(uuid util.UUID, dev PhysicalVolume) error {
 	if lv.uuid2pv == nil {
-		lv.uuid2pv = make(map[internal.UUID]PhysicalVolume)
+		lv.uuid2pv = make(map[util.UUID]PhysicalVolume)
 	}
 	if other, exists := lv.uuid2pv[uuid]; exists {
 		return fmt.Errorf("(%p).AddPhysicalVolume: cannot add physical volume %q: already have physical volume %q with uuid=%v",
@@ -61,7 +52,7 @@ func (lv *LogicalVolume) AddPhysicalVolume(uuid internal.UUID, dev PhysicalVolum
 }
 
 func (lv *LogicalVolume) PhysicalVolumes() []PhysicalVolume {
-	uuids := make([]internal.UUID, 0, len(lv.uuid2pv))
+	uuids := make([]util.UUID, 0, len(lv.uuid2pv))
 	for uuid := range lv.uuid2pv {
 		uuids = append(uuids, uuid)
 	}
@@ -80,14 +71,14 @@ func (lv *LogicalVolume) ClearMappings() {
 	lv.physical2logical = nil
 }
 
-func (lv *LogicalVolume) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAddr, size AddrDelta, flags *btrfsitem.BlockGroupFlags) error {
+func (lv *LogicalVolume) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAddr, size AddrDelta, flags *BlockGroupFlags) error {
 	// sanity check
 	if _, haveDev := lv.uuid2pv[paddr.Dev]; !haveDev {
 		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with uuid=%v",
 			lv, paddr.Dev)
 	}
 	if lv.physical2logical == nil {
-		lv.physical2logical = make(map[internal.UUID][]devextMapping)
+		lv.physical2logical = make(map[util.UUID][]devextMapping)
 	}
 
 	// logical2physical
@@ -171,7 +162,7 @@ func (lv *LogicalVolume) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAd
 }
 
 func (lv *LogicalVolume) fsck() error {
-	physical2logical := make(map[internal.UUID][]devextMapping)
+	physical2logical := make(map[util.UUID][]devextMapping)
 	for _, chunk := range lv.logical2physical {
 		for _, stripe := range chunk.PAddrs {
 			if _, devOK := lv.uuid2pv[stripe.Dev]; !devOK {

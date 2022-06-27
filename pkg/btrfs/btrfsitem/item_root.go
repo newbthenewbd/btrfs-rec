@@ -2,6 +2,7 @@ package btrfsitem
 
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -10,7 +11,7 @@ type Root struct { // ROOT_ITEM=132
 	Inode         Inode                `bin:"off=0x0, siz=0xa0"`
 	Generation    internal.Generation  `bin:"off=0xa0, siz=0x8"`
 	RootDirID     int64                `bin:"off=0xa8, siz=0x8"`
-	ByteNr        internal.LogicalAddr `bin:"off=0xb0, siz=0x8"`
+	ByteNr        btrfsvol.LogicalAddr `bin:"off=0xb0, siz=0x8"`
 	ByteLimit     int64                `bin:"off=0xb8, siz=0x8"`
 	BytesUsed     int64                `bin:"off=0xc0, siz=0x8"`
 	LastSnapshot  int64                `bin:"off=0xc8, siz=0x8"`
@@ -20,9 +21,9 @@ type Root struct { // ROOT_ITEM=132
 	DropLevel     uint8                `bin:"off=0xed, siz=0x1"`
 	Level         uint8                `bin:"off=0xee, siz=0x1"`
 	GenerationV2  internal.Generation  `bin:"off=0xef, siz=0x8"`
-	UUID          internal.UUID        `bin:"off=0xF7, siz=0x10"`
-	ParentUUID    internal.UUID        `bin:"off=0x107, siz=0x10"`
-	ReceivedUUID  internal.UUID        `bin:"off=0x117, siz=0x10"`
+	UUID          util.UUID            `bin:"off=0xF7, siz=0x10"`
+	ParentUUID    util.UUID            `bin:"off=0x107, siz=0x10"`
+	ReceivedUUID  util.UUID            `bin:"off=0x117, siz=0x10"`
 	CTransID      int64                `bin:"off=0x127, siz=0x8"`
 	OTransID      int64                `bin:"off=0x12f, siz=0x8"`
 	STransID      int64                `bin:"off=0x137, siz=0x8"`

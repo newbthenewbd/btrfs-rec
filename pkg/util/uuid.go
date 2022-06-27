@@ -1,11 +1,9 @@
-package internal
+package util
 
 import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-
-	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type UUID [16]byte
@@ -31,7 +29,7 @@ func (a UUID) Cmp(b UUID) int {
 }
 
 func (uuid UUID) Format(f fmt.State, verb rune) {
-	util.FormatByteArrayStringer(uuid, uuid[:], f, verb)
+	FormatByteArrayStringer(uuid, uuid[:], f, verb)
 }
 
 func ParseUUID(str string) (UUID, error) {

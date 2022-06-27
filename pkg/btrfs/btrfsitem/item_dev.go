@@ -3,6 +3,7 @@ package btrfsitem
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Dev struct { // DEV_ITEM=216
@@ -22,8 +23,8 @@ type Dev struct { // DEV_ITEM=216
 	SeekSpeed   uint8               `bin:"off=0x40,   siz=0x1"`
 	Bandwidth   uint8               `bin:"off=0x41,   siz=0x1"`
 
-	DevUUID internal.UUID `bin:"off=0x42,   siz=0x10"`
-	FSUUID  internal.UUID `bin:"off=0x52,   siz=0x10"`
+	DevUUID util.UUID `bin:"off=0x42,   siz=0x10"`
+	FSUUID  util.UUID `bin:"off=0x52,   siz=0x10"`
 
 	binstruct.End `bin:"off=0x62"`
 }
