@@ -154,7 +154,7 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			case btrfsitem.FreeSpaceBitmap:
 				fmt.Printf("\t\tfree space bitmap\n")
 			case btrfsitem.Chunk:
-				fmt.Printf("\t\tlength %v owner %d stripe_len %v type %v\n",
+				fmt.Printf("\t\tlength %d owner %d stripe_len %v type %v\n",
 					body.Head.Size, body.Head.Owner, body.Head.StripeLen, body.Head.Type)
 				fmt.Printf("\t\tio_align %v io_width %v sector_size %v\n",
 					body.Head.IOOptimalAlign, body.Head.IOOptimalWidth, body.Head.IOMinSize)
@@ -183,7 +183,7 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			case btrfsitem.DevExtent:
 				fmt.Printf(""+
 					"\t\tdev extent chunk_tree %v\n"+
-					"\t\tchunk_objectid %v chunk_offset %v length %v\n"+
+					"\t\tchunk_objectid %v chunk_offset %d length %d\n"+
 					"\t\tchunk_tree_uuid %v\n",
 					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
 					body.ChunkTreeUUID)
