@@ -28,12 +28,10 @@ func Main(imgfilename string) (err error) {
 	defer func() {
 		maybeSetErr(fh.Close())
 	}()
-	fs := &btrfs.FS{
-		Devices: []*btrfs.Device{
-			{
-				File: fh,
-			},
-		},
+
+	fs := new(btrfs.FS)
+	if err := fs.AddDevice(&btrfs.Device{File: fh}); err != nil {
+		return err
 	}
 
 	superblock, err := pass0(fs)

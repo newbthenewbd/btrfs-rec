@@ -32,15 +32,15 @@ func Main(imgfilename string) (err error) {
 	defer func() {
 		maybeSetErr(fh.Close())
 	}()
-	fs := &btrfs.FS{
-		Devices: []*btrfs.Device{
-			{
-				File: fh,
-			},
-		},
+	dev := &btrfs.Device{
+		File: fh,
+	}
+	fs := new(btrfs.FS)
+	if err := fs.AddDevice(dev); err != nil {
+		return err
 	}
 
-	superblocks, err := fs.Devices[0].Superblocks()
+	superblocks, err := fs.Superblocks()
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func Main(imgfilename string) (err error) {
 	}
 	spew.Dump(syschunks)
 
-	if err := btrfsmisc.ScanForNodes(fs.Devices[0], superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+	if err := btrfsmisc.ScanForNodes(dev, superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			fmt.Println(err)
 		} else {

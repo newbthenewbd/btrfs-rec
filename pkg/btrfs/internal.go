@@ -15,7 +15,8 @@ type (
 
 	// complex types
 
-	Key  = internal.Key
-	Time = internal.Time
-	UUID = internal.UUID
+	Key                   = internal.Key
+	Time                  = internal.Time
+	UUID                  = internal.UUID
+	QualifiedPhysicalAddr = internal.QualifiedPhysicalAddr
 )

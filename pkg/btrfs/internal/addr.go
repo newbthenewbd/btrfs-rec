@@ -31,3 +31,15 @@ func (a LogicalAddr) Sub(b LogicalAddr) AddrDelta   { return AddrDelta(a - b) }
 
 func (a PhysicalAddr) Add(b AddrDelta) PhysicalAddr { return a + PhysicalAddr(b) }
 func (a LogicalAddr) Add(b AddrDelta) LogicalAddr   { return a + LogicalAddr(b) }
+
+type QualifiedPhysicalAddr struct {
+	Dev  UUID
+	Addr PhysicalAddr
+}
+
+func (a QualifiedPhysicalAddr) Cmp(b QualifiedPhysicalAddr) int {
+	if d := a.Dev.Cmp(b.Dev); d != 0 {
+		return d
+	}
+	return int(a.Addr - b.Addr)
+}

@@ -21,6 +21,15 @@ func (uuid UUID) String() string {
 	}, "-")
 }
 
+func (a UUID) Cmp(b UUID) int {
+	for i := range a {
+		if d := int(a[i]) - int(b[i]); d != 0 {
+			return d
+		}
+	}
+	return 0
+}
+
 func (uuid UUID) Format(f fmt.State, verb rune) {
 	util.FormatByteArrayStringer(uuid, uuid[:], f, verb)
 }

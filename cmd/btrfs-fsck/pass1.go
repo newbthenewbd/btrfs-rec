@@ -44,7 +44,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	})
-	for _, dev := range fs.Devices {
+	for _, dev := range fs.Devices() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
 		devResult, err := pass1ScanOneDev(dev, superblock.Data)
 		if err != nil {
@@ -505,7 +505,7 @@ func pass1WriteReconstructedChunks(
 		},
 	}
 
-	for _, dev := range fs.Devices {
+	for _, dev := range fs.Devices() {
 		superblock, _ := dev.Superblock()
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{

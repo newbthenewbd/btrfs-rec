@@ -13,12 +13,23 @@ func InSlice[T comparable](needle T, haystack []T) bool {
 	return false
 }
 
-func RemoveFromSlice[T comparable](haystack []T, needle T) []T {
+func RemoveAllFromSlice[T comparable](haystack []T, needle T) []T {
 	for i, straw := range haystack {
 		if needle == straw {
 			return append(
 				haystack[:i],
-				RemoveFromSlice(haystack[i+1], item)...)
+				RemoveAllFromSlice(haystack[i+1:], needle)...)
+		}
+	}
+	return haystack
+}
+
+func RemoveAllFromSliceFunc[T any](haystack []T, f func(T) bool) []T {
+	for i, straw := range haystack {
+		if f(straw) {
+			return append(
+				haystack[:i],
+				RemoveAllFromSliceFunc(haystack[i+1:], f)...)
 		}
 	}
 	return haystack
