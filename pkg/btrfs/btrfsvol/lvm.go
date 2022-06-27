@@ -13,10 +13,10 @@ import (
 type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
 	name string
 
-	uuid2pv map[util.UUID]PhysicalVolume
+	id2pv map[DeviceID]PhysicalVolume
 
 	logical2physical []chunkMapping
-	physical2logical map[util.UUID][]devextMapping
+	physical2logical map[DeviceID][]devextMapping
 }
 
 var _ util.File[LogicalAddr] = (*LogicalVolume[util.File[PhysicalAddr]])(nil)
@@ -37,31 +37,24 @@ func (lv *LogicalVolume[PhysicalVolume]) Size() (LogicalAddr, error) {
 	return lastChunk.LAddr.Add(lastChunk.Size), nil
 }
 
-func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(uuid util.UUID, dev PhysicalVolume) error {
-	if lv.uuid2pv == nil {
-		lv.uuid2pv = make(map[util.UUID]PhysicalVolume)
+func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev PhysicalVolume) error {
+	if lv.id2pv == nil {
+		lv.id2pv = make(map[DeviceID]PhysicalVolume)
 	}
-	if other, exists := lv.uuid2pv[uuid]; exists {
-		return fmt.Errorf("(%p).AddPhysicalVolume: cannot add physical volume %q: already have physical volume %q with uuid=%v",
-			lv, dev.Name(), other.Name(), uuid)
+	if other, exists := lv.id2pv[id]; exists {
+		return fmt.Errorf("(%p).AddPhysicalVolume: cannot add physical volume %q: already have physical volume %q with id=%v",
+			lv, dev.Name(), other.Name(), id)
 	}
-	lv.uuid2pv[uuid] = dev
+	lv.id2pv[id] = dev
 	return nil
 }
 
-func (lv *LogicalVolume[PhysicalVolume]) PhysicalVolumes() []PhysicalVolume {
-	uuids := make([]util.UUID, 0, len(lv.uuid2pv))
-	for uuid := range lv.uuid2pv {
-		uuids = append(uuids, uuid)
+func (lv *LogicalVolume[PhysicalVolume]) PhysicalVolumes() map[DeviceID]PhysicalVolume {
+	dup := make(map[DeviceID]PhysicalVolume, len(lv.id2pv))
+	for k, v := range lv.id2pv {
+		dup[k] = v
 	}
-	sort.Slice(uuids, func(i, j int) bool {
-		return uuids[i].Cmp(uuids[j]) < 0
-	})
-	ret := make([]PhysicalVolume, 0, len(lv.uuid2pv))
-	for _, uuid := range uuids {
-		ret = append(ret, lv.uuid2pv[uuid])
-	}
-	return ret
+	return dup
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) ClearMappings() {
@@ -69,22 +62,29 @@ func (lv *LogicalVolume[PhysicalVolume]) ClearMappings() {
 	lv.physical2logical = nil
 }
 
-func (lv *LogicalVolume[PhysicalVolume]) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAddr, size AddrDelta, flags *BlockGroupFlags) error {
+type Mapping struct {
+	LAddr LogicalAddr
+	PAddr QualifiedPhysicalAddr
+	Size  AddrDelta
+	Flags *BlockGroupFlags
+}
+
+func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 	// sanity check
-	if _, haveDev := lv.uuid2pv[paddr.Dev]; !haveDev {
-		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with uuid=%v",
-			lv, paddr.Dev)
+	if _, haveDev := lv.id2pv[m.PAddr.Dev]; !haveDev {
+		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with id=%v",
+			lv, m.PAddr.Dev)
 	}
 	if lv.physical2logical == nil {
-		lv.physical2logical = make(map[util.UUID][]devextMapping)
+		lv.physical2logical = make(map[DeviceID][]devextMapping)
 	}
 
 	// logical2physical
 	newChunk := chunkMapping{
-		LAddr:  laddr,
-		PAddrs: []QualifiedPhysicalAddr{paddr},
-		Size:   size,
-		Flags:  flags,
+		LAddr:  m.LAddr,
+		PAddrs: []QualifiedPhysicalAddr{m.PAddr},
+		Size:   m.Size,
+		Flags:  m.Flags,
 	}
 	var logicalOverlaps []chunkMapping
 	for _, chunk := range lv.logical2physical {
@@ -105,13 +105,13 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(laddr LogicalAddr, paddr Qua
 
 	// physical2logical
 	newExt := devextMapping{
-		PAddr: paddr.Addr,
-		LAddr: laddr,
-		Size:  size,
-		Flags: flags,
+		PAddr: m.PAddr.Addr,
+		LAddr: m.LAddr,
+		Size:  m.Size,
+		Flags: m.Flags,
 	}
 	var physicalOverlaps []devextMapping
-	for _, ext := range lv.physical2logical[paddr.Dev] {
+	for _, ext := range lv.physical2logical[m.PAddr.Dev] {
 		switch newExt.cmpRange(ext) {
 		case 0:
 			physicalOverlaps = append(physicalOverlaps, ext)
@@ -140,11 +140,11 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(laddr LogicalAddr, paddr Qua
 
 	// physical2logical
 	for _, ext := range physicalOverlaps {
-		lv.physical2logical[paddr.Dev] = util.RemoveAllFromSlice(lv.physical2logical[paddr.Dev], ext)
+		lv.physical2logical[m.PAddr.Dev] = util.RemoveAllFromSlice(lv.physical2logical[m.PAddr.Dev], ext)
 	}
-	lv.physical2logical[paddr.Dev] = append(lv.physical2logical[paddr.Dev], newExt)
-	sort.Slice(lv.physical2logical[paddr.Dev], func(i, j int) bool {
-		return lv.physical2logical[paddr.Dev][i].PAddr < lv.physical2logical[paddr.Dev][j].PAddr
+	lv.physical2logical[m.PAddr.Dev] = append(lv.physical2logical[m.PAddr.Dev], newExt)
+	sort.Slice(lv.physical2logical[m.PAddr.Dev], func(i, j int) bool {
+		return lv.physical2logical[m.PAddr.Dev][i].PAddr < lv.physical2logical[m.PAddr.Dev][j].PAddr
 	})
 
 	// sanity check
@@ -160,10 +160,10 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(laddr LogicalAddr, paddr Qua
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
-	physical2logical := make(map[util.UUID][]devextMapping)
+	physical2logical := make(map[DeviceID][]devextMapping)
 	for _, chunk := range lv.logical2physical {
 		for _, stripe := range chunk.PAddrs {
-			if _, devOK := lv.uuid2pv[stripe.Dev]; !devOK {
+			if _, devOK := lv.id2pv[stripe.Dev]; !devOK {
 				return fmt.Errorf("(%p).fsck: chunk references physical volume %v which does not exist",
 					lv, stripe.Dev)
 			}
@@ -247,7 +247,7 @@ func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr Logi
 	buf := make([]byte, len(dat))
 	first := true
 	for paddr := range paddrs {
-		dev, ok := lv.uuid2pv[paddr.Dev]
+		dev, ok := lv.id2pv[paddr.Dev]
 		if !ok {
 			return 0, fmt.Errorf("device=%v does not exist", paddr.Dev)
 		}
@@ -287,7 +287,7 @@ func (lv *LogicalVolume[PhysicalVolume]) maybeShortWriteAt(dat []byte, laddr Log
 	}
 
 	for paddr := range paddrs {
-		dev, ok := lv.uuid2pv[paddr.Dev]
+		dev, ok := lv.id2pv[paddr.Dev]
 		if !ok {
 			return 0, fmt.Errorf("device=%v does not exist", paddr.Dev)
 		}

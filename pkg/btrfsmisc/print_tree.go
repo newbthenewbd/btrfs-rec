@@ -174,7 +174,7 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					"\t\tseek_speed %v bandwidth %v\n"+
 					"\t\tuuid %v\n"+
 					"\t\tfsid %v\n",
-					body.DeviceID, body.NumBytes, body.NumBytesUsed,
+					body.DevID, body.NumBytes, body.NumBytesUsed,
 					body.IOOptimalAlign, body.IOOptimalWidth, body.IOMinSize, body.Type,
 					body.Generation, body.StartOffset, body.DevGroup,
 					body.SeekSpeed, body.Bandwidth,

@@ -24,7 +24,7 @@ func (fs *FS) AddDevice(dev *Device) error {
 	if err != nil {
 		return err
 	}
-	if err := fs.LV.AddPhysicalVolume(sb.Data.DevItem.DevUUID, dev); err != nil {
+	if err := fs.LV.AddPhysicalVolume(sb.Data.DevItem.DevID, dev); err != nil {
 		return err
 	}
 	fs.cacheSuperblocks = nil
@@ -68,7 +68,11 @@ func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
 		return fs.cacheSuperblocks, nil
 	}
 	var ret []*util.Ref[PhysicalAddr, Superblock]
-	for _, dev := range fs.LV.PhysicalVolumes() {
+	devs := fs.LV.PhysicalVolumes()
+	if len(devs) == 0 {
+		return nil, fmt.Errorf("no devices")
+	}
+	for _, dev := range devs {
 		sbs, err := dev.Superblocks()
 		if err != nil {
 			return nil, fmt.Errorf("file %q: %w", dev.Name(), err)
@@ -139,16 +143,8 @@ func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
 		return err
 	}
 	for _, chunk := range syschunks {
-		for _, stripe := range chunk.Chunk.Stripes {
-			if err := fs.LV.AddMapping(
-				LogicalAddr(chunk.Key.Offset),
-				QualifiedPhysicalAddr{
-					Dev:  stripe.DeviceUUID,
-					Addr: stripe.Offset,
-				},
-				chunk.Chunk.Head.Size,
-				&chunk.Chunk.Head.Type,
-			); err != nil {
+		for _, mapping := range chunk.Chunk.Mappings(chunk.Key) {
+			if err := fs.LV.AddMapping(mapping); err != nil {
 				return err
 			}
 		}
@@ -158,17 +154,8 @@ func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
 			if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 				return nil
 			}
-			body := item.Body.(btrfsitem.Chunk)
-			for _, stripe := range body.Stripes {
-				if err := fs.LV.AddMapping(
-					LogicalAddr(item.Head.Key.Offset),
-					QualifiedPhysicalAddr{
-						Dev:  stripe.DeviceUUID,
-						Addr: stripe.Offset,
-					},
-					body.Head.Size,
-					&body.Head.Type,
-				); err != nil {
+			for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Head.Key) {
+				if err := fs.LV.AddMapping(mapping); err != nil {
 					return err
 				}
 			}

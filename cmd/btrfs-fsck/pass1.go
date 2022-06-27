@@ -229,7 +229,7 @@ func pass1ReconstructChunksOneDev(
 		resolvedPAddrs, _ := fs.Resolve(laddr)
 		for _, readPAddr := range readPAddrs {
 			if _, ok := resolvedPAddrs[btrfs.QualifiedPhysicalAddr{
-				Dev:  superblock.Data.DevItem.DevUUID,
+				Dev:  superblock.Data.DevItem.DevID,
 				Addr: readPAddr,
 			}]; !ok {
 				lostAndFoundNodes[readPAddr] = laddr
@@ -288,7 +288,7 @@ func pass1ReconstructChunksOneDev(
 			panic("TODO: mismatch")
 		}
 		chunk.Stripes = append(chunk.Stripes, btrfsitem.ChunkStripe{
-			DeviceID:   superblock.Data.DevItem.DeviceID,
+			DeviceID:   superblock.Data.DevItem.DevID,
 			DeviceUUID: superblock.Data.DevItem.DevUUID,
 			Offset:     stripe.PAddr,
 		})

@@ -17,3 +17,15 @@ type DevExtent struct { // DEV_EXTENT=204
 	ChunkTreeUUID util.UUID            `bin:"off=32, siz=16"`
 	binstruct.End `bin:"off=48"`
 }
+
+func (devext DevExtent) Mapping(key internal.Key) btrfsvol.Mapping {
+	return btrfsvol.Mapping{
+		LAddr: devext.ChunkOffset,
+		PAddr: btrfsvol.QualifiedPhysicalAddr{
+			Dev:  btrfsvol.DeviceID(key.ObjectID),
+			Addr: btrfsvol.PhysicalAddr(key.Offset),
+		},
+		Size:  devext.Length,
+		Flags: nil,
+	}
+}

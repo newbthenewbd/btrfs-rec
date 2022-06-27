@@ -2,12 +2,13 @@ package btrfsitem
 
 import (
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Dev struct { // DEV_ITEM=216
-	DeviceID internal.ObjID `bin:"off=0x0,    siz=0x8"`
+	DevID btrfsvol.DeviceID `bin:"off=0x0,    siz=0x8"`
 
 	NumBytes     uint64 `bin:"off=0x8,    siz=0x8"`
 	NumBytesUsed uint64 `bin:"off=0x10,   siz=0x8"`
