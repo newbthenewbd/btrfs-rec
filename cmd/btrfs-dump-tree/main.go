@@ -35,9 +35,6 @@ func Main(imgfilename string) (err error) {
 
 	fs := new(btrfs.FS)
 	if err := fs.AddDevice(&btrfs.Device{File: fh}); err != nil {
-		return err
-	}
-	if err := fs.Init(); err != nil {
 		fmt.Printf("(error) %v\n", err)
 	}
 

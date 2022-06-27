@@ -18,11 +18,6 @@ import (
 func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblock]) (map[btrfs.LogicalAddr]struct{}, error) {
 	fmt.Printf("\nPass 1: chunk mappings...\n")
 
-	fmt.Printf("Pass 1: ... initializing chunk mappings\n")
-	if err := fs.Init(); err != nil {
-		fmt.Printf("Pass 1: ... init chunk tree: error: %v\n", err)
-	}
-
 	fmt.Printf("Pass 1: ... walking fs\n")
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	btrfsmisc.WalkFS(fs, btrfs.WalkTreeHandler{
@@ -45,7 +40,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		Size    btrfs.AddrDelta
 		Stripes []btrfsitem.ChunkStripe
 	})
-	for _, dev := range fs.Devices() {
+	for _, dev := range fs.LV.PhysicalVolumes() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
 		devResult, err := pass1ScanOneDev(dev, superblock.Data)
 		if err != nil {
@@ -506,7 +501,7 @@ func pass1WriteReconstructedChunks(
 		},
 	}
 
-	for _, dev := range fs.Devices() {
+	for _, dev := range fs.LV.PhysicalVolumes() {
 		superblock, _ := dev.Superblock()
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
 			Head: btrfs.ItemHeader{
@@ -568,7 +563,7 @@ func pass1WriteReconstructedChunks(
 		fmt.Printf("Pass 1: ... write new node: error: %v\n", err)
 	}
 
-	if err := fs.Init(); err != nil {
+	if err := fs.ReInit(); err != nil {
 		fmt.Printf("Pass 1: ... re-init mappings: %v\n", err)
 	}
 }

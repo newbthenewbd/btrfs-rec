@@ -2,7 +2,6 @@ package btrfs
 
 import (
 	"fmt"
-	"reflect"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
@@ -10,7 +9,9 @@ import (
 )
 
 type FS struct {
-	lv btrfsvol.LogicalVolume[*Device]
+	// You should probably not access .LV directly, except when
+	// implementing special things like fsck.
+	LV btrfsvol.LogicalVolume[*Device]
 
 	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
 	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
@@ -23,11 +24,19 @@ func (fs *FS) AddDevice(dev *Device) error {
 	if err != nil {
 		return err
 	}
-	return fs.lv.AddPhysicalVolume(sb.Data.DevItem.DevUUID, dev)
+	if err := fs.LV.AddPhysicalVolume(sb.Data.DevItem.DevUUID, dev); err != nil {
+		return err
+	}
+	fs.cacheSuperblocks = nil
+	fs.cacheSuperblock = nil
+	if err := fs.initDev(sb); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (fs *FS) Name() string {
-	if name := fs.lv.Name(); name != "" {
+	if name := fs.LV.Name(); name != "" {
 		return name
 	}
 	sb, err := fs.Superblock()
@@ -35,31 +44,23 @@ func (fs *FS) Name() string {
 		return fmt.Sprintf("fs_uuid=%v", "(unreadable)")
 	}
 	name := fmt.Sprintf("fs_uuid=%v", sb.Data.FSUUID)
-	fs.lv.SetName(name)
+	fs.LV.SetName(name)
 	return name
 }
 
 func (fs *FS) Size() (LogicalAddr, error) {
-	return fs.lv.Size()
+	return fs.LV.Size()
 }
 
 func (fs *FS) ReadAt(p []byte, off LogicalAddr) (int, error) {
-	return fs.lv.ReadAt(p, off)
+	return fs.LV.ReadAt(p, off)
 }
 func (fs *FS) WriteAt(p []byte, off LogicalAddr) (int, error) {
-	return fs.lv.WriteAt(p, off)
+	return fs.LV.WriteAt(p, off)
 }
 
 func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
-	return fs.lv.Resolve(laddr)
-}
-
-func (fs *FS) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
-	return fs.lv.UnResolve(paddr)
-}
-
-func (fs *FS) Devices() []*Device {
-	return fs.lv.PhysicalVolumes()
+	return fs.LV.Resolve(laddr)
 }
 
 func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
@@ -67,7 +68,7 @@ func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
 		return fs.cacheSuperblocks, nil
 	}
 	var ret []*util.Ref[PhysicalAddr, Superblock]
-	for _, dev := range fs.lv.PhysicalVolumes() {
+	for _, dev := range fs.LV.PhysicalVolumes() {
 		sbs, err := dev.Superblocks()
 		if err != nil {
 			return nil, fmt.Errorf("file %q: %w", dev.Name(), err)
@@ -85,6 +86,9 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 	sbs, err := fs.Superblocks()
 	if err != nil {
 		return nil, err
+	}
+	if len(sbs) == 0 {
+		return nil, fmt.Errorf("no superblocks")
 	}
 
 	fname := ""
@@ -115,70 +119,63 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 	return sbs[0], nil
 }
 
-func (fs *FS) Init() error {
-	fs.lv.ClearMappings()
-	for _, dev := range fs.lv.PhysicalVolumes() {
-		sbs, err := dev.Superblocks()
+func (fs *FS) ReInit() error {
+	fs.LV.ClearMappings()
+	for _, dev := range fs.LV.PhysicalVolumes() {
+		sb, err := dev.Superblock()
 		if err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
+		if err := fs.initDev(sb); err != nil {
+			return fmt.Errorf("file %q: %w", dev.Name(), err)
+		}
+	}
+	return nil
+}
 
-		a := sbs[0].Data
-		a.Checksum = CSum{}
-		a.Self = 0
-		for i, sb := range sbs[1:] {
-			b := sb.Data
-			b.Checksum = CSum{}
-			b.Self = 0
-			if !reflect.DeepEqual(a, b) {
-				return fmt.Errorf("file %q: superblock %v disagrees with superblock 0",
-					dev.Name(), i+1)
+func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
+	syschunks, err := sb.Data.ParseSysChunkArray()
+	if err != nil {
+		return err
+	}
+	for _, chunk := range syschunks {
+		for _, stripe := range chunk.Chunk.Stripes {
+			if err := fs.LV.AddMapping(
+				LogicalAddr(chunk.Key.Offset),
+				QualifiedPhysicalAddr{
+					Dev:  stripe.DeviceUUID,
+					Addr: stripe.Offset,
+				},
+				chunk.Chunk.Head.Size,
+				&chunk.Chunk.Head.Type,
+			); err != nil {
+				return err
 			}
 		}
-		sb := sbs[0]
-		syschunks, err := sb.Data.ParseSysChunkArray()
-		if err != nil {
-			return fmt.Errorf("file %q: %w", dev.Name(), err)
-		}
-		for _, chunk := range syschunks {
-			for _, stripe := range chunk.Chunk.Stripes {
-				if err := fs.lv.AddMapping(
-					LogicalAddr(chunk.Key.Offset),
+	}
+	if err := fs.WalkTree(sb.Data.ChunkTree, WalkTreeHandler{
+		Item: func(_ WalkTreePath, item Item) error {
+			if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+				return nil
+			}
+			body := item.Body.(btrfsitem.Chunk)
+			for _, stripe := range body.Stripes {
+				if err := fs.LV.AddMapping(
+					LogicalAddr(item.Head.Key.Offset),
 					QualifiedPhysicalAddr{
 						Dev:  stripe.DeviceUUID,
 						Addr: stripe.Offset,
 					},
-					chunk.Chunk.Head.Size,
-					&chunk.Chunk.Head.Type,
+					body.Head.Size,
+					&body.Head.Type,
 				); err != nil {
-					return fmt.Errorf("file %q: %w", dev.Name(), err)
+					return err
 				}
 			}
-		}
-		if err := fs.WalkTree(sb.Data.ChunkTree, WalkTreeHandler{
-			Item: func(_ WalkTreePath, item Item) error {
-				if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-					return nil
-				}
-				body := item.Body.(btrfsitem.Chunk)
-				for _, stripe := range body.Stripes {
-					if err := fs.lv.AddMapping(
-						LogicalAddr(item.Head.Key.Offset),
-						QualifiedPhysicalAddr{
-							Dev:  stripe.DeviceUUID,
-							Addr: stripe.Offset,
-						},
-						body.Head.Size,
-						&body.Head.Type,
-					); err != nil {
-						return fmt.Errorf("file %q: %w", dev.Name(), err)
-					}
-				}
-				return nil
-			},
-		}); err != nil {
-			return err
-		}
+			return nil
+		},
+	}); err != nil {
+		return err
 	}
 	return nil
 }
