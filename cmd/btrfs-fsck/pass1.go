@@ -36,10 +36,6 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	})
 
 	fsFoundNodes := make(map[btrfs.LogicalAddr]struct{})
-	fsReconstructedChunks := make(map[btrfs.LogicalAddr]struct {
-		Size    btrfs.AddrDelta
-		Stripes []btrfsitem.ChunkStripe
-	})
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
 		devResult, err := pass1ScanOneDev(dev, superblock.Data)
@@ -47,42 +43,19 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 			return nil, err
 		}
 
-		fmt.Printf("Pass 1: ... dev[%q] re-inserting lost+found chunks\n", dev.Name())
-		if len(devResult.FoundChunks) > 0 {
-			panic("TODO")
-		}
-		// if len(devResult.FoundBlockGroups) > 0 {
-		// 	panic("TODO")
-		// }
-		// if len(devResult.FoundDevExtents) > 0 {
-		// 	panic("TODO")
-		// }
+		fmt.Printf("Pass 1: ... dev[%q] re-inserting lost+found mappings\n", dev.Name())
+		devResult.AddToLV(fs, dev)
 
-		fmt.Printf("Pass 1: ... dev[%q] re-constructing stripes for lost+found nodes\n", dev.Name())
-		devReconstructedChunks := pass1ReconstructChunksOneDev(fs, dev, devResult.FoundNodes)
-
-		pass1PrintChunks(devReconstructedChunks)
 		pass1ProcessBlockGroups(devResult.FoundBlockGroups)
-		pass1ProcessDevExtents(devResult.FoundDevExtents)
 
 		// merge those results in to the total-fs results
 		for laddr := range devResult.FoundNodes {
 			fsFoundNodes[laddr] = struct{}{}
 		}
-		for laddr, _chunk := range devReconstructedChunks {
-			chunk, ok := fsReconstructedChunks[laddr]
-			if !ok {
-				chunk.Size = _chunk.Size
-			}
-			if chunk.Size != _chunk.Size {
-				panic("TODO: mismatch")
-			}
-			chunk.Stripes = append(chunk.Stripes, _chunk.Stripes...)
-			fsReconstructedChunks[laddr] = chunk
-		}
 	}
 
 	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
+	pass1PrintReconstructedChunks(fs)
 	//pass1WriteReconstructedChunks(fs, superblock.Data, fsReconstructedChunks)
 
 	return fsFoundNodes, nil
@@ -103,6 +76,60 @@ type sysBlockGroup struct {
 type sysDevExtent struct {
 	Key    btrfs.Key
 	DevExt btrfsitem.DevExtent
+}
+
+func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
+	sb, _ := dev.Superblock()
+
+	total := len(found.FoundChunks) + len(found.FoundDevExtents)
+	for _, paddrs := range found.FoundNodes {
+		total += len(paddrs)
+	}
+	lastProgress := -1
+	done := 0
+	printProgress := func() {
+		pct := int(100 * float64(done) / float64(total))
+		if pct != lastProgress || done == total {
+			fmt.Printf("Pass 1: ... added %v%% of the mappings (%v/%v)\n",
+				pct, done, total)
+			lastProgress = pct
+		}
+	}
+	printProgress()
+
+	for laddr, paddrs := range found.FoundNodes {
+		for _, paddr := range paddrs {
+			if err := fs.LV.AddMapping(btrfsvol.Mapping{
+				LAddr: laddr,
+				PAddr: btrfsvol.QualifiedPhysicalAddr{
+					Dev:  sb.Data.DevItem.DevID,
+					Addr: paddr,
+				},
+				Size:  btrfsvol.AddrDelta(sb.Data.NodeSize),
+				Flags: nil,
+			}); err != nil {
+				fmt.Printf("Pass 1: ... error: adding node ident: %v\n", err)
+			}
+			done++
+			printProgress()
+		}
+	}
+	for _, chunk := range found.FoundChunks {
+		for _, mapping := range chunk.Chunk.Mappings(chunk.Key) {
+			if err := fs.LV.AddMapping(mapping); err != nil {
+				fmt.Printf("Pass 1: ... error: adding chunk: %v\n", err)
+			}
+			done++
+			printProgress()
+		}
+	}
+	for _, ext := range found.FoundDevExtents {
+		if err := fs.LV.AddMapping(ext.DevExt.Mapping(ext.Key)); err != nil {
+			fmt.Printf("Pass 1: ... error: adding devext: %v\n", err)
+		}
+		done++
+		printProgress()
+	}
 }
 
 func pass1ScanOneDev(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
@@ -211,126 +238,6 @@ func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1
 	return result, err
 }
 
-func pass1ReconstructChunksOneDev(
-	fs *btrfs.FS,
-	dev *btrfs.Device,
-	foundNodes map[btrfs.LogicalAddr][]btrfs.PhysicalAddr,
-) (
-	chunks map[btrfs.LogicalAddr]struct {
-		Size    btrfs.AddrDelta
-		Stripes []btrfsitem.ChunkStripe
-	},
-) {
-	superblock, _ := dev.Superblock()
-
-	// find the subset of `foundNodes` that are lost
-	lostAndFoundNodes := make(map[btrfs.PhysicalAddr]btrfs.LogicalAddr)
-	for laddr, readPAddrs := range foundNodes {
-		resolvedPAddrs, _ := fs.Resolve(laddr)
-		for _, readPAddr := range readPAddrs {
-			if _, ok := resolvedPAddrs[btrfs.QualifiedPhysicalAddr{
-				Dev:  superblock.Data.DevItem.DevID,
-				Addr: readPAddr,
-			}]; !ok {
-				lostAndFoundNodes[readPAddr] = laddr
-			}
-		}
-	}
-
-	// sort the keys to that set
-	sortedPAddrs := make([]btrfs.PhysicalAddr, 0, len(lostAndFoundNodes))
-	for paddr := range lostAndFoundNodes {
-		sortedPAddrs = append(sortedPAddrs, paddr)
-	}
-	sort.Slice(sortedPAddrs, func(i, j int) bool {
-		return sortedPAddrs[i] < sortedPAddrs[j]
-	})
-
-	// build a list of stripes from that sorted set
-	type stripe struct {
-		PAddr btrfs.PhysicalAddr
-		LAddr btrfs.LogicalAddr
-		Size  btrfs.AddrDelta
-	}
-	var stripes []*stripe
-	for _, paddr := range sortedPAddrs {
-		laddr := lostAndFoundNodes[paddr]
-
-		var lastStripe *stripe
-		if len(stripes) > 0 {
-			lastStripe = stripes[len(stripes)-1]
-		}
-		if lastStripe != nil &&
-			paddr == lastStripe.PAddr.Add(lastStripe.Size) &&
-			laddr == lastStripe.LAddr.Add(lastStripe.Size) {
-			lastStripe.Size += btrfs.AddrDelta(superblock.Data.NodeSize)
-		} else {
-			stripes = append(stripes, &stripe{
-				PAddr: paddr,
-				LAddr: laddr,
-				Size:  btrfs.AddrDelta(superblock.Data.NodeSize),
-			})
-		}
-	}
-	//fmt.Printf("Pass 1: ... dev[%q] reconstructed stripes: %#v\n", dev.Name(), stripes)
-
-	// organize those stripes in to chunks
-	chunks = make(map[btrfs.LogicalAddr]struct {
-		Size    btrfs.AddrDelta
-		Stripes []btrfsitem.ChunkStripe
-	})
-	for _, stripe := range stripes {
-		chunk, ok := chunks[stripe.LAddr]
-		if !ok {
-			chunk.Size = stripe.Size
-		}
-		if chunk.Size != stripe.Size {
-			panic("TODO: mismatch")
-		}
-		chunk.Stripes = append(chunk.Stripes, btrfsitem.ChunkStripe{
-			DeviceID:   superblock.Data.DevItem.DevID,
-			DeviceUUID: superblock.Data.DevItem.DevUUID,
-			Offset:     stripe.PAddr,
-		})
-		chunks[stripe.LAddr] = chunk
-	}
-
-	return chunks
-}
-
-func pass1PrintChunks(chunks map[btrfs.LogicalAddr]struct {
-	Size    btrfs.AddrDelta
-	Stripes []btrfsitem.ChunkStripe
-}) {
-	laddrs := make([]btrfs.LogicalAddr, 0, len(chunks))
-	for laddr := range chunks {
-		laddrs = append(laddrs, laddr)
-	}
-	sort.Slice(laddrs, func(i, j int) bool {
-		return laddrs[i] < laddrs[j]
-	})
-	var lprev btrfs.LogicalAddr
-	var pprev btrfs.PhysicalAddr
-	for _, laddr := range laddrs {
-		ldelta := laddr - lprev
-		chunk := chunks[laddr]
-		for _, stripe := range chunk.Stripes {
-			pdelta := stripe.Offset - pprev
-			adj := "mismatch"
-			if uint64(pdelta) == uint64(ldelta) {
-				adj = "match"
-			}
-			fmt.Printf("chunkstripe: laddr=%v (+%v) => paddr=%v (+%v) ; size=%v (%s)\n",
-				laddr, ldelta,
-				stripe.Offset, pdelta,
-				chunk.Size,
-				adj)
-			pprev = stripe.Offset.Add(chunk.Size)
-		}
-		lprev = laddr.Add(chunk.Size)
-	}
-}
-
 func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	// organize in to a more manageable datastructure
 	type groupAttrs struct {
@@ -397,76 +304,22 @@ func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
 	}
 }
 
-func pass1ProcessDevExtents(devextents []sysDevExtent) {
-	// organize in to a more manageable datastructure
-	type extAttrs struct {
-		LAddr btrfs.LogicalAddr
-		Size  btrfs.AddrDelta
-	}
-	exts := make(map[btrfs.PhysicalAddr]extAttrs)
-	for _, de := range devextents {
-		paddr := btrfs.PhysicalAddr(de.Key.Offset)
-		attrs := extAttrs{
-			Size:  de.DevExt.Length,
-			LAddr: de.DevExt.ChunkOffset,
+func pass1PrintReconstructedChunks(fs *btrfs.FS) {
+	mappings := fs.LV.Mappings()
+	var prevLAddr btrfsvol.LogicalAddr
+	for _, mapping := range mappings {
+		if mapping.LAddr != prevLAddr {
+			if mapping.Flags == nil {
+				fmt.Printf("chunk laddr=%v size=%v flags=(missing)\n",
+					mapping.LAddr, mapping.Size)
+			} else {
+				fmt.Printf("chunk laddr=%v size=%v flags=%v\n",
+					mapping.LAddr, mapping.Size, *mapping.Flags)
+			}
 		}
-		// If there's a conflict, but they both say the same thing (existing == attrs),
-		// then just ignore the dup.
-		if existing, conflict := exts[paddr]; conflict && existing != attrs {
-			fmt.Printf("error: conflicting devextents for paddr=%v\n", paddr)
-			continue
-		}
-		exts[paddr] = attrs
-	}
-
-	// sort the keys to that datastructure
-	sortedPAddrs := make([]btrfs.PhysicalAddr, 0, len(exts))
-	for paddr := range exts {
-		sortedPAddrs = append(sortedPAddrs, paddr)
-	}
-	sort.Slice(sortedPAddrs, func(i, j int) bool {
-		return sortedPAddrs[i] < sortedPAddrs[j]
-	})
-
-	// cluster
-	type stripe struct {
-		PAddr btrfs.PhysicalAddr
-		LAddr btrfs.LogicalAddr
-		Size  btrfs.AddrDelta
-	}
-	var stripes []*stripe
-	for _, paddr := range sortedPAddrs {
-		attrs := exts[paddr]
-
-		var lastStripe *stripe
-		if len(stripes) > 0 {
-			lastStripe = stripes[len(stripes)-1]
-		}
-		if lastStripe != nil &&
-			paddr == lastStripe.PAddr.Add(lastStripe.Size) &&
-			attrs.LAddr == lastStripe.LAddr.Add(lastStripe.Size) {
-			lastStripe.Size += attrs.Size
-		} else {
-			stripes = append(stripes, &stripe{
-				PAddr: paddr,
-				LAddr: attrs.LAddr,
-				Size:  attrs.Size,
-			})
-		}
-	}
-
-	// print
-	var lprev btrfs.LogicalAddr
-	var pprev btrfs.PhysicalAddr
-	for _, stripe := range stripes {
-		pdelta := stripe.PAddr - pprev
-		ldelta := stripe.LAddr - lprev
-		fmt.Printf("devextent cluster: paddr=%v (+%v) => laddr=%v (+%v) ; size=%v\n",
-			stripe.PAddr, pdelta,
-			stripe.LAddr, ldelta,
-			stripe.Size)
-		pprev = stripe.PAddr.Add(stripe.Size)
-		lprev = stripe.LAddr.Add(stripe.Size)
+		fmt.Printf("\tstripe dev_id=%v paddr=%v\n",
+			mapping.PAddr.Dev, mapping.PAddr.Addr)
+		prevLAddr = mapping.LAddr
 	}
 }
 

@@ -95,12 +95,10 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 			break
 		}
 	}
-	if len(logicalOverlaps) > 0 {
-		var err error
-		newChunk, err = newChunk.union(logicalOverlaps...)
-		if err != nil {
-			return fmt.Errorf("(%p).AddMapping: %w", lv, err)
-		}
+	var err error
+	newChunk, err = newChunk.union(logicalOverlaps...)
+	if err != nil {
+		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
 	}
 
 	// physical2logical
@@ -119,12 +117,9 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 			break
 		}
 	}
-	if len(physicalOverlaps) > 0 {
-		var err error
-		newExt, err = newExt.union(physicalOverlaps...)
-		if err != nil {
-			return fmt.Errorf("(%p).AddMapping: %w", lv, err)
-		}
+	newExt, err = newExt.union(physicalOverlaps...)
+	if err != nil {
+		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
 	}
 
 	// logical2physical
@@ -187,6 +182,26 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 	}
 
 	return nil
+}
+
+func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
+	var ret []Mapping
+	for _, chunk := range lv.logical2physical {
+		var flags *BlockGroupFlags
+		if chunk.Flags != nil {
+			val := *chunk.Flags
+			flags = &val
+		}
+		for _, slice := range chunk.PAddrs {
+			ret = append(ret, Mapping{
+				LAddr: chunk.LAddr,
+				PAddr: slice,
+				Size:  chunk.Size,
+				Flags: flags,
+			})
+		}
+	}
+	return ret
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
