@@ -10,7 +10,7 @@ import (
 )
 
 type FS struct {
-	lv btrfsvol.LogicalVolume
+	lv btrfsvol.LogicalVolume[*Device]
 
 	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
 	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
@@ -59,12 +59,7 @@ func (fs *FS) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
 }
 
 func (fs *FS) Devices() []*Device {
-	untyped := fs.lv.PhysicalVolumes()
-	typed := make([]*Device, len(untyped))
-	for i := range untyped {
-		typed[i] = untyped[i].(*Device)
-	}
-	return typed
+	return fs.lv.PhysicalVolumes()
 }
 
 func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
@@ -73,7 +68,7 @@ func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
 	}
 	var ret []*util.Ref[PhysicalAddr, Superblock]
 	for _, dev := range fs.lv.PhysicalVolumes() {
-		sbs, err := dev.(*Device).Superblocks()
+		sbs, err := dev.Superblocks()
 		if err != nil {
 			return nil, fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
@@ -123,7 +118,7 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 func (fs *FS) Init() error {
 	fs.lv.ClearMappings()
 	for _, dev := range fs.lv.PhysicalVolumes() {
-		sbs, err := dev.(*Device).Superblocks()
+		sbs, err := dev.Superblocks()
 		if err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}

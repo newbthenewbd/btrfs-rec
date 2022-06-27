@@ -10,9 +10,7 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
-type PhysicalVolume = util.File[PhysicalAddr]
-
-type LogicalVolume struct {
+type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
 	name string
 
 	uuid2pv map[util.UUID]PhysicalVolume
@@ -21,17 +19,17 @@ type LogicalVolume struct {
 	physical2logical map[util.UUID][]devextMapping
 }
 
-var _ util.File[LogicalAddr] = (*LogicalVolume)(nil)
+var _ util.File[LogicalAddr] = (*LogicalVolume[util.File[PhysicalAddr]])(nil)
 
-func (lv *LogicalVolume) SetName(name string) {
+func (lv *LogicalVolume[PhysicalVolume]) SetName(name string) {
 	lv.name = name
 }
 
-func (lv *LogicalVolume) Name() string {
+func (lv *LogicalVolume[PhysicalVolume]) Name() string {
 	return lv.name
 }
 
-func (lv *LogicalVolume) Size() (LogicalAddr, error) {
+func (lv *LogicalVolume[PhysicalVolume]) Size() (LogicalAddr, error) {
 	if len(lv.logical2physical) == 0 {
 		return 0, nil
 	}
@@ -39,7 +37,7 @@ func (lv *LogicalVolume) Size() (LogicalAddr, error) {
 	return lastChunk.LAddr.Add(lastChunk.Size), nil
 }
 
-func (lv *LogicalVolume) AddPhysicalVolume(uuid util.UUID, dev PhysicalVolume) error {
+func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(uuid util.UUID, dev PhysicalVolume) error {
 	if lv.uuid2pv == nil {
 		lv.uuid2pv = make(map[util.UUID]PhysicalVolume)
 	}
@@ -51,7 +49,7 @@ func (lv *LogicalVolume) AddPhysicalVolume(uuid util.UUID, dev PhysicalVolume) e
 	return nil
 }
 
-func (lv *LogicalVolume) PhysicalVolumes() []PhysicalVolume {
+func (lv *LogicalVolume[PhysicalVolume]) PhysicalVolumes() []PhysicalVolume {
 	uuids := make([]util.UUID, 0, len(lv.uuid2pv))
 	for uuid := range lv.uuid2pv {
 		uuids = append(uuids, uuid)
@@ -66,12 +64,12 @@ func (lv *LogicalVolume) PhysicalVolumes() []PhysicalVolume {
 	return ret
 }
 
-func (lv *LogicalVolume) ClearMappings() {
+func (lv *LogicalVolume[PhysicalVolume]) ClearMappings() {
 	lv.logical2physical = nil
 	lv.physical2logical = nil
 }
 
-func (lv *LogicalVolume) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAddr, size AddrDelta, flags *BlockGroupFlags) error {
+func (lv *LogicalVolume[PhysicalVolume]) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAddr, size AddrDelta, flags *BlockGroupFlags) error {
 	// sanity check
 	if _, haveDev := lv.uuid2pv[paddr.Dev]; !haveDev {
 		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with uuid=%v",
@@ -161,7 +159,7 @@ func (lv *LogicalVolume) AddMapping(laddr LogicalAddr, paddr QualifiedPhysicalAd
 	return nil
 }
 
-func (lv *LogicalVolume) fsck() error {
+func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 	physical2logical := make(map[util.UUID][]devextMapping)
 	for _, chunk := range lv.logical2physical {
 		for _, stripe := range chunk.PAddrs {
@@ -191,7 +189,7 @@ func (lv *LogicalVolume) fsck() error {
 	return nil
 }
 
-func (lv *LogicalVolume) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
+func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
 	paddrs = make(map[QualifiedPhysicalAddr]struct{})
 	maxlen = math.MaxInt64
 
@@ -213,7 +211,7 @@ func (lv *LogicalVolume) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysica
 	return paddrs, maxlen
 }
 
-func (lv *LogicalVolume) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
+func (lv *LogicalVolume[PhysicalVolume]) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
 	for _, ext := range lv.physical2logical[paddr.Dev] {
 		low := ext.PAddr
 		high := low.Add(ext.Size)
@@ -225,7 +223,7 @@ func (lv *LogicalVolume) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
 	return -1
 }
 
-func (lv *LogicalVolume) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
+func (lv *LogicalVolume[PhysicalVolume]) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	done := 0
 	for done < len(dat) {
 		n, err := lv.maybeShortReadAt(dat[done:], laddr+LogicalAddr(done))
@@ -237,7 +235,7 @@ func (lv *LogicalVolume) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	return done, nil
 }
 
-func (lv *LogicalVolume) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
+func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := lv.Resolve(laddr)
 	if len(paddrs) == 0 {
 		return 0, fmt.Errorf("read: could not map logical address %v", laddr)
@@ -267,7 +265,7 @@ func (lv *LogicalVolume) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, e
 	return len(dat), nil
 }
 
-func (lv *LogicalVolume) WriteAt(dat []byte, laddr LogicalAddr) (int, error) {
+func (lv *LogicalVolume[PhysicalVolume]) WriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	done := 0
 	for done < len(dat) {
 		n, err := lv.maybeShortWriteAt(dat[done:], laddr+LogicalAddr(done))
@@ -279,7 +277,7 @@ func (lv *LogicalVolume) WriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	return done, nil
 }
 
-func (lv *LogicalVolume) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
+func (lv *LogicalVolume[PhysicalVolume]) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := lv.Resolve(laddr)
 	if len(paddrs) == 0 {
 		return 0, fmt.Errorf("write: could not map logical address %v", laddr)
