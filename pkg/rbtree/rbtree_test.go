@@ -1,45 +1,12 @@
 package rbtree
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
 )
-
-func printTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
-	fmtBareNode := func(node *Node[V]) string {
-		if node == nil {
-			return "nil"
-		}
-		if node.Color == Red {
-			return fmt.Sprintf("R(%v)", node.Value)
-		} else {
-			return fmt.Sprintf("B(%v)", node.Value)
-		}
-	}
-	addIndent := func(indent string, lines []string) []string {
-		ret := make([]string, 0, len(lines))
-		for _, line := range lines {
-			ret = append(ret, indent+line)
-		}
-		return ret
-	}
-	var fmtNode func(node *Node[V]) []string
-	fmtNode = func(node *Node[V]) []string {
-		if node == nil {
-			return []string{"nil"}
-		}
-		ret := addIndent("    ", fmtNode(node.Right))
-		ret = append(ret, fmtBareNode(node))
-		ret = append(ret, addIndent("    ", fmtNode(node.Left))...)
-		return ret
-	}
-	t.Log("\n" + strings.Join(fmtNode(tree.root), "\n"))
-}
 
 func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 	// 1. Every node is either red or black
@@ -79,9 +46,8 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 		})
 		for i := range cnts {
 			if cnts[0] != cnts[i] {
-				if !assert.Truef(t, false, "node %v: not all leafs have same black-count: %v", node.Value, cnts) {
-					printTree(t, tree)
-				}
+				assert.Truef(t, false, "node %v: not all leafs have same black-count: %v", node.Value, cnts)
+				break
 			}
 		}
 	})
@@ -125,7 +91,13 @@ func FuzzTree(f *testing.F) {
 				assert.Equal(t, val, node.Value)
 			} else {
 				t.Logf("Delete(%v)", val)
+				if val == 25 {
+					t.Logf("before:\n\n%s\n", tree.ASCIIArt())
+				}
 				tree.Delete(val)
+				if val == 25 {
+					t.Logf("after:\n\n%s\n", tree.ASCIIArt())
+				}
 				assert.Nil(t, tree.Lookup(val))
 			}
 			checkTree(t, tree)
