@@ -330,7 +330,8 @@ func (t *Tree[K, V]) Delete(key K) {
 		return
 	}
 
-	var nodeToRebalance, nodeToRebalanceParent *Node[V]
+	var nodeToRebalance *Node[V]
+	var nodeToRebalanceParent *Node[V] // in case 'nodeToRebalance' is nil, which it can be
 	needsRebalance := nodeToDelete.Color == Black
 
 	switch {
@@ -410,7 +411,7 @@ func (t *Tree[K, V]) Delete(key K) {
 
 	if needsRebalance {
 		node := nodeToRebalance
-		nodeParent := nodeToRebalanceParent // in case 'node' is nil, which it can be
+		nodeParent := nodeToRebalanceParent
 		for node != t.root && node.getColor() == Black {
 			if node == nodeParent.Left {
 				sibling := nodeParent.Right
