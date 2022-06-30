@@ -80,24 +80,21 @@ func FuzzTree(f *testing.F) {
 			KeyFn: func(x uint8) uint8 { return x },
 		}
 		checkTree(t, tree)
+		t.Logf("\n%s\n", tree.ASCIIArt())
 		for _, b := range dat {
 			ins := (b & 0b0100_0000) != 0
 			val := (b & 0b0011_1111)
 			if ins {
 				t.Logf("Insert(%v)", val)
 				tree.Insert(val)
+				t.Logf("\n%s\n", tree.ASCIIArt())
 				node := tree.Lookup(val)
 				require.NotNil(t, node)
 				assert.Equal(t, val, node.Value)
 			} else {
 				t.Logf("Delete(%v)", val)
-				if val == 25 {
-					t.Logf("before:\n\n%s\n", tree.ASCIIArt())
-				}
 				tree.Delete(val)
-				if val == 25 {
-					t.Logf("after:\n\n%s\n", tree.ASCIIArt())
-				}
+				t.Logf("\n%s\n", tree.ASCIIArt())
 				assert.Nil(t, tree.Lookup(val))
 			}
 			checkTree(t, tree)
