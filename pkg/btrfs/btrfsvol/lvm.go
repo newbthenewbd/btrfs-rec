@@ -3,6 +3,7 @@ package btrfsvol
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"reflect"
 
 	"lukeshu.com/btrfs-tools/pkg/rbtree"
@@ -91,10 +92,11 @@ func (lv *LogicalVolume[PhysicalVolume]) ClearMappings() {
 }
 
 type Mapping struct {
-	LAddr LogicalAddr
-	PAddr QualifiedPhysicalAddr
-	Size  AddrDelta
-	Flags *BlockGroupFlags
+	LAddr      LogicalAddr
+	PAddr      QualifiedPhysicalAddr
+	Size       AddrDelta
+	SizeLocked bool
+	Flags      *BlockGroupFlags
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
@@ -107,10 +109,11 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 
 	// logical2physical
 	newChunk := chunkMapping{
-		LAddr:  m.LAddr,
-		PAddrs: []QualifiedPhysicalAddr{m.PAddr},
-		Size:   m.Size,
-		Flags:  m.Flags,
+		LAddr:      m.LAddr,
+		PAddrs:     []QualifiedPhysicalAddr{m.PAddr},
+		Size:       m.Size,
+		SizeLocked: m.SizeLocked,
+		Flags:      m.Flags,
 	}
 	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.cmpRange)
 	var err error
@@ -121,10 +124,11 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 
 	// physical2logical
 	newExt := devextMapping{
-		PAddr: m.PAddr.Addr,
-		LAddr: m.LAddr,
-		Size:  m.Size,
-		Flags: m.Flags,
+		PAddr:      m.PAddr.Addr,
+		LAddr:      m.LAddr,
+		Size:       m.Size,
+		SizeLocked: m.SizeLocked,
+		Flags:      m.Flags,
 	}
 	physicalOverlaps := lv.physical2logical[m.PAddr.Dev].SearchRange(newExt.cmpRange)
 	newExt, err = newExt.union(physicalOverlaps...)
@@ -154,8 +158,10 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 	//
 	// This is in-theory unnescessary, but that assumes that I
 	// made no mistakes in my algorithm above.
-	if err := lv.fsck(); err != nil {
-		return err
+	if os.Getenv("PARANOID") != "" {
+		if err := lv.fsck(); err != nil {
+			return err
+		}
 	}
 
 	// done
@@ -247,6 +253,16 @@ func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[
 	}
 
 	return paddrs, maxlen
+}
+
+func (lv *LogicalVolume[PhysicalVolume]) ResolveAny(laddr LogicalAddr, size AddrDelta) (LogicalAddr, QualifiedPhysicalAddr) {
+	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
+		return chunkMapping{LAddr: laddr, Size: size}.cmpRange(chunk)
+	})
+	if node == nil {
+		return -1, QualifiedPhysicalAddr{0, -1}
+	}
+	return node.Value.LAddr, node.Value.PAddrs[0]
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {

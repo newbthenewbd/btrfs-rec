@@ -9,11 +9,14 @@ import (
 
 // logical => []physical
 type chunkMapping struct {
-	LAddr  LogicalAddr
-	PAddrs []QualifiedPhysicalAddr
-	Size   AddrDelta
-	Flags  *BlockGroupFlags
+	LAddr      LogicalAddr
+	PAddrs     []QualifiedPhysicalAddr
+	Size       AddrDelta
+	SizeLocked bool
+	Flags      *BlockGroupFlags
 }
+
+type ChunkMapping = chunkMapping
 
 // return -1 if 'a' is wholly to the left of 'b'
 // return 0 if there is some overlap between 'a' and 'b'
@@ -50,6 +53,15 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	ret := chunkMapping{
 		LAddr: beg,
 		Size:  end.Sub(beg),
+	}
+	for _, chunk := range chunks {
+		if chunk.SizeLocked {
+			ret.SizeLocked = true
+			if ret.Size != chunk.Size {
+				return chunkMapping{}, fmt.Errorf("member chunk has locked size=%v, but union would have size=%v",
+					chunk.Size, ret.Size)
+			}
+		}
 	}
 	// figure out the physical stripes (.PAddrs)
 	paddrs := make(map[QualifiedPhysicalAddr]struct{})

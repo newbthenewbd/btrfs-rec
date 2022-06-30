@@ -47,8 +47,9 @@ func (chunk Chunk) Mappings(key internal.Key) []btrfsvol.Mapping {
 				Dev:  stripe.DeviceID,
 				Addr: stripe.Offset,
 			},
-			Size:  chunk.Head.Size,
-			Flags: &chunk.Head.Type,
+			Size:       chunk.Head.Size,
+			SizeLocked: true,
+			Flags:      &chunk.Head.Type,
 		})
 	}
 	return ret

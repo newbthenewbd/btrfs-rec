@@ -8,10 +8,11 @@ import (
 
 // physical => logical
 type devextMapping struct {
-	PAddr PhysicalAddr
-	LAddr LogicalAddr
-	Size  AddrDelta
-	Flags *BlockGroupFlags
+	PAddr      PhysicalAddr
+	LAddr      LogicalAddr
+	Size       AddrDelta
+	SizeLocked bool
+	Flags      *BlockGroupFlags
 }
 
 // return -1 if 'a' is wholly to the left of 'b'
@@ -49,6 +50,15 @@ func (a devextMapping) union(rest ...devextMapping) (devextMapping, error) {
 	ret := devextMapping{
 		PAddr: beg,
 		Size:  end.Sub(beg),
+	}
+	for _, ext := range exts {
+		if ext.SizeLocked {
+			ret.SizeLocked = true
+			if ret.Size != ext.Size {
+				return devextMapping{}, fmt.Errorf("member devext has locked size=%v, but union would have size=%v",
+					ext.Size, ret.Size)
+			}
+		}
 	}
 	// figure out the logical range (.LAddr)
 	first := true

@@ -25,7 +25,8 @@ func (devext DevExtent) Mapping(key internal.Key) btrfsvol.Mapping {
 			Dev:  btrfsvol.DeviceID(key.ObjectID),
 			Addr: btrfsvol.PhysicalAddr(key.Offset),
 		},
-		Size:  devext.Length,
-		Flags: nil,
+		Size:       devext.Length,
+		SizeLocked: true,
+		Flags:      nil,
 	}
 }

@@ -116,7 +116,9 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 	}
 
 	// Do the nodes last to avoid bloating the mappings table too
-	// much.
+	// much. (Because nodes are numerous and small, while the
+	// others are few and large; so it is likely that many of the
+	// nodes will be subsumed by other things.)
 	//
 	// Sort them so that progress numbers are predictable.
 	laddrs := make([]btrfsvol.LogicalAddr, 0, len(found.FoundNodes))
@@ -136,13 +138,42 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 					Dev:  sb.Data.DevItem.DevID,
 					Addr: paddr,
 				},
-				Size:  btrfsvol.AddrDelta(sb.Data.NodeSize),
-				Flags: nil,
+				Size:       btrfsvol.AddrDelta(sb.Data.NodeSize),
+				SizeLocked: false,
+				Flags:      nil,
 			}); err != nil {
 				fmt.Printf("Pass 1: ... error: adding node ident: %v\n", err)
 			}
 			done++
 			printProgress()
+		}
+	}
+
+	// Use block groups to add missing flags (and as a hint to
+	// combine node entries).
+	for _, bg := range found.FoundBlockGroups {
+		laddr := btrfsvol.LogicalAddr(bg.Key.ObjectID)
+		size := btrfsvol.AddrDelta(bg.Key.Offset)
+
+		otherLAddr, otherPAddr := fs.LV.ResolveAny(laddr, size)
+		if otherLAddr < 0 || otherPAddr.Addr < 0 {
+			continue
+		}
+
+		offsetWithinChunk := otherLAddr.Sub(laddr)
+		flags := bg.BG.Flags
+		mapping := btrfsvol.Mapping{
+			LAddr: laddr,
+			PAddr: btrfsvol.QualifiedPhysicalAddr{
+				Dev:  otherPAddr.Dev,
+				Addr: otherPAddr.Addr.Add(-offsetWithinChunk),
+			},
+			Size:       size,
+			SizeLocked: true,
+			Flags:      &flags,
+		}
+		if err := fs.LV.AddMapping(mapping); err != nil {
+			fmt.Printf("Pass 1: ... error: adding flags from blockgroup: %v\n", err)
 		}
 	}
 }
