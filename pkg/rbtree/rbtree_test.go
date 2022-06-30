@@ -1,13 +1,14 @@
 package rbtree
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
 )
 
-func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
+func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *Tree[K, V]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
@@ -50,6 +51,23 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 			}
 		}
 	})
+
+	// expected contents
+	expectedOrder := make([]K, 0, len(expectedSet))
+	for k := range expectedSet {
+		expectedOrder = append(expectedOrder, k)
+		node := tree.Lookup(k)
+		require.NotNil(t, tree, node)
+		require.Equal(t, k, tree.KeyFn(node.Value))
+	}
+	sort.Slice(expectedOrder, func(i, j int) bool {
+		return expectedOrder[i] < expectedOrder[j]
+	})
+	actOrder := make([]K, 0, len(expectedSet))
+	tree.Walk(func(node *Node[V]) {
+		actOrder = append(actOrder, tree.KeyFn(node.Value))
+	})
+	require.Equal(t, expectedOrder, actOrder)
 }
 
 func FuzzTree(f *testing.F) {
@@ -78,7 +96,8 @@ func FuzzTree(f *testing.F) {
 		tree := &Tree[uint8, uint8]{
 			KeyFn: func(x uint8) uint8 { return x },
 		}
-		checkTree(t, tree)
+		set := make(map[uint8]struct{})
+		checkTree(t, set, tree)
 		t.Logf("\n%s\n", tree.ASCIIArt())
 		for _, b := range dat {
 			ins := (b & 0b0100_0000) != 0
@@ -86,6 +105,7 @@ func FuzzTree(f *testing.F) {
 			if ins {
 				t.Logf("Insert(%v)", val)
 				tree.Insert(val)
+				set[val] = struct{}{}
 				t.Logf("\n%s\n", tree.ASCIIArt())
 				node := tree.Lookup(val)
 				require.NotNil(t, node)
@@ -93,10 +113,11 @@ func FuzzTree(f *testing.F) {
 			} else {
 				t.Logf("Delete(%v)", val)
 				tree.Delete(val)
+				delete(set, val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
 				require.Nil(t, tree.Lookup(val))
 			}
-			checkTree(t, tree)
+			checkTree(t, set, tree)
 		}
 	})
 }
