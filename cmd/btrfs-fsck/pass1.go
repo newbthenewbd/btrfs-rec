@@ -54,10 +54,13 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		}
 	}
 
-	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
+	fmt.Printf("Pass 1: ... logical address space:\n")
 	pass1PrintLogicalSpace(fs)
+	fmt.Printf("Pass 1: ... physical address space:\n")
 	pass1PrintPhysicalSpace(fs)
-	//pass1WriteReconstructedChunks(fs, superblock.Data, fsReconstructedChunks)
+
+	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
+	pass1WriteReconstructedChunks(fs)
 
 	return fsFoundNodes, nil
 }
@@ -158,6 +161,7 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 
 		otherLAddr, otherPAddr := fs.LV.ResolveAny(laddr, size)
 		if otherLAddr < 0 || otherPAddr.Addr < 0 {
+			fmt.Printf("Pass 1: ... error: could not pair blockgroup laddr=%v (size=%v) with a mapping\n", laddr, size)
 			continue
 		}
 
@@ -323,7 +327,7 @@ func pass1PrintPhysicalSpace(fs *btrfs.FS) {
 	})
 
 	var prevDev btrfsvol.DeviceID = 0
-	var  prevEnd btrfsvol.PhysicalAddr
+	var prevEnd btrfsvol.PhysicalAddr
 	var sumHole, sumExt btrfsvol.AddrDelta
 	for _, mapping := range mappings {
 		if mapping.PAddr.Dev != prevDev {
@@ -346,14 +350,10 @@ func pass1PrintPhysicalSpace(fs *btrfs.FS) {
 	p.Printf("total physical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
 }
 
-func pass1WriteReconstructedChunks(
-	fs *btrfs.FS,
-	superblock btrfs.Superblock,
-	fsReconstructedChunks map[btrfs.LogicalAddr]struct {
-		Size    btrfs.AddrDelta
-		Stripes []btrfsitem.ChunkStripe
-	},
-) {
+func pass1WriteReconstructedChunks(fs *btrfs.FS) {
+	sbRef, _ := fs.Superblock()
+	superblock := sbRef.Data
+
 	// FIXME(lukeshu): OK, so this just assumes that all the
 	// reconstructed stripes fit in one node, and that we can just
 	// store that node at the root node of the chunk tree.  This
@@ -384,49 +384,48 @@ func pass1WriteReconstructedChunks(
 				Key: btrfs.Key{
 					ObjectID: btrfs.DEV_ITEMS_OBJECTID,
 					ItemType: btrfsitem.DEV_ITEM_KEY,
-					Offset:   1, // ???
+					Offset:   uint64(superblock.Data.DevItem.DevID),
 				},
 			},
 			Body: superblock.Data.DevItem,
 		})
 	}
 
-	sortedLAddrs := make([]btrfs.LogicalAddr, 0, len(fsReconstructedChunks))
-	for laddr := range fsReconstructedChunks {
-		sortedLAddrs = append(sortedLAddrs, laddr)
-	}
-	sort.Slice(sortedLAddrs, func(i, j int) bool {
-		return sortedLAddrs[i] < sortedLAddrs[j]
-	})
-	for i, laddr := range sortedLAddrs {
-		chunk := fsReconstructedChunks[laddr]
-		for j, stripe := range chunk.Stripes {
-			fmt.Printf("Pass 1: chunks[%v].stripes[%v] = { laddr=%v => { dev_id=%v, paddr=%v }, size=%v }\n",
-				i, j, laddr, stripe.DeviceID, stripe.Offset, chunk.Size)
+	for _, mapping := range fs.LV.Mappings() {
+		chunkIdx := len(reconstructedNode.Data.BodyLeaf) - 1
+		if len(reconstructedNode.Data.BodyLeaf) == 0 || reconstructedNode.Data.BodyLeaf[chunkIdx].Head.Key.Offset != uint64(mapping.LAddr) {
+			reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
+				Head: btrfs.ItemHeader{
+					Key: btrfs.Key{
+						ObjectID: btrfs.FIRST_CHUNK_TREE_OBJECTID,
+						ItemType: btrfsitem.CHUNK_ITEM_KEY,
+						Offset:   uint64(mapping.LAddr),
+					},
+				},
+				Body: btrfsitem.Chunk{
+					Head: btrfsitem.ChunkHeader{
+						Size:           mapping.Size,
+						Owner:          btrfs.EXTENT_TREE_OBJECTID,
+						StripeLen:      65536, // ???
+						Type:           *mapping.Flags,
+						IOOptimalAlign: superblock.DevItem.IOOptimalAlign,
+						IOOptimalWidth: superblock.DevItem.IOOptimalWidth,
+						IOMinSize:      superblock.DevItem.IOMinSize,
+						SubStripes:     1,
+					},
+				},
+			})
+			chunkIdx++
 		}
-		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
-			Head: btrfs.ItemHeader{
-				Key: btrfs.Key{
-					ObjectID: btrfs.FIRST_CHUNK_TREE_OBJECTID,
-					ItemType: btrfsitem.CHUNK_ITEM_KEY,
-					Offset:   uint64(laddr),
-				},
-			},
-			Body: btrfsitem.Chunk{
-				Head: btrfsitem.ChunkHeader{
-					Size:           chunk.Size,
-					Owner:          btrfs.EXTENT_TREE_OBJECTID,
-					StripeLen:      65536, // ???
-					Type:           0,     // TODO
-					IOOptimalAlign: superblock.DevItem.IOOptimalAlign,
-					IOOptimalWidth: superblock.DevItem.IOOptimalWidth,
-					IOMinSize:      superblock.DevItem.IOMinSize,
-					NumStripes:     uint16(len(chunk.Stripes)),
-					SubStripes:     1,
-				},
-				Stripes: chunk.Stripes,
-			},
+		dev := fs.LV.PhysicalVolumes()[mapping.PAddr.Dev]
+		devSB, _ := dev.Superblock()
+		chunkBody := reconstructedNode.Data.BodyLeaf[chunkIdx].Body.(btrfsitem.Chunk)
+		chunkBody.Stripes = append(chunkBody.Stripes, btrfsitem.ChunkStripe{
+			DeviceID:   mapping.PAddr.Dev,
+			Offset:     mapping.PAddr.Addr,
+			DeviceUUID: devSB.Data.DevItem.DevUUID,
 		})
+		reconstructedNode.Data.BodyLeaf[chunkIdx].Body = chunkBody
 	}
 
 	var err error
@@ -441,5 +440,17 @@ func pass1WriteReconstructedChunks(
 
 	if err := fs.ReInit(); err != nil {
 		fmt.Printf("Pass 1: ... re-init mappings: %v\n", err)
+	}
+
+	sbs, _ := fs.Superblocks()
+	for i, sb := range sbs {
+		sb.Data.ChunkLevel = reconstructedNode.Data.Head.Level
+		sb.Data.Checksum, err = sb.Data.CalculateChecksum()
+		if err != nil {
+			fmt.Printf("Pass 1: ... calculate superblock %d checksum: %v\n", i, err)
+		}
+		if err := sb.Write(); err != nil {
+			fmt.Printf("Pass 1: ... write superblock %d: %v\n", i, err)
+		}
 	}
 }

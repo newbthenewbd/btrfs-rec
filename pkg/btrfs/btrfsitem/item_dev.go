@@ -7,6 +7,8 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
+// key.objectid = BTRFS_DEV_ITEMS_OBJECTID
+// key.offset = device_id (starting at 1)
 type Dev struct { // DEV_ITEM=216
 	DevID btrfsvol.DeviceID `bin:"off=0x0,    siz=0x8"`
 

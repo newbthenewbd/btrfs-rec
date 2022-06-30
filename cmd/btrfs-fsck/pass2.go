@@ -11,9 +11,6 @@ import (
 )
 
 func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
-	if true {
-		return
-	}
 	fmt.Printf("\nPass 2: orphaned nodes\n")
 
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
@@ -25,6 +22,10 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	}, func(err error) {
 		fmt.Printf("Pass 2: walk FS: error: %v\n", err)
 	})
+
+	if true {
+		return
+	}
 
 	orphanedNodes := make(map[btrfs.LogicalAddr]int)
 	for foundNode := range foundNodes {
