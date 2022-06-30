@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 
+	"lukeshu.com/btrfs-tools/pkg/rbtree"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -15,11 +16,33 @@ type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
 
 	id2pv map[DeviceID]PhysicalVolume
 
-	logical2physical []chunkMapping
-	physical2logical map[DeviceID][]devextMapping
+	logical2physical *rbtree.Tree[LogicalAddr, chunkMapping]
+	physical2logical map[DeviceID]*rbtree.Tree[PhysicalAddr, devextMapping]
 }
 
 var _ util.File[LogicalAddr] = (*LogicalVolume[util.File[PhysicalAddr]])(nil)
+
+func (lv *LogicalVolume[PhysicalVolume]) init() {
+	if lv.id2pv == nil {
+		lv.id2pv = make(map[DeviceID]PhysicalVolume)
+	}
+	if lv.logical2physical == nil {
+		lv.logical2physical = &rbtree.Tree[LogicalAddr, chunkMapping]{
+			KeyFn: func(chunk chunkMapping) LogicalAddr {
+				return chunk.LAddr
+			},
+		}
+	}
+	for devid := range lv.id2pv {
+		if _, ok := lv.physical2logical[devid]; !ok {
+			lv.physical2logical[devid] = &rbtree.Tree[LogicalAddr, chunkMapping]{
+				KeyFn: func(ext devextMapping) LogicalAddr {
+					return ext.PAddr
+				},
+			}
+		}
+	}
+}
 
 func (lv *LogicalVolume[PhysicalVolume]) SetName(name string) {
 	lv.name = name
@@ -30,22 +53,26 @@ func (lv *LogicalVolume[PhysicalVolume]) Name() string {
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) Size() (LogicalAddr, error) {
-	if len(lv.logical2physical) == 0 {
+	lv.init()
+	lastChunk := lv.logical2physical.Max()
+	if lastChunk == nil {
 		return 0, nil
 	}
-	lastChunk := lv.logical2physical[len(lv.logical2physical)-1]
-	return lastChunk.LAddr.Add(lastChunk.Size), nil
+	return lastChunk.Value.LAddr.Add(lastChunk.Value.Size), nil
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev PhysicalVolume) error {
-	if lv.id2pv == nil {
-		lv.id2pv = make(map[DeviceID]PhysicalVolume)
-	}
+	lv.init()
 	if other, exists := lv.id2pv[id]; exists {
 		return fmt.Errorf("(%p).AddPhysicalVolume: cannot add physical volume %q: already have physical volume %q with id=%v",
 			lv, dev.Name(), other.Name(), id)
 	}
 	lv.id2pv[id] = dev
+	lv.physical2logical[id] = &rbtree.Tree[LogicalAddr, chunkMapping]{
+		KeyFn: func(ext devextMapping) LogicalAddr {
+			return ext.PAddr
+		},
+	}
 	return nil
 }
 
@@ -70,13 +97,11 @@ type Mapping struct {
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
+	lv.init()
 	// sanity check
 	if _, haveDev := lv.id2pv[m.PAddr.Dev]; !haveDev {
 		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with id=%v",
 			lv, m.PAddr.Dev)
-	}
-	if lv.physical2logical == nil {
-		lv.physical2logical = make(map[DeviceID][]devextMapping)
 	}
 
 	// logical2physical
@@ -86,15 +111,7 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 		Size:   m.Size,
 		Flags:  m.Flags,
 	}
-	var logicalOverlaps []chunkMapping
-	for _, chunk := range lv.logical2physical {
-		switch newChunk.cmpRange(chunk) {
-		case 0:
-			logicalOverlaps = append(logicalOverlaps, chunk)
-		case 1:
-			break
-		}
-	}
+	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.cmpRange)
 	var err error
 	newChunk, err = newChunk.union(logicalOverlaps...)
 	if err != nil {
@@ -108,15 +125,7 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 		Size:  m.Size,
 		Flags: m.Flags,
 	}
-	var physicalOverlaps []devextMapping
-	for _, ext := range lv.physical2logical[m.PAddr.Dev] {
-		switch newExt.cmpRange(ext) {
-		case 0:
-			physicalOverlaps = append(physicalOverlaps, ext)
-		case 1:
-			break
-		}
-	}
+	physicalOverlaps := lv.physical2logical[m.PAddr.Dev].SearchRange(newExt.cmpRange)
 	newExt, err = newExt.union(physicalOverlaps...)
 	if err != nil {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
