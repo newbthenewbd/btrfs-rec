@@ -23,10 +23,6 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 		fmt.Printf("Pass 2: walk FS: error: %v\n", err)
 	})
 
-	if true {
-		return
-	}
-
 	orphanedNodes := make(map[btrfs.LogicalAddr]int)
 	for foundNode := range foundNodes {
 		if _, visited := visitedNodes[foundNode]; !visited {
@@ -34,10 +30,17 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 		}
 	}
 
-	for nodeAddr := range orphanedNodes {
-		if err := fs.WalkTree(nodeAddr, btrfs.WalkTreeHandler{
-			Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+	orphanedRoots := make(map[btrfs.LogicalAddr]struct{}, len(orphanedNodes))
+	for node := range orphanedNodes {
+		orphanedRoots[node] = struct{}{}
+	}
+	for potentialRoot := range orphanedRoots {
+		if err := fs.WalkTree(potentialRoot, btrfs.WalkTreeHandler{
+			Node: func(path btrfs.WalkTreePath, _ *util.Ref[btrfs.LogicalAddr, btrfs.Node], _ error) error {
 				nodeAddr := path[len(path)-1].NodeAddr
+				if nodeAddr != potentialRoot {
+					delete(orphanedRoots, nodeAddr)
+				}
 				orphanedNodes[nodeAddr] = orphanedNodes[nodeAddr] + 1
 				visitCnt := orphanedNodes[nodeAddr]
 				if visitCnt > 1 {
@@ -49,17 +52,13 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 			fmt.Printf("Pass 2: walk orphans: error: %v\n", err)
 		}
 	}
-	var orphanedRoots []btrfs.LogicalAddr
-	for node, cnt := range orphanedNodes {
-		switch cnt {
-		case 0:
-			panic("x")
-		case 1:
-			orphanedRoots = append(orphanedRoots, node)
-		}
+
+	var orphanedRootsOrdered []btrfs.LogicalAddr
+	for root := range orphanedRoots {
+		orphanedRootsOrdered = append(orphanedRootsOrdered, root)
 	}
-	sort.Slice(orphanedRoots, func(i, j int) bool {
-		return orphanedRoots[i] < orphanedRoots[j]
+	sort.Slice(orphanedRootsOrdered, func(i, j int) bool {
+		return orphanedRootsOrdered[i] < orphanedRootsOrdered[j]
 	})
 	for _, node := range orphanedRoots {
 		fmt.Printf("Pass 2: orphaned root: %v\n", node)
