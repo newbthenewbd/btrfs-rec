@@ -56,6 +56,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 
 	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
 	pass1PrintLogicalSpace(fs)
+	pass1PrintPhysicalSpace(fs)
 	//pass1WriteReconstructedChunks(fs, superblock.Data, fsReconstructedChunks)
 
 	return fsFoundNodes, nil
@@ -291,7 +292,7 @@ func pass1PrintLogicalSpace(fs *btrfs.FS) {
 	for _, mapping := range mappings {
 		if mapping.LAddr > prevEnd {
 			size := mapping.LAddr.Sub(prevEnd)
-			fmt.Printf("hole  laddr=%v size=%v\n", prevEnd, size)
+			fmt.Printf("logical_hole laddr=%v size=%v\n", prevEnd, size)
 			sumHole += size
 		}
 		if mapping.LAddr != prevBeg {
@@ -313,6 +314,36 @@ func pass1PrintLogicalSpace(fs *btrfs.FS) {
 	p.Printf("total logical holes      = %v (%d)\n", sumHole, int64(sumHole))
 	p.Printf("total logical chunks     = %v (%d)\n", sumChunk, int64(sumChunk))
 	p.Printf("total logical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
+}
+
+func pass1PrintPhysicalSpace(fs *btrfs.FS) {
+	mappings := fs.LV.Mappings()
+	sort.Slice(mappings, func(i, j int) bool {
+		return mappings[i].PAddr.Cmp(mappings[j].PAddr) < 0
+	})
+
+	var prevDev btrfsvol.DeviceID = 0
+	var  prevEnd btrfsvol.PhysicalAddr
+	var sumHole, sumExt btrfsvol.AddrDelta
+	for _, mapping := range mappings {
+		if mapping.PAddr.Dev != prevDev {
+			prevDev = mapping.PAddr.Dev
+			prevEnd = 0
+		}
+		if mapping.PAddr.Addr > prevEnd {
+			size := mapping.PAddr.Addr.Sub(prevEnd)
+			fmt.Printf("physical_hole paddr=%v size=%v\n", prevEnd, size)
+			sumHole += size
+		}
+		fmt.Printf("devext dev=%v paddr=%v size=%v laddr=%v\n",
+			mapping.PAddr.Dev, mapping.PAddr.Addr, mapping.Size, mapping.LAddr)
+		sumExt += mapping.Size
+		prevEnd = mapping.PAddr.Addr.Add(mapping.Size)
+	}
+	p := message.NewPrinter(message.MatchLanguage("en"))
+	p.Printf("total physical holes      = %v (%d)\n", sumHole, int64(sumHole))
+	p.Printf("total physical extents    = %v (%d)\n", sumExt, int64(sumExt))
+	p.Printf("total physical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
 }
 
 func pass1WriteReconstructedChunks(
