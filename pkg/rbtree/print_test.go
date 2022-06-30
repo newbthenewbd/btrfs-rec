@@ -12,6 +12,17 @@ func (t *Tree[K, V]) ASCIIArt() string {
 	return out.String()
 }
 
+func (node *Node[V]) String() string {
+	switch {
+	case node == nil:
+		return "nil"
+	case node.Color == Red:
+		return fmt.Sprintf("R(%v)", node.Value)
+	default:
+		return fmt.Sprintf("B(%v)", node.Value)
+	}
+}
+
 func (node *Node[V]) asciiArt(w io.Writer, u, m, l string) {
 	if node == nil {
 		fmt.Fprintf(w, "%snil\n", m)
@@ -21,9 +32,9 @@ func (node *Node[V]) asciiArt(w io.Writer, u, m, l string) {
 	node.Right.asciiArt(w, u+"     ", u+"  ,--", u+"  |  ")
 
 	if node.Color == Red {
-		fmt.Fprintf(w, "%sR(%v)\n", m, node.Value)
+		fmt.Fprintf(w, "%s%v\n", m, node)
 	} else {
-		fmt.Fprintf(w, "%sB(%v)\n", m, node.Value)
+		fmt.Fprintf(w, "%s%v\n", m, node)
 	}
 
 	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")

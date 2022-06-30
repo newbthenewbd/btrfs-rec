@@ -330,93 +330,86 @@ func (t *Tree[K, V]) Delete(key K) {
 		return
 	}
 
-	// A pointer to node that now resides at the place in the tree
-	// where the deleted node was.
-	nodeToRebalance := t.parentChild(nodeToDelete)
-	nodeToRebalanceParent := nodeToDelete.Parent
+	var nodeToRebalance, nodeToRebalanceParent *Node[V]
 	needsRebalance := nodeToDelete.Color == Black
 
 	switch {
 	case nodeToDelete.Left == nil:
+		nodeToRebalance = nodeToDelete.Right
+		nodeToRebalanceParent = nodeToDelete.Parent
 		t.transplant(nodeToDelete, nodeToDelete.Right)
 	case nodeToDelete.Right == nil:
+		nodeToRebalance = nodeToDelete.Left
+		nodeToRebalanceParent = nodeToDelete.Parent
 		t.transplant(nodeToDelete, nodeToDelete.Left)
 	default:
 		// The node being deleted has a child on both sides,
 		// so we've go to reshuffle the parents a bit to make
 		// room for those children.
-		//
 		next := nodeToDelete.next()
-		// If nodeToDelete.next().Parent == nodeToDelete, then
-		// this is pretty easy...
-		if next.Parent != nodeToDelete {
-			// but if it's not, then we have another step
-			// ('mid' might actually be a chain of nodes)
-			// to get it there
-			//
+		if next.Parent == nodeToDelete {
 			//         p                  p
 			//         |                  |
 			//      +-----+            +-----+
-			//      | ntd |            | ntd |
+			//      | ntd |            | nxt |
 			//      +-----+            +-----+
-			//      /     \            /     \
-			//     a       x          a    +-----+
-			//            / \     =>       | nxt |
-			//           y   z             +-----+
-			//          / \                /     \
-			//    +-----+  c              nil     x
-			//    | nxt |                        / \
-			//    +-----+                       y   z
-			//    /     \                      / \
-			//  nil     b                     b   c
-			//
-			// This looks an aweful lot like a
-			// t.rightRotate(next.Parent), but spans
-			// multiple nodes
-			x := nodeToDelete.Right
+			//      /     \       =>   /     \
+			//     a     +-----+      a      b
+			//           | nxt |
+			//           +-----+
+			//            /   \
+			//          nil   b
+			nodeToRebalance = next.Right
+			nodeToRebalanceParent = next
+
+			*t.parentChild(nodeToDelete) = next
+			next.Parent = nodeToDelete.Parent
+
+			next.Left = nodeToDelete.Left
+			next.Left.Parent = next
+		} else {
+			//         p                 p
+			//         |                 |
+			//      +-----+           +-----+
+			//      | ntd |           | nxt |
+			//      +-----+           +-----+
+			//      /     \           /     \
+			//     a       x         a       x
+			//            / \    =>         / \
+			//           y   z             y   z
+			//          / \               / \
+			//    +-----+  c             b   c
+			//    | nxt |
+			//    +-----+
+			//    /     \
+			//  nil     b
 			y := next.Parent
 			b := next.Right
+			nodeToRebalance = b
+			nodeToRebalanceParent = y
 
-			next.Parent = nodeToDelete
-			nodeToDelete.Right = next
+			*t.parentChild(nodeToDelete) = next
+			next.Parent = nodeToDelete.Parent
 
-			x.Parent = next
-			next.Right = x
+			next.Left = nodeToDelete.Left
+			next.Left.Parent = next
 
+			next.Right = nodeToDelete.Right
+			next.Right.Parent = next
+
+			y.Left = b
 			if b != nil {
 				b.Parent = y
 			}
-			y.Left = b
 		}
-		// ... OK, back to the easy case:
-		//
-		//         p                  p
-		//         |                  |
-		//      +-----+            +-----+
-		//      | ntd |            | nxt |
-		//      +-----+            +-----+
-		//      /     \       =>   /     \
-		//     a     +-----+      a      b
-		//           | nxt |
-		//           +-----+
-		//            /   \
-		//          nil   b
-		//
-		*t.parentChild(nodeToDelete) = next
-		next.Parent = nodeToDelete.Parent
-
-		next.Left = nodeToDelete.Left
-		next.Left.Parent = next
 
 		// idk
-		nodeToRebalance = &next.Right
-		nodeToRebalanceParent = next
 		needsRebalance = next.Color == Black
 		next.Color = nodeToDelete.Color
 	}
 
 	if needsRebalance {
-		node := *nodeToRebalance
+		node := nodeToRebalance
 		nodeParent := nodeToRebalanceParent // in case 'node' is nil, which it can be
 		for node != t.root && node.getColor() == Black {
 			if node == nodeParent.Left {

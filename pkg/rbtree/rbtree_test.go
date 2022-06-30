@@ -3,7 +3,6 @@ package rbtree
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
 )
@@ -12,15 +11,15 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
-	assert.Equal(t, Black, tree.root.getColor())
+	require.Equal(t, Black, tree.root.getColor())
 
 	// 3. Every nil is black.
 
 	// 4. If a node is red, then both its children are black.
 	tree.Walk(func(node *Node[V]) {
 		if node.getColor() == Red {
-			assert.Equal(t, Black, node.Left.getColor())
-			assert.Equal(t, Black, node.Right.getColor())
+			require.Equal(t, Black, node.Left.getColor())
+			require.Equal(t, Black, node.Right.getColor())
 		}
 	})
 
@@ -46,7 +45,7 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 		})
 		for i := range cnts {
 			if cnts[0] != cnts[i] {
-				assert.Truef(t, false, "node %v: not all leafs have same black-count: %v", node.Value, cnts)
+				require.Truef(t, false, "node %v: not all leafs have same black-count: %v", node.Value, cnts)
 				break
 			}
 		}
@@ -90,12 +89,12 @@ func FuzzTree(f *testing.F) {
 				t.Logf("\n%s\n", tree.ASCIIArt())
 				node := tree.Lookup(val)
 				require.NotNil(t, node)
-				assert.Equal(t, val, node.Value)
+				require.Equal(t, val, node.Value)
 			} else {
 				t.Logf("Delete(%v)", val)
 				tree.Delete(val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				assert.Nil(t, tree.Lookup(val))
+				require.Nil(t, tree.Lookup(val))
 			}
 			checkTree(t, tree)
 		}
