@@ -8,6 +8,8 @@ import (
 	"os"
 	"sort"
 
+	"golang.org/x/text/message"
+
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
@@ -46,8 +48,6 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		fmt.Printf("Pass 1: ... dev[%q] re-inserting lost+found mappings\n", dev.Name())
 		devResult.AddToLV(fs, dev)
 
-		pass1ProcessBlockGroups(devResult.FoundBlockGroups)
-
 		// merge those results in to the total-fs results
 		for laddr := range devResult.FoundNodes {
 			fsFoundNodes[laddr] = struct{}{}
@@ -55,7 +55,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	}
 
 	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
-	pass1PrintReconstructedChunks(fs)
+	pass1PrintLogicalSpace(fs)
 	//pass1WriteReconstructedChunks(fs, superblock.Data, fsReconstructedChunks)
 
 	return fsFoundNodes, nil
@@ -284,77 +284,17 @@ func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1
 	return result, err
 }
 
-func pass1ProcessBlockGroups(blockgroups []sysBlockGroup) {
-	// organize in to a more manageable datastructure
-	type groupAttrs struct {
-		Size  btrfs.AddrDelta
-		Flags btrfsvol.BlockGroupFlags
-	}
-	groups := make(map[btrfs.LogicalAddr]groupAttrs)
-	for _, bg := range blockgroups {
-		laddr := btrfs.LogicalAddr(bg.Key.ObjectID)
-		attrs := groupAttrs{
-			Size:  btrfs.AddrDelta(bg.Key.Offset),
-			Flags: bg.BG.Flags,
-		}
-		// If there's a conflict, but they both say the same thing (existing == attrs),
-		// then just ignore the dup.
-		if existing, conflict := groups[laddr]; conflict && existing != attrs {
-			fmt.Printf("error: conflicting blockgroups for laddr=%v\n", laddr)
-			continue
-		}
-		groups[laddr] = attrs
-	}
-
-	// sort the keys to that datastructure
-	sortedLAddrs := make([]btrfs.LogicalAddr, 0, len(groups))
-	for laddr := range groups {
-		sortedLAddrs = append(sortedLAddrs, laddr)
-	}
-	sort.Slice(sortedLAddrs, func(i, j int) bool {
-		return sortedLAddrs[i] < sortedLAddrs[j]
-	})
-
-	// cluster
-	type cluster struct {
-		LAddr btrfs.LogicalAddr
-		Size  btrfs.AddrDelta
-		Flags btrfsvol.BlockGroupFlags
-	}
-	var clusters []*cluster
-	for _, laddr := range sortedLAddrs {
-		attrs := groups[laddr]
-
-		var lastCluster *cluster
-		if len(clusters) > 0 {
-			lastCluster = clusters[len(clusters)-1]
-		}
-		if lastCluster != nil && laddr == lastCluster.LAddr.Add(lastCluster.Size) && attrs.Flags == lastCluster.Flags {
-			lastCluster.Size += attrs.Size
-		} else {
-			clusters = append(clusters, &cluster{
-				LAddr: laddr,
-				Size:  attrs.Size,
-				Flags: attrs.Flags,
-			})
-		}
-	}
-
-	// print
-	var prev btrfs.LogicalAddr
-	for _, cluster := range clusters {
-		delta := cluster.LAddr - prev
-		fmt.Printf("blockgroup cluster: laddr=%v (+%v); size=%v ; flags=%v\n",
-			cluster.LAddr, delta, cluster.Size, cluster.Flags)
-		prev = cluster.LAddr.Add(cluster.Size)
-	}
-}
-
-func pass1PrintReconstructedChunks(fs *btrfs.FS) {
+func pass1PrintLogicalSpace(fs *btrfs.FS) {
 	mappings := fs.LV.Mappings()
-	var prevLAddr btrfsvol.LogicalAddr
+	var prevBeg, prevEnd btrfsvol.LogicalAddr
+	var sumHole, sumChunk btrfsvol.AddrDelta
 	for _, mapping := range mappings {
-		if mapping.LAddr != prevLAddr {
+		if mapping.LAddr > prevEnd {
+			size := mapping.LAddr.Sub(prevEnd)
+			fmt.Printf("hole  laddr=%v size=%v\n", prevEnd, size)
+			sumHole += size
+		}
+		if mapping.LAddr != prevBeg {
 			if mapping.Flags == nil {
 				fmt.Printf("chunk laddr=%v size=%v flags=(missing)\n",
 					mapping.LAddr, mapping.Size)
@@ -365,8 +305,14 @@ func pass1PrintReconstructedChunks(fs *btrfs.FS) {
 		}
 		fmt.Printf("\tstripe dev_id=%v paddr=%v\n",
 			mapping.PAddr.Dev, mapping.PAddr.Addr)
-		prevLAddr = mapping.LAddr
+		sumChunk += mapping.Size
+		prevBeg = mapping.LAddr
+		prevEnd = mapping.LAddr.Add(mapping.Size)
 	}
+	p := message.NewPrinter(message.MatchLanguage("en"))
+	p.Printf("total logical holes      = %v (%d)\n", sumHole, int64(sumHole))
+	p.Printf("total logical chunks     = %v (%d)\n", sumChunk, int64(sumChunk))
+	p.Printf("total logical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
 }
 
 func pass1WriteReconstructedChunks(
