@@ -35,6 +35,13 @@ func RemoveAllFromSliceFunc[T any](haystack []T, f func(T) bool) []T {
 	return haystack
 }
 
+func ReverseSlice[T any](slice []T) {
+	for i := 0; i < len(slice)/2; i++ {
+		j := (len(slice) - 1) - i
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+}
+
 func Max[T constraints.Ordered](a, b T) T {
 	if a > b {
 		return a
