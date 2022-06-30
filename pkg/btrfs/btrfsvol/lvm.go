@@ -3,9 +3,7 @@ package btrfsvol
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"reflect"
-	"sort"
 
 	"lukeshu.com/btrfs-tools/pkg/rbtree"
 	"lukeshu.com/btrfs-tools/pkg/util"
@@ -33,10 +31,13 @@ func (lv *LogicalVolume[PhysicalVolume]) init() {
 			},
 		}
 	}
+	if lv.physical2logical == nil {
+		lv.physical2logical = make(map[DeviceID]*rbtree.Tree[PhysicalAddr, devextMapping], len(lv.id2pv))
+	}
 	for devid := range lv.id2pv {
 		if _, ok := lv.physical2logical[devid]; !ok {
-			lv.physical2logical[devid] = &rbtree.Tree[LogicalAddr, chunkMapping]{
-				KeyFn: func(ext devextMapping) LogicalAddr {
+			lv.physical2logical[devid] = &rbtree.Tree[PhysicalAddr, devextMapping]{
+				KeyFn: func(ext devextMapping) PhysicalAddr {
 					return ext.PAddr
 				},
 			}
@@ -68,8 +69,8 @@ func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev Phys
 			lv, dev.Name(), other.Name(), id)
 	}
 	lv.id2pv[id] = dev
-	lv.physical2logical[id] = &rbtree.Tree[LogicalAddr, chunkMapping]{
-		KeyFn: func(ext devextMapping) LogicalAddr {
+	lv.physical2logical[id] = &rbtree.Tree[PhysicalAddr, devextMapping]{
+		KeyFn: func(ext devextMapping) PhysicalAddr {
 			return ext.PAddr
 		},
 	}
@@ -139,23 +140,15 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 
 	// logical2physical
 	for _, chunk := range logicalOverlaps {
-		lv.logical2physical = util.RemoveAllFromSliceFunc(lv.logical2physical, func(otherChunk chunkMapping) bool {
-			return otherChunk.LAddr == chunk.LAddr
-		})
+		lv.logical2physical.Delete(chunk.LAddr)
 	}
-	lv.logical2physical = append(lv.logical2physical, newChunk)
-	sort.Slice(lv.logical2physical, func(i, j int) bool {
-		return lv.logical2physical[i].LAddr < lv.logical2physical[j].LAddr
-	})
+	lv.logical2physical.Insert(newChunk)
 
 	// physical2logical
 	for _, ext := range physicalOverlaps {
-		lv.physical2logical[m.PAddr.Dev] = util.RemoveAllFromSlice(lv.physical2logical[m.PAddr.Dev], ext)
+		lv.physical2logical[m.PAddr.Dev].Delete(ext.PAddr)
 	}
-	lv.physical2logical[m.PAddr.Dev] = append(lv.physical2logical[m.PAddr.Dev], newExt)
-	sort.Slice(lv.physical2logical[m.PAddr.Dev], func(i, j int) bool {
-		return lv.physical2logical[m.PAddr.Dev][i].PAddr < lv.physical2logical[m.PAddr.Dev][j].PAddr
-	})
+	lv.physical2logical[m.PAddr.Dev].Insert(newExt)
 
 	// sanity check
 	//
@@ -170,30 +163,42 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
-	physical2logical := make(map[DeviceID][]devextMapping)
-	for _, chunk := range lv.logical2physical {
+	physical2logical := make(map[DeviceID]*rbtree.Tree[PhysicalAddr, devextMapping])
+	if err := lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
+		chunk := node.Value
 		for _, stripe := range chunk.PAddrs {
 			if _, devOK := lv.id2pv[stripe.Dev]; !devOK {
 				return fmt.Errorf("(%p).fsck: chunk references physical volume %v which does not exist",
 					lv, stripe.Dev)
 			}
-			physical2logical[stripe.Dev] = append(physical2logical[stripe.Dev], devextMapping{
+			if _, exists := physical2logical[stripe.Dev]; !exists {
+				physical2logical[stripe.Dev] = &rbtree.Tree[PhysicalAddr, devextMapping]{
+					KeyFn: func(ext devextMapping) PhysicalAddr {
+						return ext.PAddr
+					},
+				}
+			}
+			physical2logical[stripe.Dev].Insert(devextMapping{
 				PAddr: stripe.Addr,
 				LAddr: chunk.LAddr,
 				Size:  chunk.Size,
 				Flags: chunk.Flags,
 			})
 		}
-	}
-	for _, exts := range physical2logical {
-		sort.Slice(exts, func(i, j int) bool {
-			return exts[i].PAddr < exts[j].PAddr
-		})
+		return nil
+	}); err != nil {
+		return err
 	}
 
-	if !reflect.DeepEqual(lv.physical2logical, physical2logical) {
+	if len(lv.physical2logical) != len(physical2logical) {
 		return fmt.Errorf("(%p).fsck: skew between chunk tree and devext tree",
 			lv)
+	}
+	for devid := range lv.physical2logical {
+		if !lv.physical2logical[devid].Equal(physical2logical[devid]) {
+			return fmt.Errorf("(%p).fsck: skew between chunk tree and devext tree",
+				lv)
+		}
 	}
 
 	return nil
@@ -201,7 +206,8 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 
 func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	var ret []Mapping
-	for _, chunk := range lv.logical2physical {
+	lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
+		chunk := node.Value
 		var flags *BlockGroupFlags
 		if chunk.Flags != nil {
 			val := *chunk.Flags
@@ -215,42 +221,46 @@ func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 				Flags: flags,
 			})
 		}
-	}
+		return nil
+	})
 	return ret
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
-	paddrs = make(map[QualifiedPhysicalAddr]struct{})
-	maxlen = math.MaxInt64
+	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
+		return chunkMapping{LAddr: laddr, Size: 1}.cmpRange(chunk)
+	})
+	if node == nil {
+		return nil, 0
+	}
 
-	for _, chunk := range lv.logical2physical {
-		low := chunk.LAddr
-		high := low.Add(chunk.Size)
-		if low <= laddr && laddr < high {
-			offsetWithinChunk := laddr.Sub(low)
-			maxlen = util.Min(maxlen, chunk.Size-offsetWithinChunk)
-			for _, stripe := range chunk.PAddrs {
-				paddrs[QualifiedPhysicalAddr{
-					Dev:  stripe.Dev,
-					Addr: stripe.Addr.Add(offsetWithinChunk),
-				}] = struct{}{}
-			}
-		}
+	chunk := node.Value
+
+	offsetWithinChunk := laddr.Sub(chunk.LAddr)
+	paddrs = make(map[QualifiedPhysicalAddr]struct{})
+	maxlen = chunk.Size - offsetWithinChunk
+	for _, stripe := range chunk.PAddrs {
+		paddrs[QualifiedPhysicalAddr{
+			Dev:  stripe.Dev,
+			Addr: stripe.Addr.Add(offsetWithinChunk),
+		}] = struct{}{}
 	}
 
 	return paddrs, maxlen
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
-	for _, ext := range lv.physical2logical[paddr.Dev] {
-		low := ext.PAddr
-		high := low.Add(ext.Size)
-		if low <= paddr.Addr && paddr.Addr < high {
-			offsetWithinExt := paddr.Addr.Sub(low)
-			return ext.LAddr.Add(offsetWithinExt)
-		}
+	node := lv.physical2logical[paddr.Dev].Search(func(ext devextMapping) int {
+		return devextMapping{PAddr: paddr.Addr, Size: 1}.cmpRange(ext)
+	})
+	if node == nil {
+		return -1
 	}
-	return -1
+
+	ext := node.Value
+
+	offsetWithinExt := paddr.Addr.Sub(ext.PAddr)
+	return ext.LAddr.Add(offsetWithinExt)
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) ReadAt(dat []byte, laddr LogicalAddr) (int, error) {

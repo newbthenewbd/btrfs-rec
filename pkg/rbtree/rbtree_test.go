@@ -17,12 +17,13 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]str
 	// 3. Every nil is black.
 
 	// 4. If a node is red, then both its children are black.
-	tree.Walk(func(node *Node[V]) {
+	require.NoError(t, tree.Walk(func(node *Node[V]) error {
 		if node.getColor() == Red {
 			require.Equal(t, Black, node.Left.getColor())
 			require.Equal(t, Black, node.Right.getColor())
 		}
-	})
+		return nil
+	}))
 
 	// 5. For each node, all simple paths from the node to
 	//    descendent leaves contain the same number of black
@@ -39,7 +40,7 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]str
 		walkCnt(node.Left, cnt, leafFn)
 		walkCnt(node.Right, cnt, leafFn)
 	}
-	tree.Walk(func(node *Node[V]) {
+	require.NoError(t, tree.Walk(func(node *Node[V]) error {
 		var cnts []int
 		walkCnt(node, 0, func(cnt int) {
 			cnts = append(cnts, cnt)
@@ -50,7 +51,8 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]str
 				break
 			}
 		}
-	})
+		return nil
+	}))
 
 	// expected contents
 	expectedOrder := make([]K, 0, len(expectedSet))
@@ -64,9 +66,10 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]str
 		return expectedOrder[i] < expectedOrder[j]
 	})
 	actOrder := make([]K, 0, len(expectedSet))
-	tree.Walk(func(node *Node[V]) {
+	require.NoError(t, tree.Walk(func(node *Node[V]) error {
 		actOrder = append(actOrder, tree.KeyFn(node.Value))
-	})
+		return nil
+	}))
 	require.Equal(t, expectedOrder, actOrder)
 }
 

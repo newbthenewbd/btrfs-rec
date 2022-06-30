@@ -33,17 +33,24 @@ type Tree[K constraints.Ordered, V any] struct {
 	root  *Node[V]
 }
 
-func (t *Tree[K, V]) Walk(fn func(*Node[V])) {
-	t.root.walk(fn)
+func (t *Tree[K, V]) Walk(fn func(*Node[V]) error) error {
+	return t.root.walk(fn)
 }
 
-func (node *Node[V]) walk(fn func(*Node[V])) {
+func (node *Node[V]) walk(fn func(*Node[V]) error) error {
 	if node == nil {
-		return
+		return nil
 	}
-	node.Left.walk(fn)
-	fn(node)
-	node.Right.walk(fn)
+	if err := node.Left.walk(fn); err != nil {
+		return err
+	}
+	if err := fn(node); err != nil {
+		return err
+	}
+	if err := node.Right.walk(fn); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Search the tree for a value that satisfied the given callbackk

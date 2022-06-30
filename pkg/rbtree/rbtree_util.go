@@ -1,6 +1,8 @@
 package rbtree
 
 import (
+	"reflect"
+
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -20,4 +22,27 @@ func (t *Tree[K, V]) SearchRange(fn func(V) int) []V {
 		ret = append(ret, node.Value)
 	}
 	return ret
+}
+
+func (t *Tree[K, V]) Equal(u *Tree[K, V]) bool {
+	if (t == nil) != (u == nil) {
+		return false
+	}
+	if t == nil {
+		return true
+	}
+
+	var tSlice []V
+	t.Walk(func(node *Node[V]) error {
+		tSlice = append(tSlice, node.Value)
+		return nil
+	})
+
+	var uSlice []V
+	u.Walk(func(node *Node[V]) error {
+		uSlice = append(uSlice, node.Value)
+		return nil
+	})
+
+	return reflect.DeepEqual(tSlice, uSlice)
 }
