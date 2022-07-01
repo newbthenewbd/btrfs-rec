@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	iofs "io/fs"
-	"sort"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
@@ -53,14 +52,7 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 		}
 	}
 
-	var orphanedRootsOrdered []btrfs.LogicalAddr
-	for root := range orphanedRoots {
-		orphanedRootsOrdered = append(orphanedRootsOrdered, root)
-	}
-	sort.Slice(orphanedRootsOrdered, func(i, j int) bool {
-		return orphanedRootsOrdered[i] < orphanedRootsOrdered[j]
-	})
-	for _, node := range orphanedRootsOrdered {
+	for _, node := range util.SortedMapKeys(orphanedRoots) {
 		fmt.Printf("Pass 2: orphaned root: %v\n", node)
 	}
 }

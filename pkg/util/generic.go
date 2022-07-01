@@ -1,6 +1,8 @@
 package util
 
 import (
+	"sort"
+
 	"golang.org/x/exp/constraints"
 )
 
@@ -54,4 +56,24 @@ func Min[T constraints.Ordered](a, b T) T {
 		return a
 	}
 	return b
+}
+
+func MapKeys[K comparable, V any](m map[K]V) []K {
+	ret := make([]K, 0, len(m))
+	for k := range m {
+		ret = append(ret, k)
+	}
+	return ret
+}
+
+func SortSlice[T constraints.Ordered](slice []T) {
+	sort.Slice(slice, func(i, j int) bool {
+		return slice[i] < slice[j]
+	})
+}
+
+func SortedMapKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	ret := MapKeys(m)
+	SortSlice(ret)
+	return ret
 }

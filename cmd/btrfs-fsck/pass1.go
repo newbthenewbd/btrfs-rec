@@ -125,16 +125,7 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 	// nodes will be subsumed by other things.)
 	//
 	// Sort them so that progress numbers are predictable.
-	laddrs := make([]btrfsvol.LogicalAddr, 0, len(found.FoundNodes))
-	for laddr := range found.FoundNodes {
-		laddrs = append(laddrs, laddr)
-	}
-	sort.Slice(laddrs, func(i, j int) bool {
-		// And sort them in reverse order to keep insertions
-		// fast.
-		return laddrs[i] > laddrs[j]
-	})
-	for _, laddr := range laddrs {
+	for _, laddr := range util.SortedMapKeys(found.FoundNodes) {
 		for _, paddr := range found.FoundNodes[laddr] {
 			if err := fs.LV.AddMapping(btrfsvol.Mapping{
 				LAddr: laddr,
@@ -164,15 +155,19 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 		Size  btrfsvol.AddrDelta
 		Flags btrfsvol.BlockGroupFlags
 	}
-	blockgroups := make(map[blockgroup]struct{})
+	bgsSet := make(map[blockgroup]struct{})
 	for _, bg := range found.FoundBlockGroups {
-		blockgroups[blockgroup{
+		bgsSet[blockgroup{
 			LAddr: btrfsvol.LogicalAddr(bg.Key.ObjectID),
 			Size:  btrfsvol.AddrDelta(bg.Key.Offset),
 			Flags: bg.BG.Flags,
 		}] = struct{}{}
 	}
-	for bg := range blockgroups {
+	bgsOrdered := util.MapKeys(bgsSet)
+	sort.Slice(bgsOrdered, func(i, j int) bool {
+		return bgsOrdered[i].LAddr < bgsOrdered[j].LAddr
+	})
+	for _, bg := range bgsOrdered {
 		otherLAddr, otherPAddr := fs.LV.ResolveAny(bg.LAddr, bg.Size)
 		if otherLAddr < 0 || otherPAddr.Addr < 0 {
 			fmt.Printf("Pass 1: ... error: could not pair blockgroup laddr=%v (size=%v flags=%v) with a mapping\n",

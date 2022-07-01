@@ -74,10 +74,7 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 			}] = struct{}{}
 		}
 	}
-	ret.PAddrs = make([]QualifiedPhysicalAddr, 0, len(paddrs))
-	for paddr := range paddrs {
-		ret.PAddrs = append(ret.PAddrs, paddr)
-	}
+	ret.PAddrs = util.MapKeys(paddrs)
 	sort.Slice(ret.PAddrs, func(i, j int) bool {
 		return ret.PAddrs[i].Cmp(ret.PAddrs[j]) < 0
 	})
