@@ -22,19 +22,22 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 
 	fmt.Printf("Pass 1: ... walking fs\n")
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
-	btrfsmisc.WalkFS(fs, btrfs.WalkTreeHandler{
-		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
-			if err != nil {
-				err = fmt.Errorf("%v: %w", path, err)
-				fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
-			}
-			if node != nil {
-				visitedNodes[node.Addr] = struct{}{}
-			}
-			return err
+	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
+		WalkTreeHandler: btrfs.WalkTreeHandler{
+			Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+				if err != nil {
+					err = fmt.Errorf("%v: %w", path, err)
+					fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
+				}
+				if node != nil {
+					visitedNodes[node.Addr] = struct{}{}
+				}
+				return err
+			},
 		},
-	}, func(err error) {
-		fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
+		Err: func(err error) {
+			fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
+		},
 	})
 
 	fsFoundNodes := make(map[btrfs.LogicalAddr]struct{})

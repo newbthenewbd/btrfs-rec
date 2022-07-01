@@ -23,13 +23,22 @@ func (e WalkErr) Error() string {
 	return fmt.Sprintf("%v: %v: %v", e.TreeName, e.Path, e.Err)
 }
 
+type WalkFSHandler struct {
+	Err func(error)
+	// Callbacks for entire trees
+	PreTree  func(name string, laddr btrfs.LogicalAddr)
+	PostTree func(name string, laddr btrfs.LogicalAddr)
+	// Callbacks for nodes or smaller
+	btrfs.WalkTreeHandler
+}
+
 // WalkFS walks all trees in a *btrfs.FS.  Rather than returning an
 // error, it calls errCb each time an error is encountered.  The error
 // will always be of type WalkErr.
-func WalkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
+func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 	var treeName string
 	handleErr := func(path btrfs.WalkTreePath, err error) {
-		errCb(WalkErr{
+		cbs.Err(WalkErr{
 			TreeName: treeName,
 			Path:     path,
 			Err:      err,
@@ -82,29 +91,39 @@ func WalkFS(fs *btrfs.FS, cbs btrfs.WalkTreeHandler, errCb func(error)) {
 	}
 
 	treeName = "root tree"
-	if err := fs.WalkTree(superblock.Data.RootTree, cbs); err != nil {
+	cbs.PreTree(treeName, superblock.Data.RootTree)
+	if err := fs.WalkTree(superblock.Data.RootTree, cbs.WalkTreeHandler); err != nil {
 		handleErr(nil, err)
 	}
+	cbs.PostTree(treeName, superblock.Data.RootTree)
 
 	treeName = "chunk tree"
-	if err := fs.WalkTree(superblock.Data.ChunkTree, cbs); err != nil {
+	cbs.PreTree(treeName, superblock.Data.ChunkTree)
+	if err := fs.WalkTree(superblock.Data.ChunkTree, cbs.WalkTreeHandler); err != nil {
 		handleErr(nil, err)
 	}
+	cbs.PostTree(treeName, superblock.Data.ChunkTree)
 
 	treeName = "log tree"
-	if err := fs.WalkTree(superblock.Data.LogTree, cbs); err != nil {
+	cbs.PreTree(treeName, superblock.Data.LogTree)
+	if err := fs.WalkTree(superblock.Data.LogTree, cbs.WalkTreeHandler); err != nil {
 		handleErr(nil, err)
 	}
+	cbs.PostTree(treeName, superblock.Data.LogTree)
 
 	treeName = "block group tree"
-	if err := fs.WalkTree(superblock.Data.BlockGroupRoot, cbs); err != nil {
+	cbs.PreTree(treeName, superblock.Data.BlockGroupRoot)
+	if err := fs.WalkTree(superblock.Data.BlockGroupRoot, cbs.WalkTreeHandler); err != nil {
 		handleErr(nil, err)
 	}
+	cbs.PostTree(treeName, superblock.Data.BlockGroupRoot)
 
 	for _, tree := range foundTrees {
 		treeName = tree.Name
-		if err := fs.WalkTree(tree.Root, cbs); err != nil {
+		cbs.PreTree(treeName, tree.Root)
+		if err := fs.WalkTree(tree.Root, cbs.WalkTreeHandler); err != nil {
 			handleErr(nil, err)
 		}
+		cbs.PostTree(treeName, tree.Root)
 	}
 }

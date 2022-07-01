@@ -13,13 +13,16 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	fmt.Printf("\nPass 2: orphaned nodes\n")
 
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
-	btrfsmisc.WalkFS(fs, btrfs.WalkTreeHandler{
-		Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
-			visitedNodes[node.Addr] = struct{}{}
-			return nil
+	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
+		WalkTreeHandler: btrfs.WalkTreeHandler{
+			Node: func(path btrfs.WalkTreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+				visitedNodes[node.Addr] = struct{}{}
+				return nil
+			},
 		},
-	}, func(err error) {
-		fmt.Printf("Pass 2: walk FS: error: %v\n", err)
+		Err: func(err error) {
+			fmt.Printf("Pass 2: walk FS: error: %v\n", err)
+		},
 	})
 
 	orphanedNodes := make(map[btrfs.LogicalAddr]int)
