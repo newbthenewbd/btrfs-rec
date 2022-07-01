@@ -60,7 +60,7 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	sort.Slice(orphanedRootsOrdered, func(i, j int) bool {
 		return orphanedRootsOrdered[i] < orphanedRootsOrdered[j]
 	})
-	for _, node := range orphanedRoots {
+	for _, node := range orphanedRootsOrdered {
 		fmt.Printf("Pass 2: orphaned root: %v\n", node)
 	}
 }

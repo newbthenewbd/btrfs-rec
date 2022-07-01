@@ -155,25 +155,40 @@ func (found pass1ScanOneDevResult) AddToLV(fs *btrfs.FS, dev *btrfs.Device) {
 
 	// Use block groups to add missing flags (and as a hint to
 	// combine node entries).
+	//
+	// First dedup them, because they change for allocations and
+	// CoW means that they'll bounce around a lot, so you likely
+	// have oodles of duplicates?
+	type blockgroup struct {
+		LAddr btrfsvol.LogicalAddr
+		Size  btrfsvol.AddrDelta
+		Flags btrfsvol.BlockGroupFlags
+	}
+	blockgroups := make(map[blockgroup]struct{})
 	for _, bg := range found.FoundBlockGroups {
-		laddr := btrfsvol.LogicalAddr(bg.Key.ObjectID)
-		size := btrfsvol.AddrDelta(bg.Key.Offset)
-
-		otherLAddr, otherPAddr := fs.LV.ResolveAny(laddr, size)
+		blockgroups[blockgroup{
+			LAddr: btrfsvol.LogicalAddr(bg.Key.ObjectID),
+			Size:  btrfsvol.AddrDelta(bg.Key.Offset),
+			Flags: bg.BG.Flags,
+		}] = struct{}{}
+	}
+	for bg := range blockgroups {
+		otherLAddr, otherPAddr := fs.LV.ResolveAny(bg.LAddr, bg.Size)
 		if otherLAddr < 0 || otherPAddr.Addr < 0 {
-			fmt.Printf("Pass 1: ... error: could not pair blockgroup laddr=%v (size=%v) with a mapping\n", laddr, size)
+			fmt.Printf("Pass 1: ... error: could not pair blockgroup laddr=%v (size=%v flags=%v) with a mapping\n",
+				bg.LAddr, bg.Size, bg.Flags)
 			continue
 		}
 
-		offsetWithinChunk := otherLAddr.Sub(laddr)
-		flags := bg.BG.Flags
+		offsetWithinChunk := otherLAddr.Sub(bg.LAddr)
+		flags := bg.Flags
 		mapping := btrfsvol.Mapping{
-			LAddr: laddr,
+			LAddr: bg.LAddr,
 			PAddr: btrfsvol.QualifiedPhysicalAddr{
 				Dev:  otherPAddr.Dev,
 				Addr: otherPAddr.Addr.Add(-offsetWithinChunk),
 			},
-			Size:       size,
+			Size:       bg.Size,
 			SizeLocked: true,
 			Flags:      &flags,
 		}
