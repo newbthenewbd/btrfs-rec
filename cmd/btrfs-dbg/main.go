@@ -25,20 +25,13 @@ func Main(imgfilename string) (err error) {
 		}
 	}
 
-	fh, err := os.Open(imgfilename)
+	fs, err := btrfsmisc.Open(os.O_RDONLY, imgfilename)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		maybeSetErr(fh.Close())
+		maybeSetErr(fs.Close())
 	}()
-	dev := &btrfs.Device{
-		File: fh,
-	}
-	fs := new(btrfs.FS)
-	if err := fs.AddDevice(dev); err != nil {
-		return err
-	}
 
 	superblocks, err := fs.Superblocks()
 	if err != nil {
@@ -61,17 +54,19 @@ func Main(imgfilename string) (err error) {
 	}
 	spew.Dump(syschunks)
 
-	if err := btrfsmisc.ScanForNodes(dev, superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			fmt.Printf("node@%v: physical_addr=%v logical_addr=%v generation=%v owner=%v level=%v\n",
-				nodeRef.Addr,
-				nodeRef.Addr, nodeRef.Data.Head.Addr,
-				nodeRef.Data.Head.Generation, nodeRef.Data.Head.Owner, nodeRef.Data.Head.Level)
+	for _, dev := range fs.LV.PhysicalVolumes() {
+		if err := btrfsmisc.ScanForNodes(dev, superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Printf("node@%v: physical_addr=%v logical_addr=%v generation=%v owner=%v level=%v\n",
+					nodeRef.Addr,
+					nodeRef.Addr, nodeRef.Data.Head.Addr,
+					nodeRef.Data.Head.Generation, nodeRef.Data.Head.Owner, nodeRef.Data.Head.Level)
+			}
+		}, nil); err != nil {
+			return err
 		}
-	}, nil); err != nil {
-		return err
 	}
 
 	return nil

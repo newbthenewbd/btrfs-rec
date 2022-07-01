@@ -19,22 +19,13 @@ func Main(imgfilenames ...string) (err error) {
 		}
 	}
 
-	var imgfiles []*os.File
-	for _, imgfilename := range imgfilenames {
-		fh, err := os.OpenFile(imgfilename, os.O_RDWR, 0)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			maybeSetErr(fh.Close())
-		}()
-		imgfiles = append(imgfiles, fh)
-	}
-
-	fs, sb, err := pass0(imgfiles...)
+	fs, sb, err := pass0(imgfilenames...)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		maybeSetErr(fs.Close())
+	}()
 
 	foundNodes, err := pass1(fs, sb)
 	if err != nil {

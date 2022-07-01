@@ -2,6 +2,7 @@ package btrfs
 
 import (
 	"fmt"
+	"io"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
@@ -166,3 +167,15 @@ func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
 	}
 	return nil
 }
+
+func (fs *FS) Close() error {
+	var err error
+	for _, dev := range fs.LV.PhysicalVolumes() {
+		if _err := dev.Close(); _err != nil && err == nil {
+			err = _err
+		}
+	}
+	return err
+}
+
+var _ io.Closer = (*FS)(nil)

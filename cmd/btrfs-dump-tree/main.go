@@ -25,18 +25,13 @@ func Main(imgfilename string) (err error) {
 		}
 	}
 
-	fh, err := os.Open(imgfilename)
+	fs, err := btrfsmisc.Open(os.O_RDONLY, imgfilename)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		maybeSetErr(fh.Close())
+		maybeSetErr(fs.Close())
 	}()
-
-	fs := new(btrfs.FS)
-	if err := fs.AddDevice(&btrfs.Device{File: fh}); err != nil {
-		fmt.Printf("(error) %v\n", err)
-	}
 
 	superblock, err := fs.Superblock()
 	if err != nil {
