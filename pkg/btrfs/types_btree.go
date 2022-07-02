@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
@@ -387,4 +388,16 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 		}
 		return nil
 	})
+}
+
+func (fs *FS) readNodeAtLevel(addr LogicalAddr, expLevel uint8) (*util.Ref[LogicalAddr, Node], error) {
+	node, err := fs.ReadNode(addr)
+	if err != nil {
+		return node, err
+	}
+	if expLevel != math.MaxUint8 && node.Data.Head.Level != expLevel {
+		return node, fmt.Errorf("btrfs.FS.ReadNode: node@%v: expected level %v but has level %v",
+			node.Addr, expLevel, node.Data.Head.Level)
+	}
+	return node, nil
 }
