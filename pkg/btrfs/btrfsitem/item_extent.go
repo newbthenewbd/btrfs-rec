@@ -90,43 +90,76 @@ func (f ExtentFlags) Has(req ExtentFlags) bool { return f&req == req }
 func (f ExtentFlags) String() string           { return util.BitfieldString(f, extentFlagNames, util.HexNone) }
 
 type ExtentInlineRef struct {
-	Type          Type   `bin:"off=0, siz=1"`
-	Offset        uint64 `bin:"off=1, siz=8"`
-	binstruct.End `bin:"off=9"`
-	Body          Item `bin:"-"`
+	Type   Type   // only 4 valid values: {TREE,SHARED}_BLOCK_REF_KEY, {EXTENT,SHARED}_DATA_REF_KEY
+	Offset uint64 // only when Type != EXTENT_DATA_REF_KEY
+	Body   Item   // only when Type == *_DATA_REF_KEY
 }
 
 func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
-	n, err := binstruct.UnmarshalWithoutInterface(dat, o)
-	if err != nil {
-		return n, err
-	}
+	o.Type = Type(dat[0])
+	n := 1
 	switch o.Type {
 	case TREE_BLOCK_REF_KEY, SHARED_BLOCK_REF_KEY:
-		o.Body = Empty{}
+		_n, err := binstruct.Unmarshal(dat[n:], &o.Offset)
+		n += _n
+		if err != nil {
+			return n, err
+		}
 	case EXTENT_DATA_REF_KEY:
-		return n, fmt.Errorf("the C code to do this doesn't make any sense")
+		var dref ExtentDataRef
+		_n, err := binstruct.Unmarshal(dat[n:], &dref)
+		n += _n
+		o.Body = dref
+		if err != nil {
+			return n, err
+		}
 	case SHARED_DATA_REF_KEY:
+		_n, err := binstruct.Unmarshal(dat[n:], &o.Offset)
+		n += _n
+		if err != nil {
+			return n, err
+		}
 		var sref SharedDataRef
-		_n, err := binstruct.Unmarshal(dat[n:], &sref)
+		_n, err = binstruct.Unmarshal(dat[n:], &sref)
 		n += _n
 		o.Body = sref
 		if err != nil {
 			return n, err
 		}
+	default:
+		return n, fmt.Errorf("btrfsitem.ExtentInlineRef.UnmarshalBinary: unexpected item type %v", o.Type)
 	}
 	return n, nil
 }
 
 func (o ExtentInlineRef) MarshalBinary() ([]byte, error) {
-	dat, err := binstruct.MarshalWithoutInterface(o)
-	if err != nil {
-		return dat, err
-	}
-	bs, err := binstruct.Marshal(o.Body)
-	dat = append(dat, bs...)
-	if err != nil {
-		return dat, err
+	dat := []byte{byte(o.Type)}
+	switch o.Type {
+	case TREE_BLOCK_REF_KEY, SHARED_BLOCK_REF_KEY:
+		_dat, err := binstruct.Marshal(o.Offset)
+		dat = append(dat, _dat...)
+		if err != nil {
+			return dat, err
+		}
+	case EXTENT_DATA_REF_KEY:
+		_dat, err := binstruct.Marshal(o.Body)
+		dat = append(dat, _dat...)
+		if err != nil {
+			return dat, err
+		}
+	case SHARED_DATA_REF_KEY:
+		_dat, err := binstruct.Marshal(o.Offset)
+		dat = append(dat, _dat...)
+		if err != nil {
+			return dat, err
+		}
+		_dat, err = binstruct.Marshal(o.Body)
+		dat = append(dat, _dat...)
+		if err != nil {
+			return dat, err
+		}
+	default:
+		return dat, fmt.Errorf("btrfsitem.ExtentInlineRef.MarshalBinary: unexpected item type %v", o.Type)
 	}
 	return dat, nil
 }

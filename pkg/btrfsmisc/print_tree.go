@@ -309,7 +309,7 @@ func printHeaderInfo(node btrfs.Node) {
 func printExtentInlineRefs(refs []btrfsitem.ExtentInlineRef) {
 	for _, ref := range refs {
 		switch subitem := ref.Body.(type) {
-		case btrfsitem.Empty:
+		case nil:
 			switch ref.Type {
 			case btrfsitem.TREE_BLOCK_REF_KEY:
 				fmt.Printf("\t\ttree block backref root %v\n",
