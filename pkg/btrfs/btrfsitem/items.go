@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfssum"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
@@ -31,7 +32,7 @@ func (o *Error) UnmarshalBinary(dat []byte) (int, error) {
 }
 
 // Rather than returning a separate error  value, return an Error item.
-func UnmarshalItem(key internal.Key, dat []byte) Item {
+func UnmarshalItem(key internal.Key, csumType btrfssum.CSumType, dat []byte) Item {
 	var gotyp reflect.Type
 	if key.ItemType == UNTYPED_KEY {
 		var ok bool
@@ -54,6 +55,9 @@ func UnmarshalItem(key internal.Key, dat []byte) Item {
 		}
 	}
 	retPtr := reflect.New(gotyp)
+	if csums, ok := retPtr.Interface().(*ExtentCSum); ok {
+		csums.ChecksumSize = csumType.Size()
+	}
 	n, err := binstruct.Unmarshal(dat, retPtr.Interface())
 	if err != nil {
 		return Error{

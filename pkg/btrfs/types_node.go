@@ -266,7 +266,7 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 		}
 		tail = dataOff
 		dataBuf := bodyBuf[dataOff : dataOff+dataSize]
-		item.Body = btrfsitem.UnmarshalItem(item.Head.Key, dataBuf)
+		item.Body = btrfsitem.UnmarshalItem(item.Head.Key, node.ChecksumType, dataBuf)
 
 		node.BodyLeaf = append(node.BodyLeaf, item)
 	}

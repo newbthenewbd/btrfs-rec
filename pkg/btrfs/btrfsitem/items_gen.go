@@ -15,6 +15,7 @@ const (
 	DEV_ITEM_KEY             = internal.DEV_ITEM_KEY
 	DIR_INDEX_KEY            = internal.DIR_INDEX_KEY
 	DIR_ITEM_KEY             = internal.DIR_ITEM_KEY
+	EXTENT_CSUM_KEY          = internal.EXTENT_CSUM_KEY
 	EXTENT_DATA_KEY          = internal.EXTENT_DATA_KEY
 	EXTENT_DATA_REF_KEY      = internal.EXTENT_DATA_REF_KEY
 	EXTENT_ITEM_KEY          = internal.EXTENT_ITEM_KEY
@@ -44,6 +45,7 @@ var keytype2gotype = map[Type]reflect.Type{
 	DEV_ITEM_KEY:             reflect.TypeOf(Dev{}),
 	DIR_INDEX_KEY:            reflect.TypeOf(DirList{}),
 	DIR_ITEM_KEY:             reflect.TypeOf(DirList{}),
+	EXTENT_CSUM_KEY:          reflect.TypeOf(ExtentCSum{}),
 	EXTENT_DATA_KEY:          reflect.TypeOf(FileExtent{}),
 	EXTENT_DATA_REF_KEY:      reflect.TypeOf(ExtentDataRef{}),
 	EXTENT_ITEM_KEY:          reflect.TypeOf(Extent{}),
@@ -76,6 +78,7 @@ func (DevStats) isItem()        {}
 func (DirList) isItem()         {}
 func (Empty) isItem()           {}
 func (Extent) isItem()          {}
+func (ExtentCSum) isItem()      {}
 func (ExtentDataRef) isItem()   {}
 func (FileExtent) isItem()      {}
 func (FreeSpaceBitmap) isItem() {}

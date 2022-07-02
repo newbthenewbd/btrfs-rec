@@ -13,6 +13,7 @@ const (
 	DEV_ITEM_KEY             = ItemType(216)
 	DIR_INDEX_KEY            = ItemType(96)
 	DIR_ITEM_KEY             = ItemType(84)
+	EXTENT_CSUM_KEY          = ItemType(128)
 	EXTENT_DATA_KEY          = ItemType(108)
 	EXTENT_DATA_REF_KEY      = ItemType(178)
 	EXTENT_ITEM_KEY          = ItemType(168)
@@ -43,6 +44,7 @@ func (t ItemType) String() string {
 		DEV_ITEM_KEY:             "DEV_ITEM",
 		DIR_INDEX_KEY:            "DIR_INDEX",
 		DIR_ITEM_KEY:             "DIR_ITEM",
+		EXTENT_CSUM_KEY:          "EXTENT_CSUM",
 		EXTENT_DATA_KEY:          "EXTENT_DATA",
 		EXTENT_DATA_REF_KEY:      "EXTENT_DATA_REF",
 		EXTENT_ITEM_KEY:          "EXTENT_ITEM",

@@ -7,6 +7,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfssum"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -117,8 +118,27 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 			//	// TODO
 			//case btrfsitem.SHARED_DATA_REF_KEY:
 			//	// TODO
-			//case btrfsitem.EXTENT_CSUM_KEY:
-			//	// TODO
+			case btrfsitem.ExtentCSum:
+				sb, _ := fs.Superblock()
+				sectorSize := btrfsvol.AddrDelta(sb.Data.SectorSize)
+
+				start := btrfsvol.LogicalAddr(item.Head.Key.Offset)
+				itemSize := btrfsvol.AddrDelta(len(body.Sums)) * sectorSize
+				fmt.Printf("\t\trange start %d end %d length %d",
+					start, start.Add(itemSize), itemSize)
+				sumsPerLine := util.Max(1, len(btrfssum.CSum{})/body.ChecksumSize/2)
+
+				pos := start
+				for i, sum := range body.Sums {
+					if i%sumsPerLine == 0 {
+						fmt.Printf("\n\t\t")
+					} else {
+						fmt.Printf(" ")
+					}
+					fmt.Printf("[%d] 0x%s", pos, sum.Fmt(sb.Data.ChecksumType))
+					pos = pos.Add(sectorSize)
+				}
+				fmt.Printf("\n")
 			case btrfsitem.FileExtent:
 				fmt.Printf("\t\tgeneration %v type %v\n",
 					body.Generation, body.Type)
