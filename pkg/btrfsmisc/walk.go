@@ -10,7 +10,7 @@ import (
 
 type WalkErr struct {
 	TreeName string
-	Path     btrfs.TreeWalkPath
+	Path     btrfs.TreePath
 	Err      error
 }
 
@@ -37,7 +37,7 @@ type WalkFSHandler struct {
 // will always be of type WalkErr.
 func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 	var treeName string
-	handleErr := func(path btrfs.TreeWalkPath, err error) {
+	handleErr := func(path btrfs.TreePath, err error) {
 		cbs.Err(WalkErr{
 			TreeName: treeName,
 			Path:     path,
@@ -50,7 +50,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 		Root btrfs.LogicalAddr
 	}
 	origItem := cbs.Item
-	cbs.Item = func(path btrfs.TreeWalkPath, item btrfs.Item) error {
+	cbs.Item = func(path btrfs.TreePath, item btrfs.Item) error {
 		if item.Head.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			root, ok := item.Body.(btrfsitem.Root)
 			if !ok {
@@ -73,7 +73,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 	}
 
 	origNode := cbs.Node
-	cbs.Node = func(path btrfs.TreeWalkPath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+	cbs.Node = func(path btrfs.TreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 		if err != nil {
 			handleErr(path, err)
 		}

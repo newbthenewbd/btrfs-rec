@@ -46,7 +46,7 @@ func Main(imgfilenames ...string) (err error) {
 			treeErrCnt++
 		},
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Item: func(_ btrfs.TreeWalkPath, item btrfs.Item) error {
+			Item: func(_ btrfs.TreePath, item btrfs.Item) error {
 				typ := item.Head.Key.ItemType
 				treeItemCnt[typ] = treeItemCnt[typ] + 1
 				return nil

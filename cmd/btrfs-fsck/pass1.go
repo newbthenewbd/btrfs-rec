@@ -24,7 +24,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreeWalkPath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 				if err != nil {
 					err = fmt.Errorf("%v: %w", path, err)
 					fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)

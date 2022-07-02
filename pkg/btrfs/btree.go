@@ -12,8 +12,8 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
-// A TreeWalkPathElem essentially represents a KeyPointer.
-type TreeWalkPathElem struct {
+// A TreePathElem essentially represents a KeyPointer.
+type TreePathElem struct {
 	// ItemIdx is the index of this KeyPointer in the parent Node;
 	// or -1 if this is the root and there is no KeyPointer.
 	ItemIdx int
@@ -26,7 +26,7 @@ type TreeWalkPathElem struct {
 	NodeLevel uint8
 }
 
-func (elem TreeWalkPathElem) writeNodeTo(w io.Writer) {
+func (elem TreePathElem) writeNodeTo(w io.Writer) {
 	if elem.NodeLevel != math.MaxUint8 {
 		fmt.Fprintf(w, "node:%d@%v", elem.NodeLevel, elem.NodeAddr)
 	} else {
@@ -38,9 +38,9 @@ func (elem TreeWalkPathElem) writeNodeTo(w io.Writer) {
 //
 // - For .Item() callbacks, the last element will always have a
 //   NodeAddr of 0.
-type TreeWalkPath []TreeWalkPathElem
+type TreePath []TreePathElem
 
-func (path TreeWalkPath) String() string {
+func (path TreePath) String() string {
 	if len(path) == 0 {
 		return "(empty-path)"
 	}
@@ -58,14 +58,14 @@ func (path TreeWalkPath) String() string {
 
 type TreeWalkHandler struct {
 	// Callbacks for entire nodes
-	PreNode  func(TreeWalkPath) error
-	Node     func(TreeWalkPath, *util.Ref[LogicalAddr, Node], error) error
-	PostNode func(TreeWalkPath, *util.Ref[LogicalAddr, Node]) error
+	PreNode  func(TreePath) error
+	Node     func(TreePath, *util.Ref[LogicalAddr, Node], error) error
+	PostNode func(TreePath, *util.Ref[LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
-	PreKeyPointer  func(TreeWalkPath, KeyPointer) error
-	PostKeyPointer func(TreeWalkPath, KeyPointer) error
+	PreKeyPointer  func(TreePath, KeyPointer) error
+	PostKeyPointer func(TreePath, KeyPointer) error
 	// Callbacks for items on leaf nodes
-	Item func(TreeWalkPath, Item) error
+	Item func(TreePath, Item) error
 }
 
 // The lifecycle of callbacks is:
@@ -82,8 +82,8 @@ type TreeWalkHandler struct {
 //     004     .Item()
 //     007 .PostNode()
 func (fs *FS) TreeWalk(treeRoot LogicalAddr, cbs TreeWalkHandler) error {
-	path := TreeWalkPath{
-		TreeWalkPathElem{
+	path := TreePath{
+		TreePathElem{
 			ItemIdx:   -1,
 			NodeAddr:  treeRoot,
 			NodeLevel: math.MaxUint8,
@@ -92,7 +92,7 @@ func (fs *FS) TreeWalk(treeRoot LogicalAddr, cbs TreeWalkHandler) error {
 	return fs.treeWalk(path, cbs)
 }
 
-func (fs *FS) treeWalk(path TreeWalkPath, cbs TreeWalkHandler) error {
+func (fs *FS) treeWalk(path TreePath, cbs TreeWalkHandler) error {
 	if path[len(path)-1].NodeAddr == 0 {
 		return nil
 	}
@@ -124,7 +124,7 @@ func (fs *FS) treeWalk(path TreeWalkPath, cbs TreeWalkHandler) error {
 	}
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
-			itemPath := append(path, TreeWalkPathElem{
+			itemPath := append(path, TreePathElem{
 				ItemIdx:   i,
 				NodeAddr:  item.BlockPtr,
 				NodeLevel: node.Data.Head.Level - 1,
@@ -151,7 +151,7 @@ func (fs *FS) treeWalk(path TreeWalkPath, cbs TreeWalkHandler) error {
 		}
 		for i, item := range node.Data.BodyLeaf {
 			if cbs.Item != nil {
-				itemPath := append(path, TreeWalkPathElem{
+				itemPath := append(path, TreePathElem{
 					ItemIdx: i,
 				})
 				if err := cbs.Item(itemPath, item); err != nil {

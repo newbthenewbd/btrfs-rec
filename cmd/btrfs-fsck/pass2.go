@@ -15,7 +15,7 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
 	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreeWalkPath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 				visitedNodes[node.Addr] = struct{}{}
 				return nil
 			},
@@ -38,7 +38,7 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfs.LogicalAddr]struct{}) {
 	}
 	for potentialRoot := range orphanedRoots {
 		if err := fs.TreeWalk(potentialRoot, btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreeWalkPath, _ *util.Ref[btrfs.LogicalAddr, btrfs.Node], _ error) error {
+			Node: func(path btrfs.TreePath, _ *util.Ref[btrfs.LogicalAddr, btrfs.Node], _ error) error {
 				nodeAddr := path[len(path)-1].NodeAddr
 				if nodeAddr != potentialRoot {
 					delete(orphanedRoots, nodeAddr)

@@ -64,7 +64,7 @@ func Main(imgfilename string) (err error) {
 		}
 	}
 	if err := fs.TreeWalk(superblock.Data.RootTree, btrfs.TreeWalkHandler{
-		Item: func(_ btrfs.TreeWalkPath, item btrfs.Item) error {
+		Item: func(_ btrfs.TreePath, item btrfs.Item) error {
 			if item.Head.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 				return nil
 			}
