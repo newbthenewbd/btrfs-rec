@@ -150,8 +150,8 @@ func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
 			}
 		}
 	}
-	if err := fs.WalkTree(sb.Data.ChunkTree, WalkTreeHandler{
-		Item: func(_ WalkTreePath, item Item) error {
+	if err := fs.TreeWalk(sb.Data.ChunkTree, TreeWalkHandler{
+		Item: func(_ TreeWalkPath, item Item) error {
 			if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 				return nil
 			}

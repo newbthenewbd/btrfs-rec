@@ -14,8 +14,8 @@ import (
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
 func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
-	return fs.WalkTree(root, btrfs.WalkTreeHandler{
-		Node: func(path btrfs.WalkTreePath, nodeRef *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+	return fs.TreeWalk(root, btrfs.TreeWalkHandler{
+		Node: func(path btrfs.TreeWalkPath, nodeRef *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v: %v\n", path, err)
 			}
@@ -24,14 +24,14 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 			}
 			return nil
 		},
-		PreKeyPointer: func(_ btrfs.WalkTreePath, item btrfs.KeyPointer) error {
+		PreKeyPointer: func(_ btrfs.TreeWalkPath, item btrfs.KeyPointer) error {
 			fmt.Printf("\t%v block %v gen %v\n",
 				FmtKey(item.Key),
 				item.BlockPtr,
 				item.Generation)
 			return nil
 		},
-		Item: func(path btrfs.WalkTreePath, item btrfs.Item) error {
+		Item: func(path btrfs.TreeWalkPath, item btrfs.Item) error {
 			i := path[len(path)-1].ItemIdx
 			fmt.Printf("\titem %v %v itemoff %v itemsize %v\n",
 				i,
