@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Generation uint64
@@ -13,6 +14,16 @@ type Key struct {
 	ItemType      ItemType `bin:"off=0x8, siz=0x1"`
 	Offset        uint64   `bin:"off=0x9, siz=0x8"` // The meaning depends on the item type.
 	binstruct.End `bin:"off=0x11"`
+}
+
+func (a Key) Cmp(b Key) int {
+	if d := util.CmpUint(a.ObjectID, b.ObjectID); d != 0 {
+		return d
+	}
+	if d := util.CmpUint(a.ItemType, b.ItemType); d != 0 {
+		return d
+	}
+	return util.CmpUint(a.Offset, b.Offset)
 }
 
 type Time struct {

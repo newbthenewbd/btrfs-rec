@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -171,4 +172,76 @@ func (fs *FS) treeWalk(path TreeWalkPath, cbs TreeWalkHandler) error {
 		}
 	}
 	return nil
+}
+
+func (fs *FS) TreeSearch(treeRoot LogicalAddr, fn func(Key) int) (Key, btrfsitem.Item, error) {
+	nodeAddr := treeRoot
+
+	for {
+		if nodeAddr == 0 {
+			return Key{}, nil, iofs.ErrNotExist
+		}
+		node, err := fs.ReadNode(nodeAddr)
+		if err != nil {
+			return Key{}, nil, err
+		}
+		if node.Data.Head.Level > 0 {
+			// internal node
+
+			// Search for the right-most node.Data.BodyInternal item for which
+			// `fn(item.Key) >= 0`.
+			//
+			//    + + + + 0 - - - -
+			//
+			// There may or may not be a value that returns '0'.
+			//
+			// Implement this search as a binary search.
+			lastGood := -1
+			firstBad := len(node.Data.BodyInternal)
+			for firstBad > lastGood+1 {
+				midpoint := (lastGood + firstBad) / 2
+				direction := fn(node.Data.BodyInternal[midpoint].Key)
+				if direction < 0 {
+					firstBad = midpoint
+				} else {
+					lastGood = midpoint
+				}
+			}
+			if lastGood < 0 {
+				return Key{}, nil, iofs.ErrNotExist
+			}
+			nodeAddr = node.Data.BodyInternal[lastGood].BlockPtr
+		} else {
+			// leaf node
+
+			// Search for a member of node.Data.BodyLeaf for which
+			// `fn(item.Head.Key) == 0`.
+			//
+			//    + + + + 0 - - - -
+			//
+			// Such an item might not exist; in this case, return nil/ErrNotExist.
+			// Multiple such items might exist; in this case, it does not matter which
+			// is returned.
+			//
+			// Implement this search as a binary search.
+			items := node.Data.BodyLeaf
+			for len(items) > 0 {
+				midpoint := len(items) / 2
+				direction := fn(items[midpoint].Head.Key)
+				switch {
+				case direction < 0:
+					items = items[:midpoint]
+				case direction > 0:
+					items = items[midpoint+1:]
+				case direction == 0:
+					return items[midpoint].Head.Key, items[midpoint].Body, nil
+				}
+			}
+			return Key{}, nil, iofs.ErrNotExist
+		}
+	}
+}
+
+func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Key, btrfsitem.Item, error) {
+	return fs.TreeSearch(treeRoot, key.Cmp)
 }

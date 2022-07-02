@@ -77,3 +77,14 @@ func SortedMapKeys[K constraints.Ordered, V any](m map[K]V) []K {
 	SortSlice(ret)
 	return ret
 }
+
+func CmpUint[T constraints.Unsigned](a, b T) int {
+	switch {
+	case a < b:
+		return -1
+	case a == b:
+		return 0
+	default:
+		return 1
+	}
+}
