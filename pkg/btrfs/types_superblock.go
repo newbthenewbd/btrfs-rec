@@ -6,20 +6,22 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfssum"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Superblock struct {
-	Checksum   CSum         `bin:"off=0x0,  siz=0x20"` // Checksum of everything past this field (from 20 to 1000)
-	FSUUID     UUID         `bin:"off=0x20, siz=0x10"` // FS UUID
-	Self       PhysicalAddr `bin:"off=0x30, siz=0x8"`  // physical address of this block (different for mirrors)
-	Flags      uint64       `bin:"off=0x38, siz=0x8"`  // flags
-	Magic      [8]byte      `bin:"off=0x40, siz=0x8"`  // magic ('_BHRfS_M')
-	Generation Generation   `bin:"off=0x48, siz=0x8"`
+	Checksum   btrfssum.CSum         `bin:"off=0x0,  siz=0x20"` // Checksum of everything past this field (from 0x20 to 0x1000)
+	FSUUID     UUID                  `bin:"off=0x20, siz=0x10"` // FS UUID
+	Self       btrfsvol.PhysicalAddr `bin:"off=0x30, siz=0x8"`  // physical address of this block (different for mirrors)
+	Flags      uint64                `bin:"off=0x38, siz=0x8"`  // flags
+	Magic      [8]byte               `bin:"off=0x40, siz=0x8"`  // magic ('_BHRfS_M')
+	Generation Generation            `bin:"off=0x48, siz=0x8"`
 
-	RootTree  LogicalAddr `bin:"off=0x50, siz=0x8"` // logical address of the root tree root
-	ChunkTree LogicalAddr `bin:"off=0x58, siz=0x8"` // logical address of the chunk tree root
-	LogTree   LogicalAddr `bin:"off=0x60, siz=0x8"` // logical address of the log tree root
+	RootTree  btrfsvol.LogicalAddr `bin:"off=0x50, siz=0x8"` // logical address of the root tree root
+	ChunkTree btrfsvol.LogicalAddr `bin:"off=0x58, siz=0x8"` // logical address of the chunk tree root
+	LogTree   btrfsvol.LogicalAddr `bin:"off=0x60, siz=0x8"` // logical address of the log tree root
 
 	LogRootTransID  uint64 `bin:"off=0x68, siz=0x8"` // log_root_transid
 	TotalBytes      uint64 `bin:"off=0x70, siz=0x8"` // total_bytes
@@ -33,11 +35,11 @@ type Superblock struct {
 	StripeSize        uint32 `bin:"off=0x9c, siz=0x4"`
 	SysChunkArraySize uint32 `bin:"off=0xa0, siz=0x4"`
 
-	ChunkRootGeneration Generation    `bin:"off=0xa4, siz=0x8"`
-	CompatFlags         uint64        `bin:"off=0xac, siz=0x8"` // compat_flags
-	CompatROFlags       uint64        `bin:"off=0xb4, siz=0x8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
-	IncompatFlags       IncompatFlags `bin:"off=0xbc, siz=0x8"` // incompat_flags - only implementations that support the flags can use the filesystem
-	ChecksumType        CSumType      `bin:"off=0xc4, siz=0x2"`
+	ChunkRootGeneration Generation        `bin:"off=0xa4, siz=0x8"`
+	CompatFlags         uint64            `bin:"off=0xac, siz=0x8"` // compat_flags
+	CompatROFlags       uint64            `bin:"off=0xb4, siz=0x8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
+	IncompatFlags       IncompatFlags     `bin:"off=0xbc, siz=0x8"` // incompat_flags - only implementations that support the flags can use the filesystem
+	ChecksumType        btrfssum.CSumType `bin:"off=0xc4, siz=0x2"`
 
 	RootLevel  uint8 `bin:"off=0xc6, siz=0x1"` // root_level
 	ChunkLevel uint8 `bin:"off=0xc7, siz=0x1"` // chunk_root_level
@@ -55,9 +57,9 @@ type Superblock struct {
 	NumGlobalRoots uint64 `bin:"off=0x24b, siz=0x8"`
 
 	// FeatureIncompatExtentTreeV2
-	BlockGroupRoot           LogicalAddr `bin:"off=0x253, siz=0x8"`
-	BlockGroupRootGeneration Generation  `bin:"off=0x25b, siz=0x8"`
-	BlockGroupRootLevel      uint8       `bin:"off=0x263, siz=0x1"`
+	BlockGroupRoot           btrfsvol.LogicalAddr `bin:"off=0x253, siz=0x8"`
+	BlockGroupRootGeneration Generation           `bin:"off=0x25b, siz=0x8"`
+	BlockGroupRootLevel      uint8                `bin:"off=0x263, siz=0x1"`
 
 	Reserved [199]byte `bin:"off=0x264, siz=0xc7"` // future expansion
 
@@ -69,12 +71,12 @@ type Superblock struct {
 	binstruct.End `bin:"off=0x1000"`
 }
 
-func (sb Superblock) CalculateChecksum() (CSum, error) {
+func (sb Superblock) CalculateChecksum() (btrfssum.CSum, error) {
 	data, err := binstruct.Marshal(sb)
 	if err != nil {
-		return CSum{}, err
+		return btrfssum.CSum{}, err
 	}
-	return sb.ChecksumType.Sum(data[binstruct.StaticSize(CSum{}):])
+	return sb.ChecksumType.Sum(data[binstruct.StaticSize(btrfssum.CSum{}):])
 }
 
 func (sb Superblock) ValidateChecksum() error {
@@ -91,10 +93,10 @@ func (sb Superblock) ValidateChecksum() error {
 }
 
 func (a Superblock) Equal(b Superblock) bool {
-	a.Checksum = CSum{}
+	a.Checksum = btrfssum.CSum{}
 	a.Self = 0
 
-	b.Checksum = CSum{}
+	b.Checksum = btrfssum.CSum{}
 	b.Self = 0
 
 	return reflect.DeepEqual(a, b)

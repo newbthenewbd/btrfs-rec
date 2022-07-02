@@ -7,15 +7,16 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 // PrintTree mimics btrfs-progs
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
-func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
+func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 	return fs.TreeWalk(root, btrfs.TreeWalkHandler{
-		Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+		Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v: %v\n", path, err)
 			}
@@ -319,7 +320,7 @@ func FmtKey(key btrfs.Key) string {
 	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("not implemented")
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
-		fmt.Fprintf(&out, " %v)", btrfs.PhysicalAddr(key.Offset))
+		fmt.Fprintf(&out, " %v)", btrfsvol.PhysicalAddr(key.Offset))
 	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
 	default:

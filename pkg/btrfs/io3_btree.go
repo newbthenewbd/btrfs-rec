@@ -10,6 +10,7 @@ import (
 
 	"github.com/datawire/dlib/derror"
 
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -31,7 +32,7 @@ type TreePathElem struct {
 	// NodeAddr is the address of the node that the KeyPointer
 	// points at, or 0 if this is a leaf item and nothing is
 	// being pointed at.
-	NodeAddr LogicalAddr
+	NodeAddr btrfsvol.LogicalAddr
 	// NodeLevel is the expected or actual level of the node at
 	// NodeAddr, or 255 if there is no knowledge of the level.
 	NodeLevel uint8
@@ -64,8 +65,8 @@ func (path TreePath) String() string {
 type TreeWalkHandler struct {
 	// Callbacks for entire nodes
 	PreNode  func(TreePath) error
-	Node     func(TreePath, *util.Ref[LogicalAddr, Node], error) error
-	PostNode func(TreePath, *util.Ref[LogicalAddr, Node]) error
+	Node     func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) error
+	PostNode func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
@@ -86,7 +87,7 @@ type TreeWalkHandler struct {
 //           else:
 //     004     .Item()
 //     007 .PostNode()
-func (fs *FS) TreeWalk(treeRoot LogicalAddr, cbs TreeWalkHandler) error {
+func (fs *FS) TreeWalk(treeRoot btrfsvol.LogicalAddr, cbs TreeWalkHandler) error {
 	path := TreePath{
 		TreePathElem{
 			ItemIdx:   -1,
@@ -175,7 +176,7 @@ func (fs *FS) treeWalk(path TreePath, cbs TreeWalkHandler) error {
 	return nil
 }
 
-func (fs *FS) treeSearch(treeRoot LogicalAddr, fn func(Key) int) (TreePath, *util.Ref[LogicalAddr, Node], error) {
+func (fs *FS) treeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
 		TreePathElem{
 			ItemIdx:   -1,
@@ -257,7 +258,7 @@ func (fs *FS) treeSearch(treeRoot LogicalAddr, fn func(Key) int) (TreePath, *uti
 	}
 }
 
-func (fs *FS) prev(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, *util.Ref[LogicalAddr, Node], error) {
+func (fs *FS) prev(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = append(TreePath(nil), path...)
 
@@ -309,7 +310,7 @@ func (fs *FS) prev(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	return path, node, nil
 }
 
-func (fs *FS) next(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, *util.Ref[LogicalAddr, Node], error) {
+func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = append(TreePath(nil), path...)
 
@@ -376,7 +377,7 @@ func (fs *FS) next(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	return path, node, nil
 }
 
-func (fs *FS) TreeSearch(treeRoot LogicalAddr, fn func(Key) int) (Item, error) {
+func (fs *FS) TreeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (Item, error) {
 	path, node, err := fs.treeSearch(treeRoot, fn)
 	if err != nil {
 		return Item{}, err
@@ -384,7 +385,7 @@ func (fs *FS) TreeSearch(treeRoot LogicalAddr, fn func(Key) int) (Item, error) {
 	return node.Data.BodyLeaf[path[len(path)-1].ItemIdx], nil
 }
 
-func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Item, error) {
+func (fs *FS) TreeLookup(treeRoot btrfsvol.LogicalAddr, key Key) (Item, error) {
 	return fs.TreeSearch(treeRoot, key.Cmp)
 }
 
@@ -392,7 +393,7 @@ func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Item, error) {
 // return *both* a list of items and an error.
 //
 // If no such item is found, an error that is io/fs.ErrNotExist is returned.
-func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, error) {
+func (fs *FS) TreeSearchAll(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) ([]Item, error) {
 	middlePath, middleNode, err := fs.treeSearch(treeRoot, fn)
 	if err != nil {
 		return nil, err

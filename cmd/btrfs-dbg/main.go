@@ -7,6 +7,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -55,7 +56,7 @@ func Main(imgfilename string) (err error) {
 	spew.Dump(syschunks)
 
 	for _, dev := range fs.LV.PhysicalVolumes() {
-		if err := btrfsmisc.ScanForNodes(dev, superblocks[0].Data, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+		if err := btrfsmisc.ScanForNodes(dev, superblocks[0].Data, func(nodeRef *util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
 			if err != nil {
 				fmt.Println(err)
 			} else {

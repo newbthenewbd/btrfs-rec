@@ -17,14 +17,14 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
-func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblock]) (map[btrfs.LogicalAddr]struct{}, error) {
+func pass1(fs *btrfs.FS, superblock *util.Ref[btrfsvol.PhysicalAddr, btrfs.Superblock]) (map[btrfsvol.LogicalAddr]struct{}, error) {
 	fmt.Printf("\nPass 1: chunk mappings...\n")
 
 	fmt.Printf("Pass 1: ... walking fs\n")
-	visitedNodes := make(map[btrfs.LogicalAddr]struct{})
+	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 				if err != nil {
 					err = fmt.Errorf("%v: %w", path, err)
 					fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
@@ -40,7 +40,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 		},
 	})
 
-	fsFoundNodes := make(map[btrfs.LogicalAddr]struct{})
+	fsFoundNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
 		devResult, err := pass1ScanOneDev(dev, superblock.Data)
@@ -69,7 +69,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfs.PhysicalAddr, btrfs.Superblo
 }
 
 type pass1ScanOneDevResult struct {
-	FoundNodes       map[btrfs.LogicalAddr][]btrfs.PhysicalAddr
+	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
 	FoundChunks      []btrfs.SysChunk
 	FoundBlockGroups []sysBlockGroup
 	FoundDevExtents  []sysDevExtent
@@ -236,13 +236,13 @@ func pass1ScanOneDev_printProgress(dev *btrfs.Device, pct int, result pass1ScanO
 
 func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1ScanOneDevResult, error) {
 	result := pass1ScanOneDevResult{
-		FoundNodes: make(map[btrfs.LogicalAddr][]btrfs.PhysicalAddr),
+		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
 
 	devSize, _ := dev.Size()
 	lastProgress := -1
 
-	err := btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfs.PhysicalAddr, btrfs.Node], err error) {
+	err := btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
 			return
@@ -291,7 +291,7 @@ func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1
 				})
 			}
 		}
-	}, func(pos btrfs.PhysicalAddr) {
+	}, func(pos btrfsvol.PhysicalAddr) {
 		pct := int(100 * float64(pos) / float64(devSize))
 		if pct != lastProgress || pos == devSize {
 			pass1ScanOneDev_printProgress(dev, pct, result)
@@ -372,7 +372,7 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 	// store that node at the root node of the chunk tree.  This
 	// isn't true in general, but it's true of my particular
 	// filesystem.
-	reconstructedNode := &util.Ref[btrfs.LogicalAddr, btrfs.Node]{
+	reconstructedNode := &util.Ref[btrfsvol.LogicalAddr, btrfs.Node]{
 		File: fs,
 		Addr: superblock.ChunkTree,
 		Data: btrfs.Node{

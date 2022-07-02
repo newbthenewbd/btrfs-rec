@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -12,7 +13,7 @@ import (
 // cmds/rescue-chunk-recover.c:scan_one_device(), except rather than
 // doing something itself when it finds a node, it simply calls a
 // callback function.
-func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfs.PhysicalAddr, btrfs.Node], error), prog func(btrfs.PhysicalAddr)) error {
+func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], error), prog func(btrfsvol.PhysicalAddr)) error {
 	devSize, err := dev.Size()
 	if err != nil {
 		return err
@@ -23,7 +24,7 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 			sb.NodeSize, sb.SectorSize)
 	}
 
-	for pos := btrfs.PhysicalAddr(0); pos+btrfs.PhysicalAddr(sb.NodeSize) < devSize; pos += btrfs.PhysicalAddr(sb.SectorSize) {
+	for pos := btrfsvol.PhysicalAddr(0); pos+btrfsvol.PhysicalAddr(sb.NodeSize) < devSize; pos += btrfsvol.PhysicalAddr(sb.SectorSize) {
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
 			//fmt.Printf("sector@%v is a superblock\n", pos)
 			continue
@@ -33,13 +34,13 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 			prog(pos)
 		}
 
-		nodeRef, err := btrfs.ReadNode[btrfs.PhysicalAddr](dev, sb, pos, nil)
+		nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, nil)
 		if err != nil && errors.Is(err, btrfs.ErrNotANode) {
 			continue
 		}
 		fn(nodeRef, err)
 
-		pos += btrfs.PhysicalAddr(sb.NodeSize) - btrfs.PhysicalAddr(sb.SectorSize)
+		pos += btrfsvol.PhysicalAddr(sb.NodeSize) - btrfsvol.PhysicalAddr(sb.SectorSize)
 	}
 
 	if prog != nil {

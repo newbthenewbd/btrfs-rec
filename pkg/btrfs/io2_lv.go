@@ -16,11 +16,11 @@ type FS struct {
 	// implementing special things like fsck.
 	LV btrfsvol.LogicalVolume[*Device]
 
-	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
-	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
+	cacheSuperblocks []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	cacheSuperblock  *util.Ref[btrfsvol.PhysicalAddr, Superblock]
 }
 
-var _ util.File[LogicalAddr] = (*FS)(nil)
+var _ util.File[btrfsvol.LogicalAddr] = (*FS)(nil)
 
 func (fs *FS) AddDevice(dev *Device) error {
 	sb, err := dev.Superblock()
@@ -51,26 +51,26 @@ func (fs *FS) Name() string {
 	return name
 }
 
-func (fs *FS) Size() (LogicalAddr, error) {
+func (fs *FS) Size() (btrfsvol.LogicalAddr, error) {
 	return fs.LV.Size()
 }
 
-func (fs *FS) ReadAt(p []byte, off LogicalAddr) (int, error) {
+func (fs *FS) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.ReadAt(p, off)
 }
-func (fs *FS) WriteAt(p []byte, off LogicalAddr) (int, error) {
+func (fs *FS) WriteAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.WriteAt(p, off)
 }
 
-func (fs *FS) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
+func (fs *FS) Resolve(laddr btrfsvol.LogicalAddr) (paddrs map[btrfsvol.QualifiedPhysicalAddr]struct{}, maxlen btrfsvol.AddrDelta) {
 	return fs.LV.Resolve(laddr)
 }
 
-func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
+func (fs *FS) Superblocks() ([]*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if fs.cacheSuperblocks != nil {
 		return fs.cacheSuperblocks, nil
 	}
-	var ret []*util.Ref[PhysicalAddr, Superblock]
+	var ret []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
 	devs := fs.LV.PhysicalVolumes()
 	if len(devs) == 0 {
 		return nil, fmt.Errorf("no devices")
@@ -86,7 +86,7 @@ func (fs *FS) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
 	return ret, nil
 }
 
-func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
+func (fs *FS) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if fs.cacheSuperblock != nil {
 		return fs.cacheSuperblock, nil
 	}
@@ -112,8 +112,9 @@ func (fs *FS) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
 			return nil, fmt.Errorf("file %q superblock %v: %w", sb.File.Name(), sbi, err)
 		}
 		if i > 0 {
-			// This is probably wrong, but lots of my
-			// multi-device code is probably wrong.
+			// FIXME(lukeshu): This is probably wrong, but
+			// lots of my multi-device code is probably
+			// wrong.
 			if !sb.Data.Equal(sbs[0].Data) {
 				return nil, fmt.Errorf("file %q superblock %v and file %q superblock %v disagree",
 					sbs[0].File.Name(), 0,
@@ -140,7 +141,7 @@ func (fs *FS) ReInit() error {
 	return nil
 }
 
-func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
+func (fs *FS) initDev(sb *util.Ref[btrfsvol.PhysicalAddr, Superblock]) error {
 	syschunks, err := sb.Data.ParseSysChunkArray()
 	if err != nil {
 		return err

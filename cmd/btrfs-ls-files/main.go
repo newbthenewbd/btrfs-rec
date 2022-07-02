@@ -6,6 +6,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -51,7 +52,7 @@ func Main(imgfilenames ...string) (err error) {
 	return printDir(fs, fsTree, "", "/", fsTreeRootBody.RootDirID, fsTreeRootBody.Inode)
 }
 
-func printDir(fs *btrfs.FS, fsTree btrfs.LogicalAddr, prefix, dirName string, dirInodeNum btrfs.ObjID, dirInode btrfsitem.Inode) error {
+func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix, dirName string, dirInodeNum btrfs.ObjID, dirInode btrfsitem.Inode) error {
 	fmt.Printf("%s[%s\tino=%d\tuid=%d\tgid=%d\tsize=%d] %s\n",
 		prefix,
 		dirInode.Mode, dirInodeNum, dirInode.UID, dirInode.GID, dirInode.Size,

@@ -5,6 +5,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -26,8 +27,8 @@ func (e WalkErr) Error() string {
 type WalkFSHandler struct {
 	Err func(error)
 	// Callbacks for entire trees
-	PreTree  func(name string, laddr btrfs.LogicalAddr)
-	PostTree func(name string, laddr btrfs.LogicalAddr)
+	PreTree  func(name string, laddr btrfsvol.LogicalAddr)
+	PostTree func(name string, laddr btrfsvol.LogicalAddr)
 	// Callbacks for nodes or smaller
 	btrfs.TreeWalkHandler
 }
@@ -47,7 +48,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 
 	var foundTrees []struct {
 		Name string
-		Root btrfs.LogicalAddr
+		Root btrfsvol.LogicalAddr
 	}
 	origItem := cbs.Item
 	cbs.Item = func(path btrfs.TreePath, item btrfs.Item) error {
@@ -58,7 +59,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 			} else {
 				foundTrees = append(foundTrees, struct {
 					Name string
-					Root btrfs.LogicalAddr
+					Root btrfsvol.LogicalAddr
 				}{
 					Name: fmt.Sprintf("tree %v (via %v %v)",
 						item.Head.Key.ObjectID.Format(0), treeName, path),
@@ -73,7 +74,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 	}
 
 	origNode := cbs.Node
-	cbs.Node = func(path btrfs.TreePath, node *util.Ref[btrfs.LogicalAddr, btrfs.Node], err error) error {
+	cbs.Node = func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 		if err != nil {
 			handleErr(path, err)
 		}

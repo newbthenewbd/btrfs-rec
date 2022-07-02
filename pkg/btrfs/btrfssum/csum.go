@@ -1,4 +1,4 @@
-package btrfs
+package btrfssum
 
 import (
 	"encoding/binary"
@@ -26,18 +26,18 @@ func (csum CSum) Format(f fmt.State, verb rune) {
 type CSumType uint16
 
 const (
-	CSUM_TYPE_CRC32 = CSumType(iota)
-	CSUM_TYPE_XXHASH
-	CSUM_TYPE_SHA256
-	CSUM_TYPE_BLAKE2
+	TYPE_CRC32 = CSumType(iota)
+	TYPE_XXHASH
+	TYPE_SHA256
+	TYPE_BLAKE2
 )
 
 func (typ CSumType) String() string {
 	names := map[CSumType]string{
-		CSUM_TYPE_CRC32:  "crc32c",
-		CSUM_TYPE_XXHASH: "xxhash64",
-		CSUM_TYPE_SHA256: "sha256",
-		CSUM_TYPE_BLAKE2: "blake2",
+		TYPE_CRC32:  "crc32c",
+		TYPE_XXHASH: "xxhash64",
+		TYPE_SHA256: "sha256",
+		TYPE_BLAKE2: "blake2",
 	}
 	if name, ok := names[typ]; ok {
 		return name
@@ -47,10 +47,10 @@ func (typ CSumType) String() string {
 
 func (typ CSumType) Size() int {
 	sizes := map[CSumType]int{
-		CSUM_TYPE_CRC32:  4,
-		CSUM_TYPE_XXHASH: 8,
-		CSUM_TYPE_SHA256: 32,
-		CSUM_TYPE_BLAKE2: 32,
+		TYPE_CRC32:  4,
+		TYPE_XXHASH: 8,
+		TYPE_SHA256: 32,
+		TYPE_BLAKE2: 32,
 	}
 	if size, ok := sizes[typ]; ok {
 		return size
@@ -60,17 +60,17 @@ func (typ CSumType) Size() int {
 
 func (typ CSumType) Sum(data []byte) (CSum, error) {
 	switch typ {
-	case CSUM_TYPE_CRC32:
+	case TYPE_CRC32:
 		crc := crc32.Update(0, crc32.MakeTable(crc32.Castagnoli), data)
 
 		var ret CSum
 		binary.LittleEndian.PutUint32(ret[:], crc)
 		return ret, nil
-	case CSUM_TYPE_XXHASH:
+	case TYPE_XXHASH:
 		panic("not implemented")
-	case CSUM_TYPE_SHA256:
+	case TYPE_SHA256:
 		panic("not implemented")
-	case CSUM_TYPE_BLAKE2:
+	case TYPE_BLAKE2:
 		panic("not implemented")
 	default:
 		return CSum{}, fmt.Errorf("unknown checksum type: %v", typ)

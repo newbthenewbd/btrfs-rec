@@ -5,55 +5,56 @@ import (
 	"os"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Device struct {
 	*os.File
 
-	cacheSuperblocks []*util.Ref[PhysicalAddr, Superblock]
-	cacheSuperblock  *util.Ref[PhysicalAddr, Superblock]
+	cacheSuperblocks []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	cacheSuperblock  *util.Ref[btrfsvol.PhysicalAddr, Superblock]
 }
 
-var _ util.File[PhysicalAddr] = (*Device)(nil)
+var _ util.File[btrfsvol.PhysicalAddr] = (*Device)(nil)
 
-func (dev Device) Size() (PhysicalAddr, error) {
+func (dev Device) Size() (btrfsvol.PhysicalAddr, error) {
 	fi, err := dev.Stat()
 	if err != nil {
 		return 0, err
 	}
-	return PhysicalAddr(fi.Size()), nil
+	return btrfsvol.PhysicalAddr(fi.Size()), nil
 }
 
-func (dev *Device) ReadAt(dat []byte, paddr PhysicalAddr) (int, error) {
+func (dev *Device) ReadAt(dat []byte, paddr btrfsvol.PhysicalAddr) (int, error) {
 	return dev.File.ReadAt(dat, int64(paddr))
 }
 
-func (dev *Device) WriteAt(dat []byte, paddr PhysicalAddr) (int, error) {
+func (dev *Device) WriteAt(dat []byte, paddr btrfsvol.PhysicalAddr) (int, error) {
 	return dev.File.WriteAt(dat, int64(paddr))
 }
 
-var SuperblockAddrs = []PhysicalAddr{
+var SuperblockAddrs = []btrfsvol.PhysicalAddr{
 	0x00_0001_0000, // 64KiB
 	0x00_0400_0000, // 64MiB
 	0x40_0000_0000, // 256GiB
 }
 
-func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblocks() ([]*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if dev.cacheSuperblocks != nil {
 		return dev.cacheSuperblocks, nil
 	}
-	superblockSize := PhysicalAddr(binstruct.StaticSize(Superblock{}))
+	superblockSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(Superblock{}))
 
 	sz, err := dev.Size()
 	if err != nil {
 		return nil, err
 	}
 
-	var ret []*util.Ref[PhysicalAddr, Superblock]
+	var ret []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
 	for i, addr := range SuperblockAddrs {
 		if addr+superblockSize <= sz {
-			superblock := &util.Ref[PhysicalAddr, Superblock]{
+			superblock := &util.Ref[btrfsvol.PhysicalAddr, Superblock]{
 				File: dev,
 				Addr: addr,
 			}
@@ -70,7 +71,7 @@ func (dev *Device) Superblocks() ([]*util.Ref[PhysicalAddr, Superblock], error) 
 	return ret, nil
 }
 
-func (dev *Device) Superblock() (*util.Ref[PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if dev.cacheSuperblock != nil {
 		return dev.cacheSuperblock, nil
 	}

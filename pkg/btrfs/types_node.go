@@ -8,6 +8,8 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfssum"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -51,8 +53,8 @@ func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeF
 
 type Node struct {
 	// Some context from the parent filesystem
-	Size         uint32   // superblock.NodeSize
-	ChecksumType CSumType // superblock.ChecksumType
+	Size         uint32            // superblock.NodeSize
+	ChecksumType btrfssum.CSumType // superblock.ChecksumType
 
 	// The node's header (always present)
 	Head NodeHeader
@@ -66,16 +68,16 @@ type Node struct {
 }
 
 type NodeHeader struct {
-	Checksum      CSum        `bin:"off=0x0,  siz=0x20"`
-	MetadataUUID  UUID        `bin:"off=0x20, siz=0x10"`
-	Addr          LogicalAddr `bin:"off=0x30, siz=0x8"` // Logical address of this node
-	Flags         NodeFlags   `bin:"off=0x38, siz=0x7"`
-	BackrefRev    uint8       `bin:"off=0x3f, siz=0x1"`
-	ChunkTreeUUID UUID        `bin:"off=0x40, siz=0x10"`
-	Generation    Generation  `bin:"off=0x50, siz=0x8"`
-	Owner         ObjID       `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
-	NumItems      uint32      `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
-	Level         uint8       `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
+	Checksum      btrfssum.CSum        `bin:"off=0x0,  siz=0x20"`
+	MetadataUUID  UUID                 `bin:"off=0x20, siz=0x10"`
+	Addr          btrfsvol.LogicalAddr `bin:"off=0x30, siz=0x8"` // Logical address of this node
+	Flags         NodeFlags            `bin:"off=0x38, siz=0x7"`
+	BackrefRev    uint8                `bin:"off=0x3f, siz=0x1"`
+	ChunkTreeUUID UUID                 `bin:"off=0x40, siz=0x10"`
+	Generation    Generation           `bin:"off=0x50, siz=0x8"`
+	Owner         ObjID                `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
+	NumItems      uint32               `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
+	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
 	binstruct.End `bin:"off=0x65"`
 }
 
@@ -90,12 +92,12 @@ func (node Node) MaxItems() uint32 {
 	}
 }
 
-func (node Node) CalculateChecksum() (CSum, error) {
+func (node Node) CalculateChecksum() (btrfssum.CSum, error) {
 	data, err := binstruct.Marshal(node)
 	if err != nil {
-		return CSum{}, err
+		return btrfssum.CSum{}, err
 	}
-	return node.ChecksumType.Sum(data[binstruct.StaticSize(CSum{}):])
+	return node.ChecksumType.Sum(data[binstruct.StaticSize(btrfssum.CSum{}):])
 }
 
 func (node Node) ValidateChecksum() error {
@@ -181,9 +183,9 @@ func (node Node) MarshalBinary() ([]byte, error) {
 // Node: "internal" ////////////////////////////////////////////////////////////////////////////////
 
 type KeyPointer struct {
-	Key           Key         `bin:"off=0x0, siz=0x11"`
-	BlockPtr      LogicalAddr `bin:"off=0x11, siz=0x8"`
-	Generation    Generation  `bin:"off=0x19, siz=0x8"`
+	Key           Key                  `bin:"off=0x0, siz=0x11"`
+	BlockPtr      btrfsvol.LogicalAddr `bin:"off=0x11, siz=0x8"`
+	Generation    Generation           `bin:"off=0x19, siz=0x8"`
 	binstruct.End `bin:"off=0x21"`
 }
 
@@ -322,7 +324,7 @@ func (node *Node) LeafFreeSpace() uint32 {
 
 var ErrNotANode = errors.New("does not look like a node")
 
-func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB func(LogicalAddr) error) (*util.Ref[Addr, Node], error) {
+func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB func(btrfsvol.LogicalAddr) error) (*util.Ref[Addr, Node], error) {
 	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
 		return nil, err
@@ -349,7 +351,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	}
 
 	stored := nodeRef.Data.Head.Checksum
-	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(CSum{}):])
+	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(btrfssum.CSum{}):])
 	if err != nil {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
@@ -375,13 +377,13 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	return nodeRef, nil
 }
 
-func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
+func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
 
-	return ReadNode[LogicalAddr](fs, sb.Data, addr, func(claimAddr LogicalAddr) error {
+	return ReadNode[btrfsvol.LogicalAddr](fs, sb.Data, addr, func(claimAddr btrfsvol.LogicalAddr) error {
 		if claimAddr != addr {
 			return fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
 				addr, claimAddr)
@@ -390,7 +392,7 @@ func (fs *FS) ReadNode(addr LogicalAddr) (*util.Ref[LogicalAddr, Node], error) {
 	})
 }
 
-func (fs *FS) readNodeAtLevel(addr LogicalAddr, expLevel uint8) (*util.Ref[LogicalAddr, Node], error) {
+func (fs *FS) readNodeAtLevel(addr btrfsvol.LogicalAddr, expLevel uint8) (*util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	node, err := fs.ReadNode(addr)
 	if err != nil {
 		return node, err
