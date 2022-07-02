@@ -7,6 +7,10 @@ import (
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
+// key.objectid = inode of directory containing this entry
+// key.offset =
+//    for DIR_ITEM and XATTR_ITEM = crc32c(name)
+//    for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
 type DirList []Dir // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
 
 func (o *DirList) UnmarshalBinary(dat []byte) (int, error) {

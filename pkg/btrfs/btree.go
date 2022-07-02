@@ -8,7 +8,6 @@ import (
 	"math"
 	"strings"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -261,7 +260,7 @@ func (fs *FS) prev(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	path = append(TreePath(nil), path...)
 
 	// go up
-	for path[len(path)-1].ItemIdx == 0 {
+	for path[len(path)-1].ItemIdx < 1 {
 		path = path[:len(path)-1]
 		if len(path) == 0 {
 			return nil, nil, nil
@@ -269,6 +268,15 @@ func (fs *FS) prev(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	}
 	// go left
 	path[len(path)-1].ItemIdx--
+	if path[len(path)-1].NodeAddr != 0 {
+		if node.Addr != path[len(path)-2].NodeAddr {
+			node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+			if err != nil {
+				return nil, nil, err
+			}
+			path[len(path)-1].NodeAddr = node.Data.BodyInternal[path[len(path)-1].ItemIdx].BlockPtr
+		}
+	}
 	// go down
 	for path[len(path)-1].NodeAddr != 0 {
 		if node.Addr != path[len(path)-1].NodeAddr {
@@ -276,7 +284,6 @@ func (fs *FS) prev(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 			if err != nil {
 				return nil, nil, err
 			}
-			path[len(path)-1].NodeLevel = node.Data.Head.Level
 		}
 		if node.Data.Head.Level > 0 {
 			path = append(path, TreePathElem{
@@ -327,6 +334,15 @@ func (fs *FS) next(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	}
 	// go left
 	path[len(path)-1].ItemIdx++
+	if path[len(path)-1].NodeAddr != 0 {
+		if node.Addr != path[len(path)-2].NodeAddr {
+			node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+			if err != nil {
+				return nil, nil, err
+			}
+			path[len(path)-1].NodeAddr = node.Data.BodyInternal[path[len(path)-1].ItemIdx].BlockPtr
+		}
+	}
 	// go down
 	for path[len(path)-1].NodeAddr != 0 {
 		if node.Addr != path[len(path)-1].NodeAddr {
@@ -358,16 +374,15 @@ func (fs *FS) next(path TreePath, node *util.Ref[LogicalAddr, Node]) (TreePath, 
 	return path, node, nil
 }
 
-func (fs *FS) TreeSearch(treeRoot LogicalAddr, fn func(Key) int) (Key, btrfsitem.Item, error) {
+func (fs *FS) TreeSearch(treeRoot LogicalAddr, fn func(Key) int) (Item, error) {
 	path, node, err := fs.treeSearch(treeRoot, fn)
 	if err != nil {
-		return Key{}, nil, err
+		return Item{}, err
 	}
-	item := node.Data.BodyLeaf[path[len(path)-1].ItemIdx]
-	return item.Head.Key, item.Body, nil
+	return node.Data.BodyLeaf[path[len(path)-1].ItemIdx], nil
 }
 
-func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Key, btrfsitem.Item, error) {
+func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Item, error) {
 	return fs.TreeSearch(treeRoot, key.Cmp)
 }
 
@@ -376,22 +391,41 @@ func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, err
 	if err != nil {
 		return nil, err
 	}
+	middleItem := middleNode.Data.BodyLeaf[middlePath[len(middlePath)-1].ItemIdx]
 
-	var ret = []Item{middleNode.Data.BodyLeaf[middlePath[len(middlePath)-1].ItemIdx]}
-	for prevPath, prevNode := middlePath, middleNode; prevPath != nil; {
+	var ret = []Item{middleItem}
+	i := 0
+	for prevPath, prevNode := middlePath, middleNode; true; {
+		i--
 		prevPath, prevNode, err = fs.prev(prevPath, prevNode)
 		if err != nil {
 			return nil, err
 		}
-		ret = append(ret, prevNode.Data.BodyLeaf[prevPath[len(prevPath)-1].ItemIdx])
+		if prevPath == nil {
+			break
+		}
+		prevItem := prevNode.Data.BodyLeaf[prevPath[len(prevPath)-1].ItemIdx]
+		if fn(prevItem.Head.Key) != 0 {
+			break
+		}
+		ret = append(ret, prevItem)
 	}
 	util.ReverseSlice(ret)
-	for nextPath, nextNode := middlePath, middleNode; nextPath != nil; {
+	i = 0
+	for nextPath, nextNode := middlePath, middleNode; true; {
+		i++
 		nextPath, nextNode, err = fs.next(nextPath, nextNode)
 		if err != nil {
 			return nil, err
 		}
-		ret = append(ret, nextNode.Data.BodyLeaf[nextPath[len(nextPath)-1].ItemIdx])
+		if nextPath == nil {
+			break
+		}
+		nextItem := nextNode.Data.BodyLeaf[nextPath[len(nextPath)-1].ItemIdx]
+		if fn(nextItem.Head.Key) != 0 {
+			break
+		}
+		ret = append(ret, nextItem)
 	}
 	return ret, nil
 }
