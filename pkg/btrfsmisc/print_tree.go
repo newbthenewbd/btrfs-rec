@@ -136,7 +136,7 @@ func PrintTree(fs *btrfs.FS, root btrfs.LogicalAddr) error {
 					fmt.Printf("\t\textent data disk byte %v nr %v\n",
 						body.BodyReg.DiskByteNr,
 						body.BodyReg.DiskNumBytes)
-					fmt.Printf("\t\textenti data offset %v nr %v ram %v\n",
+					fmt.Printf("\t\textent data offset %v nr %v ram %v\n",
 						body.BodyReg.Offset,
 						body.BodyReg.NumBytes,
 						body.RAMBytes)
