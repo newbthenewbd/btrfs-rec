@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/datawire/dlib/derror"
+
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
@@ -169,13 +171,16 @@ func (fs *FS) initDev(sb *util.Ref[PhysicalAddr, Superblock]) error {
 }
 
 func (fs *FS) Close() error {
-	var err error
+	var errs derror.MultiError
 	for _, dev := range fs.LV.PhysicalVolumes() {
-		if _err := dev.Close(); _err != nil && err == nil {
-			err = _err
+		if err := dev.Close(); err != nil && err == nil {
+			errs = append(errs, err)
 		}
 	}
-	return err
+	if errs != nil {
+		return errs
+	}
+	return nil
 }
 
 var _ io.Closer = (*FS)(nil)

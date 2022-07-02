@@ -8,6 +8,8 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datawire/dlib/derror"
+
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -386,6 +388,10 @@ func (fs *FS) TreeLookup(treeRoot LogicalAddr, key Key) (Item, error) {
 	return fs.TreeSearch(treeRoot, key.Cmp)
 }
 
+// If some items are able to be read, but there is an error reading the full set, then it might
+// return *both* a list of items and an error.
+//
+// If no such item is found, an error that is io/fs.ErrNotExist is returned.
 func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, error) {
 	middlePath, middleNode, err := fs.treeSearch(treeRoot, fn)
 	if err != nil {
@@ -394,12 +400,12 @@ func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, err
 	middleItem := middleNode.Data.BodyLeaf[middlePath[len(middlePath)-1].ItemIdx]
 
 	var ret = []Item{middleItem}
-	i := 0
+	var errs derror.MultiError
 	for prevPath, prevNode := middlePath, middleNode; true; {
-		i--
 		prevPath, prevNode, err = fs.prev(prevPath, prevNode)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			break
 		}
 		if prevPath == nil {
 			break
@@ -411,12 +417,11 @@ func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, err
 		ret = append(ret, prevItem)
 	}
 	util.ReverseSlice(ret)
-	i = 0
 	for nextPath, nextNode := middlePath, middleNode; true; {
-		i++
 		nextPath, nextNode, err = fs.next(nextPath, nextNode)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			break
 		}
 		if nextPath == nil {
 			break
@@ -427,5 +432,8 @@ func (fs *FS) TreeSearchAll(treeRoot LogicalAddr, fn func(Key) int) ([]Item, err
 		}
 		ret = append(ret, nextItem)
 	}
-	return ret, nil
+	if errs != nil {
+		err = errs
+	}
+	return ret, err
 }
