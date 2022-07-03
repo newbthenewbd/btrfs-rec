@@ -2,6 +2,7 @@ package btrfsitem
 
 import (
 	"fmt"
+	"hash/crc32"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
@@ -9,15 +10,19 @@ import (
 
 // key.objectid = inode of directory containing this entry
 // key.offset =
-//    for DIR_ITEM and XATTR_ITEM = crc32c(name)
+//    for DIR_ITEM and XATTR_ITEM = NameHash(name)
 //    for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
-type DirList []Dir // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
+type DirEntries []DirEntry // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
 
-func (o *DirList) UnmarshalBinary(dat []byte) (int, error) {
+func NameHash(dat []byte) uint64 {
+	return uint64(^crc32.Update(1, crc32.MakeTable(crc32.Castagnoli), dat))
+}
+
+func (o *DirEntries) UnmarshalBinary(dat []byte) (int, error) {
 	*o = nil
 	n := 0
 	for n < len(dat) {
-		var ref Dir
+		var ref DirEntry
 		_n, err := binstruct.Unmarshal(dat, &ref)
 		n += _n
 		if err != nil {
@@ -28,7 +33,7 @@ func (o *DirList) UnmarshalBinary(dat []byte) (int, error) {
 	return n, nil
 }
 
-func (o DirList) MarshalBinary() ([]byte, error) {
+func (o DirEntries) MarshalBinary() ([]byte, error) {
 	var ret []byte
 	for _, ref := range o {
 		bs, err := binstruct.Marshal(ref)
@@ -40,7 +45,7 @@ func (o DirList) MarshalBinary() ([]byte, error) {
 	return ret, nil
 }
 
-type Dir struct {
+type DirEntry struct {
 	Location      internal.Key `bin:"off=0x0, siz=0x11"`
 	TransID       int64        `bin:"off=0x11, siz=8"`
 	DataLen       uint16       `bin:"off=0x19, siz=2"` // [ignored-when-writing]
@@ -51,7 +56,7 @@ type Dir struct {
 	Name          []byte `bin:"-"`
 }
 
-func (o *Dir) UnmarshalBinary(dat []byte) (int, error) {
+func (o *DirEntry) UnmarshalBinary(dat []byte) (int, error) {
 	n, err := binstruct.UnmarshalWithoutInterface(dat, o)
 	if err != nil {
 		return n, err
@@ -63,7 +68,7 @@ func (o *Dir) UnmarshalBinary(dat []byte) (int, error) {
 	return n, nil
 }
 
-func (o Dir) MarshalBinary() ([]byte, error) {
+func (o DirEntry) MarshalBinary() ([]byte, error) {
 	o.DataLen = uint16(len(o.Data))
 	o.NameLen = uint16(len(o.Name))
 	dat, err := binstruct.MarshalWithoutInterface(o)

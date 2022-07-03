@@ -64,7 +64,7 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 				}
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
-			case btrfsitem.DirList:
+			case btrfsitem.DirEntries:
 				for _, dir := range body {
 					fmt.Printf("\t\tlocation %v type %v\n",
 						FmtKey(dir.Location), dir.Type)

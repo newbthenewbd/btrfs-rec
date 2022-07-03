@@ -43,8 +43,8 @@ var keytype2gotype = map[Type]reflect.Type{
 	CHUNK_ITEM_KEY:           reflect.TypeOf(Chunk{}),
 	DEV_EXTENT_KEY:           reflect.TypeOf(DevExtent{}),
 	DEV_ITEM_KEY:             reflect.TypeOf(Dev{}),
-	DIR_INDEX_KEY:            reflect.TypeOf(DirList{}),
-	DIR_ITEM_KEY:             reflect.TypeOf(DirList{}),
+	DIR_INDEX_KEY:            reflect.TypeOf(DirEntries{}),
+	DIR_ITEM_KEY:             reflect.TypeOf(DirEntries{}),
 	EXTENT_CSUM_KEY:          reflect.TypeOf(ExtentCSum{}),
 	EXTENT_DATA_KEY:          reflect.TypeOf(FileExtent{}),
 	EXTENT_DATA_REF_KEY:      reflect.TypeOf(ExtentDataRef{}),
@@ -64,7 +64,7 @@ var keytype2gotype = map[Type]reflect.Type{
 	TREE_BLOCK_REF_KEY:       reflect.TypeOf(Empty{}),
 	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
 	UUID_SUBVOL_KEY:          reflect.TypeOf(UUIDMap{}),
-	XATTR_ITEM_KEY:           reflect.TypeOf(DirList{}),
+	XATTR_ITEM_KEY:           reflect.TypeOf(DirEntries{}),
 }
 var untypedObjID2gotype = map[internal.ObjID]reflect.Type{
 	internal.FREE_SPACE_OBJECTID: reflect.TypeOf(FreeSpaceHeader{}),
@@ -75,7 +75,7 @@ func (Chunk) isItem()           {}
 func (Dev) isItem()             {}
 func (DevExtent) isItem()       {}
 func (DevStats) isItem()        {}
-func (DirList) isItem()         {}
+func (DirEntries) isItem()      {}
 func (Empty) isItem()           {}
 func (Extent) isItem()          {}
 func (ExtentCSum) isItem()      {}
