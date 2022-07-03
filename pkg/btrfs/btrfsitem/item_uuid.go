@@ -7,6 +7,9 @@ import (
 
 // The Key for this item is a UUID, and the item is a list of
 // subvolume IDs (ObjectIDs) that that UUID maps to.
+//
+// key.objectid = first half of UUID
+// key.offset = second half of UUID
 type UUIDMap []internal.ObjID // UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
 
 func (o *UUIDMap) UnmarshalBinary(dat []byte) (int, error) {

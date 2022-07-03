@@ -37,23 +37,12 @@ func Main(imgfilenames ...string) (err error) {
 		maybeSetErr(fs.Close())
 	}()
 
-	sb, err := fs.Superblock()
-	if err != nil {
-		return err
-	}
-
-	fsTreeRoot, err := fs.TreeLookup(sb.Data.RootTree, btrfs.Key{
+	printSubvol(fs, "", "", "/", btrfs.Key{
 		ObjectID: btrfs.FS_TREE_OBJECTID,
 		ItemType: btrfsitem.ROOT_ITEM_KEY,
 		Offset:   0,
 	})
-	if err != nil {
-		return fmt.Errorf("look up FS_TREE: %w", err)
-	}
-	fsTreeRootBody := fsTreeRoot.Body.(btrfsitem.Root)
-	fsTree := fsTreeRootBody.ByteNr
 
-	printDir(fs, fsTree, "", "", "/", fsTreeRootBody.RootDirID)
 	return nil
 }
 
@@ -63,6 +52,23 @@ const (
 	tT = "├── "
 	tL = "└── "
 )
+
+func printSubvol(fs *btrfs.FS, prefix0, prefix1, name string, key btrfs.Key) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		fmt.Printf("%s%q error: could not read superblock: %v\n", prefix0, name, err)
+		return
+	}
+
+	root, err := fs.TreeLookup(sb.Data.RootTree, key)
+	if err != nil {
+		fmt.Printf("%s%q error: could not look up root %v: %v\n", prefix0, name, key, err)
+		return
+	}
+	rootBody := root.Body.(btrfsitem.Root)
+
+	printDir(fs, rootBody.ByteNr, prefix0, prefix1, name, rootBody.RootDirID)
+}
 
 func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirName string, dirInode btrfs.ObjID) {
 	var errs derror.MultiError
@@ -176,7 +182,17 @@ func printDirEntry(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1 s
 	}
 	switch entry.Type {
 	case btrfsitem.FT_DIR:
-		printDir(fs, fsTree, prefix0, prefix1, string(entry.Name), entry.Location.ObjectID)
+		switch entry.Location.ItemType {
+		case btrfsitem.INODE_ITEM_KEY:
+			printDir(fs, fsTree, prefix0, prefix1, string(entry.Name), entry.Location.ObjectID)
+		case btrfsitem.ROOT_ITEM_KEY:
+			key := entry.Location
+			key.Offset = 0
+			printSubvol(fs, prefix0, prefix1, string(entry.Name), key)
+		default:
+			fmt.Printf("%s%q\t[location=%v type=%v] error: I'm not sure how to print a %v directory\n",
+				prefix0, entry.Name, entry.Location, entry.Type, entry.Location.ItemType)
+		}
 	default:
 		fmt.Printf("%s%q\t[location=%v type=%v]\n", prefix0, entry.Name, entry.Location, entry.Type)
 	}

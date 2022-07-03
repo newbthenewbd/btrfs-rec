@@ -26,7 +26,9 @@ const (
 	ORPHAN_ITEM_KEY          = ItemType(48)
 	PERSISTENT_ITEM_KEY      = ItemType(249)
 	QGROUP_RELATION_KEY      = ItemType(246)
+	ROOT_BACKREF_KEY         = ItemType(144)
 	ROOT_ITEM_KEY            = ItemType(132)
+	ROOT_REF_KEY             = ItemType(156)
 	SHARED_BLOCK_REF_KEY     = ItemType(182)
 	SHARED_DATA_REF_KEY      = ItemType(184)
 	TREE_BLOCK_REF_KEY       = ItemType(176)
@@ -57,7 +59,9 @@ func (t ItemType) String() string {
 		ORPHAN_ITEM_KEY:          "ORPHAN_ITEM",
 		PERSISTENT_ITEM_KEY:      "PERSISTENT_ITEM",
 		QGROUP_RELATION_KEY:      "QGROUP_RELATION",
+		ROOT_BACKREF_KEY:         "ROOT_BACKREF",
 		ROOT_ITEM_KEY:            "ROOT_ITEM",
+		ROOT_REF_KEY:             "ROOT_REF",
 		SHARED_BLOCK_REF_KEY:     "SHARED_BLOCK_REF",
 		SHARED_DATA_REF_KEY:      "SHARED_DATA_REF",
 		TREE_BLOCK_REF_KEY:       "TREE_BLOCK_REF",

@@ -97,10 +97,18 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 					fmt.Printf("\t\tstime %v\n", fmtTime(body.STime))
 					fmt.Printf("\t\trtime %v\n", fmtTime(body.RTime))
 				}
-			//case btrfsitem.ROOT_REF_KEY:
-			//	// TODO
-			//case btrfsitem.ROOT_BACKREF_KEY:
-			//	// TODO
+			case btrfsitem.RootRef:
+				var tag string
+				switch item.Head.Key.ItemType {
+				case btrfsitem.ROOT_REF_KEY:
+					tag = "ref"
+				case btrfsitem.ROOT_BACKREF_KEY:
+					tag = "backref"
+				default:
+					tag = fmt.Sprintf("(error: unhandled RootRef item type: %v)", item.Head.Key.ItemType)
+				}
+				fmt.Printf("\t\troot %v key dirid %v sequence %v name %s\n",
+					tag, body.DirID, body.Sequence, body.Name)
 			case btrfsitem.Extent:
 				fmt.Printf("\t\trefs %v gen %v flags %v\n",
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
@@ -340,7 +348,7 @@ func FmtKey(key btrfs.Key) string {
 	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("not implemented")
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
-		fmt.Fprintf(&out, " %v)", btrfsvol.PhysicalAddr(key.Offset))
+		fmt.Fprintf(&out, " %#08x)", key.Offset)
 	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
 	default:

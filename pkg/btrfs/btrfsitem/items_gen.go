@@ -28,7 +28,9 @@ const (
 	ORPHAN_ITEM_KEY          = internal.ORPHAN_ITEM_KEY
 	PERSISTENT_ITEM_KEY      = internal.PERSISTENT_ITEM_KEY
 	QGROUP_RELATION_KEY      = internal.QGROUP_RELATION_KEY
+	ROOT_BACKREF_KEY         = internal.ROOT_BACKREF_KEY
 	ROOT_ITEM_KEY            = internal.ROOT_ITEM_KEY
+	ROOT_REF_KEY             = internal.ROOT_REF_KEY
 	SHARED_BLOCK_REF_KEY     = internal.SHARED_BLOCK_REF_KEY
 	SHARED_DATA_REF_KEY      = internal.SHARED_DATA_REF_KEY
 	TREE_BLOCK_REF_KEY       = internal.TREE_BLOCK_REF_KEY
@@ -58,7 +60,9 @@ var keytype2gotype = map[Type]reflect.Type{
 	ORPHAN_ITEM_KEY:          reflect.TypeOf(Empty{}),
 	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
 	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
+	ROOT_BACKREF_KEY:         reflect.TypeOf(RootRef{}),
 	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
+	ROOT_REF_KEY:             reflect.TypeOf(RootRef{}),
 	SHARED_BLOCK_REF_KEY:     reflect.TypeOf(Empty{}),
 	SHARED_DATA_REF_KEY:      reflect.TypeOf(SharedDataRef{}),
 	TREE_BLOCK_REF_KEY:       reflect.TypeOf(Empty{}),
@@ -88,5 +92,6 @@ func (Inode) isItem()           {}
 func (InodeRefList) isItem()    {}
 func (Metadata) isItem()        {}
 func (Root) isItem()            {}
+func (RootRef) isItem()         {}
 func (SharedDataRef) isItem()   {}
 func (UUIDMap) isItem()         {}
