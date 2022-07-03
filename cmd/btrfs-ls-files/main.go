@@ -121,13 +121,18 @@ func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirNa
 			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
 		}
 	}
-	fmt.Printf("%s%q\t[ino=%d\t",
+	fmt.Printf("%s%q\t[ino=%d",
 		prefix0, dirName, dirInode)
 	if dirInodeDatOK {
-		fmt.Printf("uid=%d\tgid=%d\tsize=%d]\n",
+		fmt.Printf("\tuid=%d\tgid=%d\tsize=%d]\n",
 			dirInodeDat.UID, dirInodeDat.GID, dirInodeDat.Size)
 	} else {
-		fmt.Printf("error=read dir: no inode data\n")
+		err := fmt.Errorf("read dir: no inode data")
+		if len(items) == 0 && len(errs) == 1 {
+			err = errs[0]
+			errs = nil
+		}
+		fmt.Printf("]\terror: %v\n", err)
 	}
 	for i, index := range util.SortedMapKeys(membersByIndex) {
 		entry := membersByIndex[index]
@@ -159,7 +164,7 @@ func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirNa
 		if i == len(errs)-1 {
 			p0, p1 = tL, tS
 		}
-		fmt.Printf("%s%s%s\n", prefix1+p0, prefix1+p1, strings.ReplaceAll(err.Error(), "\n", prefix1+tS+"\n"))
+		fmt.Printf("%serror: %s\n", prefix1+p0, strings.ReplaceAll(err.Error(), "\n", prefix1+p1+"       \n"))
 	}
 }
 

@@ -325,7 +325,7 @@ func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (T
 	}
 	for path[len(path)-1].ItemIdx+1 >= int(node.Data.Head.NumItems) {
 		path = path[:len(path)-1]
-		if len(path) == 0 {
+		if len(path) == 1 {
 			return nil, nil, nil
 		}
 		if node.Addr != path[len(path)-2].NodeAddr {
