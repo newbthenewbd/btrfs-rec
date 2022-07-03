@@ -116,7 +116,7 @@ func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirNa
 				}
 				membersByIndex[index] = entry
 			}
-		case btrfsitem.XATTR_ITEM_KEY:
+		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
 		}
@@ -142,27 +142,37 @@ func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirNa
 			errs = append(errs, fmt.Errorf("read dir: no DIR_ITEM crc32c(%q)=%#x for DIR_INDEX index=%d",
 				entry.Name, namehash, index))
 		}
-		prefix := tT
+		p0, p1 := tT, tl
 		if (i == len(membersByIndex)-1) && (len(membersByNameHash) == 0) && (len(errs) == 0) {
-			prefix = tL
+			p0, p1 = tL, tS
 		}
-		printItem(fs, fsTree, prefix1+prefix, prefix1+tS, string(entry.Name), entry.Location)
+		printDirEntry(fs, fsTree, prefix1+p0, prefix1+p1, entry)
 	}
 	for _, namehash := range util.SortedMapKeys(membersByNameHash) {
 		entry := membersByNameHash[namehash]
 		errs = append(errs, fmt.Errorf("read dir: no DIR_INDEX for DIR_ITEM crc32c(%q)=%#x",
 			entry.Name, namehash))
-		printItem(fs, fsTree, prefix1+tT, prefix1+tS, string(entry.Name), entry.Location)
+		printDirEntry(fs, fsTree, prefix1+tT, prefix1+tl, entry)
 	}
 	for i, err := range errs {
-		prefix := tT
+		p0, p1 := tT, tl
 		if i == len(errs)-1 {
-			prefix = tL
+			p0, p1 = tL, tS
 		}
-		fmt.Printf("%s%s%s\n", prefix1, prefix, strings.ReplaceAll(err.Error(), "\n", prefix1+tS+"\n"))
+		fmt.Printf("%s%s%s\n", prefix1+p0, prefix1+p1, strings.ReplaceAll(err.Error(), "\n", prefix1+tS+"\n"))
 	}
 }
 
-func printItem(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, name string, location btrfs.Key) {
-	fmt.Printf("%s%q\t[location=%v]\n", prefix0, name, location)
+func printDirEntry(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1 string, entry btrfsitem.DirEntry) {
+	if len(entry.Data) != 0 {
+		fmt.Printf("%s%q: error: TODO: I don't know how to handle dirent.data\n",
+			prefix0, entry.Name)
+		return
+	}
+	switch entry.Type {
+	case btrfsitem.FT_DIR:
+		printDir(fs, fsTree, prefix0, prefix1, string(entry.Name), entry.Location.ObjectID)
+	default:
+		fmt.Printf("%s%q\t[location=%v type=%v]\n", prefix0, entry.Name, entry.Location, entry.Type)
+	}
 }

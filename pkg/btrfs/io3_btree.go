@@ -237,15 +237,16 @@ func (fs *FS) treeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (TreeP
 			// is returned.
 			//
 			// Implement this search as a binary search.
-			items := node.Data.BodyLeaf
-			for len(items) > 0 {
-				midpoint := len(items) / 2
-				direction := fn(items[midpoint].Head.Key)
+			beg := 0
+			end := len(node.Data.BodyLeaf) - 1
+			for beg < end {
+				midpoint := (beg + end) / 2
+				direction := fn(node.Data.BodyLeaf[midpoint].Head.Key)
 				switch {
 				case direction < 0:
-					items = items[:midpoint]
+					end = midpoint
 				case direction > 0:
-					items = items[midpoint+1:]
+					beg = midpoint + 1
 				case direction == 0:
 					path = append(path, TreePathElem{
 						ItemIdx: midpoint,
