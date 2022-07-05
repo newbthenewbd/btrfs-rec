@@ -19,7 +19,7 @@ type dirState struct {
 }
 
 type fileState struct {
-	InodeItem btrfsitem.Inode
+	File *file
 }
 
 type subvolumeFUSE struct {
@@ -28,8 +28,6 @@ type subvolumeFUSE struct {
 	dirHandles  util.SyncMap[fuseops.HandleID, *dirState]
 	fileHandles util.SyncMap[fuseops.HandleID, *fileState]
 }
-
-func (sv *subvolumeFUSE) init() {}
 
 func (sv *subvolumeFUSE) newHandle() fuseops.HandleID {
 	return fuseops.HandleID(atomic.AddUint64(&sv.lastHandle, 1))
@@ -93,14 +91,14 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 	if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
 		return fmt.Errorf("child %q is not an inode: %w", op.Name, syscall.ENOSYS)
 	}
-	inodeItem, err := sv.loadInode(entry.Location.ObjectID)
+	bareInode, err := sv.loadBareInode(entry.Location.ObjectID)
 	if err != nil {
 		return err
 	}
 	op.Entry = fuseops.ChildInodeEntry{
 		Child:      fuseops.InodeID(entry.Location.ObjectID),
-		Generation: fuseops.GenerationNumber(inodeItem.Sequence),
-		Attributes: inodeItemToFUSE(inodeItem),
+		Generation: fuseops.GenerationNumber(bareInode.InodeItem.Sequence),
+		Attributes: inodeItemToFUSE(*bareInode.InodeItem),
 	}
 	return nil
 }
@@ -114,12 +112,12 @@ func (sv *Subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeA
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	inodeItem, err := sv.loadInode(btrfs.ObjID(op.Inode))
+	bareInode, err := sv.loadBareInode(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
 
-	op.Attributes = inodeItemToFUSE(inodeItem)
+	op.Attributes = inodeItemToFUSE(*bareInode.InodeItem)
 	return nil
 }
 
@@ -186,13 +184,13 @@ func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirH
 }
 
 func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
-	inodeItem, err := sv.loadInode(btrfs.ObjID(op.Inode))
+	file, err := sv.loadFile(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
 	handle := sv.newHandle()
 	sv.fileHandles.Store(handle, &fileState{
-		InodeItem: inodeItem,
+		File: file,
 	})
 	op.Handle = handle
 	op.KeepPageCache = true

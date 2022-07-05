@@ -162,10 +162,10 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 						body.BodyPrealloc.Offset,
 						body.BodyPrealloc.NumBytes)
 				case btrfsitem.FILE_EXTENT_REG:
-					fmt.Printf("\t\textent data disk byte %v nr %v\n",
+					fmt.Printf("\t\textent data disk byte %d nr %d\n",
 						body.BodyReg.DiskByteNr,
 						body.BodyReg.DiskNumBytes)
-					fmt.Printf("\t\textent data offset %v nr %v ram %v\n",
+					fmt.Printf("\t\textent data offset %d nr %d ram %v\n",
 						body.BodyReg.Offset,
 						body.BodyReg.NumBytes,
 						body.RAMBytes)

@@ -4,9 +4,12 @@ import (
 	"fmt"
 
 	"lukeshu.com/btrfs-tools/pkg/binstruct"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/internal"
 )
 
+// key.objectid = inode
+// key.offset = offset within file
 type FileExtent struct { // EXTENT_DATA=108
 	Generation internal.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
 	RAMBytes   int64               `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
@@ -23,23 +26,25 @@ type FileExtent struct { // EXTENT_DATA=108
 	// only one of these, depending on .Type
 	BodyInline []byte `bin:"-"`
 	BodyReg    struct {
-		// Position within the device
-		DiskByteNr   int64 `bin:"off=0x0, siz=0x8"`
-		DiskNumBytes int64 `bin:"off=0x8, siz=0x8"`
+		// Position of extent within the device
+		DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
+		DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
 
-		// Position within the file
-		Offset        int64 `bin:"off=0x10, siz=0x8"`
-		NumBytes      int64 `bin:"off=0x18, siz=0x8"`
+		// Position of data within the extent
+		Offset   btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
+		NumBytes btrfsvol.AddrDelta `bin:"off=0x18, siz=0x8"`
+
 		binstruct.End `bin:"off=0x20"`
 	} `bin:"-"`
 	BodyPrealloc struct {
-		// Position within the device
-		DiskByteNr   int64 `bin:"off=0x0, siz=0x8"`
-		DiskNumBytes int64 `bin:"off=0x8, siz=0x8"`
+		// Position of extent within the device
+		DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
+		DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
 
-		// Position within the file
-		Offset        int64 `bin:"off=0x10, siz=0x8"`
-		NumBytes      int64 `bin:"off=0x18, siz=0x8"`
+		// Position of data within the extent
+		Offset   btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
+		NumBytes btrfsvol.AddrDelta `bin:"off=0x18, siz=0x8"`
+
 		binstruct.End `bin:"off=0x20"`
 	} `bin:"-"`
 }
