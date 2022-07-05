@@ -92,6 +92,7 @@ const (
 	FT_SOCK     = FileType(6)
 	FT_SYMLINK  = FileType(7)
 	FT_XATTR    = FileType(8)
+
 	FT_MAX      = FileType(9)
 )
 

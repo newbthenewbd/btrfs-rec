@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/datawire/dlib v1.3.0
 	github.com/davecgh/go-spew v1.1.1
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jacobsa/fuse v0.0.0-20220702091825-13117049f383
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.7.1

@@ -3,17 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/datawire/dlib/dcontext"
 	"github.com/datawire/dlib/dlog"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/jacobsa/fuse"
-	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
+	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
 type Subvolume struct {
@@ -22,11 +24,14 @@ type Subvolume struct {
 	Mountpoint string
 	TreeID     btrfs.ObjID
 
-	fuseutil.NotImplementedFileSystem
-
 	rootOnce sync.Once
 	rootVal  btrfsitem.Root
 	rootErr  error
+
+	inodeCache *lru.ARCCache
+	dirCache   *lru.ARCCache
+
+	subvolumeFUSE
 }
 
 func (sv *Subvolume) Run(ctx context.Context) error {
@@ -49,7 +54,7 @@ func (sv *Subvolume) Run(ctx context.Context) error {
 	return mount.Join(dcontext.HardContext(ctx))
 }
 
-func (sv *Subvolume) initRoot() {
+func (sv *Subvolume) init() {
 	sv.rootOnce.Do(func() {
 		sb, err := sv.FS.Superblock()
 		if err != nil {
@@ -74,96 +79,157 @@ func (sv *Subvolume) initRoot() {
 		}
 
 		sv.rootVal = rootBody
+
+		sv.inodeCache, _ = lru.NewARC(128)
+		sv.dirCache, _ = lru.NewARC(128)
+
+		sv.subvolumeFUSE.init()
 	})
 }
 
 func (sv *Subvolume) getRootInode() (btrfs.ObjID, error) {
-	sv.initRoot()
+	sv.init()
 	return sv.rootVal.RootDirID, sv.rootErr
 }
 
 func (sv *Subvolume) getFSTree() (btrfsvol.LogicalAddr, error) {
-	sv.initRoot()
+	sv.init()
 	return sv.rootVal.ByteNr, sv.rootErr
 }
 
-func (sv *Subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
-	// See linux.git/fs/btrfs/super.c:btrfs_statfs()
-	sb, err := sv.FS.Superblock()
-	if err != nil {
-		return err
-	}
-
-	op.IoSize = sb.Data.SectorSize
-	op.BlockSize = sb.Data.SectorSize
-	op.Blocks = sb.Data.TotalBytes / uint64(sb.Data.SectorSize) // TODO: adjust for RAID type
-	//op.BlocksFree = TODO
-
-	// btrfs doesn't have a fixed number of inodes
-	op.Inodes = 0
-	op.InodesFree = 0
-
-	// jacobsa/fuse doesn't expose namelen, instead hard-coding it
-	// to 255.  Which is fine by us, because that's what it is for
-	// btrfs.
-
-	return nil
-}
-
-// func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) error               {}
-
-func (sv *Subvolume) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAttributesOp) error {
-	if op.Inode == fuseops.RootInodeID {
-		inode, err := sv.getRootInode()
-		if err != nil {
-			return err
-		}
-		op.Inode = fuseops.InodeID(inode)
-	}
-
+func (sv *Subvolume) loadInode(inode btrfs.ObjID) (btrfsitem.Inode, error) {
 	tree, err := sv.getFSTree()
 	if err != nil {
-		return err
+		return btrfsitem.Inode{}, nil
 	}
-
+	if ret, ok := sv.inodeCache.Get(inode); ok {
+		return ret.(btrfsitem.Inode), nil
+	}
 	item, err := sv.FS.TreeLookup(tree, btrfs.Key{
-		ObjectID: btrfs.ObjID(op.Inode),
+		ObjectID: inode,
 		ItemType: btrfsitem.INODE_ITEM_KEY,
 		Offset:   0,
 	})
 	if err != nil {
-		return err
+		return btrfsitem.Inode{}, err
 	}
 
 	itemBody, ok := item.Body.(btrfsitem.Inode)
 	if !ok {
-		return fmt.Errorf("malformed inode")
+		return btrfsitem.Inode{}, fmt.Errorf("malformed inode")
 	}
 
-	op.Attributes = fuseops.InodeAttributes{
-		Size:  uint64(itemBody.Size),
-		Nlink: uint32(itemBody.NLink),
-		Mode:  uint32(itemBody.Mode),
-		//RDev: itemBody.Rdev, // jacobsa/fuse doesn't expose rdev
-		Atime: itemBody.ATime.ToStd(),
-		Mtime: itemBody.MTime.ToStd(),
-		Ctime: itemBody.CTime.ToStd(),
-		//Crtime: itemBody.OTime,
-		Uid: uint32(itemBody.UID),
-		Gid: uint32(itemBody.GID),
-	}
-	return nil
+	sv.inodeCache.Add(inode, itemBody)
+	return itemBody, nil
 }
 
-// func (sv *Subvolume) ForgetInode(_ context.Context, op *fuseops.ForgetInodeOp) error               {}
-// func (sv *Subvolume) BatchForget(_ context.Context, op *fuseops.BatchForgetOp) error               {}
-// func (sv *Subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error                       {}
-// func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error                       {}
-// func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error     {}
-// func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error                     {}
-// func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error                     {}
-// func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error   {}
-// func (sv *Subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error               {}
-// func (sv *Subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error                     {}
-// func (sv *Subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error                   {}
-// func (sv *Subvolume) Destroy()                                                                {}
+type dir struct {
+	Inode           btrfs.ObjID
+	InodeDat        *btrfsitem.Inode
+	ChildrenByName  map[string]btrfsitem.DirEntry
+	ChildrenByIndex map[uint64]btrfsitem.DirEntry
+	Errs            []error
+}
+
+func (sv *Subvolume) loadDir(inode btrfs.ObjID) (*dir, error) {
+	tree, err := sv.getFSTree()
+	if err != nil {
+		return nil, err
+	}
+	if ret, ok := sv.dirCache.Get(inode); ok {
+		return ret.(*dir), nil
+	}
+	ret := &dir{
+		Inode:           inode,
+		ChildrenByName:  make(map[string]btrfsitem.DirEntry),
+		ChildrenByIndex: make(map[uint64]btrfsitem.DirEntry),
+	}
+	items, err := sv.FS.TreeSearchAll(tree, func(key btrfs.Key) int {
+		return util.CmpUint(inode, key.ObjectID)
+	})
+	if err != nil {
+		if len(items) == 0 {
+			return nil, err
+		}
+		ret.Errs = append(ret.Errs, err)
+	}
+	for _, item := range items {
+		switch item.Head.Key.ItemType {
+		case btrfsitem.INODE_ITEM_KEY:
+			itemBody := item.Body.(btrfsitem.Inode)
+			if ret.InodeDat != nil {
+				if !reflect.DeepEqual(itemBody, *ret.InodeDat) {
+					ret.Errs = append(ret.Errs, fmt.Errorf("multiple inodes"))
+				}
+				continue
+			}
+			ret.InodeDat = &itemBody
+		case btrfsitem.INODE_REF_KEY:
+			// TODO
+		case btrfsitem.DIR_ITEM_KEY:
+			body := item.Body.(btrfsitem.DirEntries)
+			if len(body) != 1 {
+				ret.Errs = append(ret.Errs, fmt.Errorf("multiple direntries in single DIR_ITEM?"))
+				continue
+			}
+			for _, entry := range body {
+				namehash := btrfsitem.NameHash(entry.Name)
+				if namehash != item.Head.Key.Offset {
+					ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
+						item.Head.Key.Offset, entry.Name, namehash))
+					continue
+				}
+				if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
+					}
+					continue
+				}
+				ret.ChildrenByName[string(entry.Name)] = entry
+			}
+		case btrfsitem.DIR_INDEX_KEY:
+			index := item.Head.Key.Offset
+			body := item.Body.(btrfsitem.DirEntries)
+			if len(body) != 1 {
+				ret.Errs = append(ret.Errs, fmt.Errorf("multiple direntries in single DIR_INDEX?"))
+				continue
+			}
+			for _, entry := range body {
+				if other, exists := ret.ChildrenByIndex[index]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+					}
+					continue
+				}
+				ret.ChildrenByIndex[index] = entry
+			}
+		//case btrfsitem.XATTR_ITEM_KEY:
+		default:
+			ret.Errs = append(ret.Errs, fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
+		}
+	}
+	entriesWithIndexes := make(map[string]struct{})
+	nextIndex := uint64(2)
+	for index, entry := range ret.ChildrenByIndex {
+		if index+1 > nextIndex {
+			nextIndex = index + 1
+		}
+		entriesWithIndexes[string(entry.Name)] = struct{}{}
+		if other, exists := ret.ChildrenByName[string(entry.Name)]; !exists {
+			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-name direntry for %q", entry.Name))
+			ret.ChildrenByName[string(entry.Name)] = entry
+		} else if !reflect.DeepEqual(entry, other) {
+			ret.Errs = append(ret.Errs, fmt.Errorf("direntry index %v and direntry name %q disagree", index, entry.Name))
+			ret.ChildrenByName[string(entry.Name)] = entry
+		}
+	}
+	for _, name := range util.SortedMapKeys(ret.ChildrenByName) {
+		if _, exists := entriesWithIndexes[name]; !exists {
+			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-index direntry for %q", name))
+			ret.ChildrenByIndex[nextIndex] = ret.ChildrenByName[name]
+			nextIndex++
+		}
+	}
+	sv.dirCache.Add(inode, ret)
+	return ret, nil
+}
