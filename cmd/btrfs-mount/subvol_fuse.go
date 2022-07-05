@@ -18,13 +18,22 @@ type dirState struct {
 	Dir *dir
 }
 
+type fileState struct {
+	InodeItem btrfsitem.Inode
+}
+
 type subvolumeFUSE struct {
 	fuseutil.NotImplementedFileSystem
-	lastHandle uint64
-	dirHandles util.SyncMap[uint64, *dirState]
+	lastHandle  uint64
+	dirHandles  util.SyncMap[fuseops.HandleID, *dirState]
+	fileHandles util.SyncMap[fuseops.HandleID, *fileState]
 }
 
 func (sv *subvolumeFUSE) init() {}
+
+func (sv *subvolumeFUSE) newHandle() fuseops.HandleID {
+	return fuseops.HandleID(atomic.AddUint64(&sv.lastHandle, 1))
+}
 
 func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 	return fuseops.InodeAttributes{
@@ -127,16 +136,15 @@ func (sv *Subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	if err != nil {
 		return err
 	}
-	handle := atomic.AddUint64(&sv.lastHandle, 1)
+	handle := sv.newHandle()
 	sv.dirHandles.Store(handle, &dirState{
 		Dir: dir,
 	})
-	op.Handle = fuseops.HandleID(handle)
+	op.Handle = handle
 	return nil
 }
-
 func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
-	state, ok := sv.dirHandles.Load(uint64(op.Handle))
+	state, ok := sv.dirHandles.Load(op.Handle)
 	if !ok {
 		return syscall.EBADF
 	}
@@ -169,19 +177,40 @@ func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	}
 	return nil
 }
-
 func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error {
-	_, ok := sv.dirHandles.LoadAndDelete(uint64(op.Handle))
+	_, ok := sv.dirHandles.LoadAndDelete(op.Handle)
 	if !ok {
 		return syscall.EBADF
 	}
 	return nil
 }
 
-func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error { return syscall.ENOSYS }
-func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error { return syscall.ENOSYS }
-func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
+func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
+	inodeItem, err := sv.loadInode(btrfs.ObjID(op.Inode))
+	if err != nil {
+		return err
+	}
+	handle := sv.newHandle()
+	sv.fileHandles.Store(handle, &fileState{
+		InodeItem: inodeItem,
+	})
+	op.Handle = handle
+	op.KeepPageCache = true
+	return nil
+}
+func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
+	_, ok := sv.fileHandles.Load(op.Handle)
+	if !ok {
+		return syscall.EBADF
+	}
 	return syscall.ENOSYS
+}
+func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
+	_, ok := sv.fileHandles.LoadAndDelete(op.Handle)
+	if !ok {
+		return syscall.EBADF
+	}
+	return nil
 }
 
 func (sv *Subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
