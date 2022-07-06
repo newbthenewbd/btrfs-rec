@@ -71,10 +71,12 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 	grp.Go("main", func(ctx context.Context) error {
 		defer atomic.StoreUint32(&mounted, 0)
 		rootSubvol := &Subvolume{
-			FS:         fs,
+			Subvolume: btrfs.Subvolume{
+				FS:     fs,
+				TreeID: btrfs.FS_TREE_OBJECTID,
+			},
 			DeviceName: tryAbs(imgfilenames[0]),
 			Mountpoint: mountpoint,
-			TreeID:     btrfs.FS_TREE_OBJECTID,
 		}
 		return rootSubvol.Run(ctx)
 	})

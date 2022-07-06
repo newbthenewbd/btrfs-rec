@@ -1,89 +1,59 @@
-package main
+package btrfs
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"reflect"
 	"sort"
 	"sync"
 
-	"github.com/datawire/dlib/dcontext"
 	"github.com/datawire/dlib/derror"
-	"github.com/datawire/dlib/dlog"
-	"github.com/jacobsa/fuse"
-	"github.com/jacobsa/fuse/fuseutil"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
-type bareInode struct {
-	Inode     btrfs.ObjID
+type BareInode struct {
+	Inode     ObjID
 	InodeItem *btrfsitem.Inode
 	Errs      derror.MultiError
 }
 
-type fullInode struct {
-	bareInode
-	OtherItems []btrfs.Item
+type FullInode struct {
+	BareInode
+	OtherItems []Item
 }
 
-type dir struct {
-	fullInode
+type Dir struct {
+	FullInode
 	ChildrenByName  map[string]btrfsitem.DirEntry
 	ChildrenByIndex map[uint64]btrfsitem.DirEntry
 }
 
-type fileExtent struct {
+type FileExtent struct {
 	OffsetWithinFile int64
 	btrfsitem.FileExtent
 }
 
-type file struct {
-	fullInode
-	Extents []fileExtent
-	FS      *btrfs.FS
+type File struct {
+	FullInode
+	Extents []FileExtent
+	FS      *FS
 }
 
 type Subvolume struct {
-	FS         *btrfs.FS
-	DeviceName string
-	Mountpoint string
-	TreeID     btrfs.ObjID
+	FS     *FS
+	TreeID ObjID
 
 	rootOnce sync.Once
 	rootVal  btrfsitem.Root
 	rootErr  error
 
-	bareInodeCache LRUCache[btrfs.ObjID, *bareInode]
-	fullInodeCache LRUCache[btrfs.ObjID, *fullInode]
-	dirCache       LRUCache[btrfs.ObjID, *dir]
-	fileCache      LRUCache[btrfs.ObjID, *file]
-
-	subvolumeFUSE
-}
-
-func (sv *Subvolume) Run(ctx context.Context) error {
-	mount, err := fuse.Mount(
-		sv.Mountpoint,
-		fuseutil.NewFileSystemServer(sv),
-		&fuse.MountConfig{
-			OpContext:   ctx,
-			ErrorLogger: dlog.StdLogger(ctx, dlog.LogLevelError),
-			DebugLogger: dlog.StdLogger(ctx, dlog.LogLevelDebug),
-
-			FSName:  sv.DeviceName,
-			Subtype: "btrfs",
-
-			ReadOnly: true,
-		})
-	if err != nil {
-		return err
-	}
-	return mount.Join(dcontext.HardContext(ctx))
+	bareInodeCache util.LRUCache[ObjID, *BareInode]
+	fullInodeCache util.LRUCache[ObjID, *FullInode]
+	dirCache       util.LRUCache[ObjID, *Dir]
+	fileCache      util.LRUCache[ObjID, *File]
 }
 
 func (sv *Subvolume) init() {
@@ -94,7 +64,7 @@ func (sv *Subvolume) init() {
 			return
 		}
 
-		root, err := sv.FS.TreeLookup(sb.Data.RootTree, btrfs.Key{
+		root, err := sv.FS.TreeLookup(sb.Data.RootTree, Key{
 			ObjectID: sv.TreeID,
 			ItemType: btrfsitem.ROOT_ITEM_KEY,
 			Offset:   0,
@@ -114,27 +84,27 @@ func (sv *Subvolume) init() {
 	})
 }
 
-func (sv *Subvolume) getRootInode() (btrfs.ObjID, error) {
+func (sv *Subvolume) GetRootInode() (ObjID, error) {
 	sv.init()
 	return sv.rootVal.RootDirID, sv.rootErr
 }
 
-func (sv *Subvolume) getFSTree() (btrfsvol.LogicalAddr, error) {
+func (sv *Subvolume) GetFSTree() (btrfsvol.LogicalAddr, error) {
 	sv.init()
 	return sv.rootVal.ByteNr, sv.rootErr
 }
 
-func (sv *Subvolume) loadBareInode(inode btrfs.ObjID) (*bareInode, error) {
-	val := sv.bareInodeCache.GetOrElse(inode, func() (val *bareInode) {
-		val = &bareInode{
+func (sv *Subvolume) LoadBareInode(inode ObjID) (*BareInode, error) {
+	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
+		val = &BareInode{
 			Inode: inode,
 		}
-		tree, err := sv.getFSTree()
+		tree, err := sv.GetFSTree()
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			return
 		}
-		item, err := sv.FS.TreeLookup(tree, btrfs.Key{
+		item, err := sv.FS.TreeLookup(tree, Key{
 			ObjectID: inode,
 			ItemType: btrfsitem.INODE_ITEM_KEY,
 			Offset:   0,
@@ -159,19 +129,19 @@ func (sv *Subvolume) loadBareInode(inode btrfs.ObjID) (*bareInode, error) {
 	return val, nil
 }
 
-func (sv *Subvolume) loadFullInode(inode btrfs.ObjID) (*fullInode, error) {
-	val := sv.fullInodeCache.GetOrElse(inode, func() (val *fullInode) {
-		val = &fullInode{
-			bareInode: bareInode{
+func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
+	val := sv.fullInodeCache.GetOrElse(inode, func() (val *FullInode) {
+		val = &FullInode{
+			BareInode: BareInode{
 				Inode: inode,
 			},
 		}
-		tree, err := sv.getFSTree()
+		tree, err := sv.GetFSTree()
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			return
 		}
-		items, err := sv.FS.TreeSearchAll(tree, func(key btrfs.Key) int {
+		items, err := sv.FS.TreeSearchAll(tree, func(key Key) int {
 			return util.CmpUint(inode, key.ObjectID)
 		})
 		if err != nil {
@@ -203,15 +173,15 @@ func (sv *Subvolume) loadFullInode(inode btrfs.ObjID) (*fullInode, error) {
 	return val, nil
 }
 
-func (sv *Subvolume) loadDir(inode btrfs.ObjID) (*dir, error) {
-	val := sv.dirCache.GetOrElse(inode, func() (val *dir) {
-		val = new(dir)
-		fullInode, err := sv.loadFullInode(inode)
+func (sv *Subvolume) LoadDir(inode ObjID) (*Dir, error) {
+	val := sv.dirCache.GetOrElse(inode, func() (val *Dir) {
+		val = new(Dir)
+		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			return
 		}
-		val.fullInode = *fullInode
+		val.FullInode = *fullInode
 		val.populate()
 		return
 	})
@@ -221,7 +191,7 @@ func (sv *Subvolume) loadDir(inode btrfs.ObjID) (*dir, error) {
 	return val, nil
 }
 
-func (ret *dir) populate() {
+func (ret *Dir) populate() {
 	ret.ChildrenByName = make(map[string]btrfsitem.DirEntry)
 	ret.ChildrenByIndex = make(map[uint64]btrfsitem.DirEntry)
 	for _, item := range ret.OtherItems {
@@ -295,15 +265,15 @@ func (ret *dir) populate() {
 	return
 }
 
-func (sv *Subvolume) loadFile(inode btrfs.ObjID) (*file, error) {
-	val := sv.fileCache.GetOrElse(inode, func() (val *file) {
-		val = new(file)
-		fullInode, err := sv.loadFullInode(inode)
+func (sv *Subvolume) LoadFile(inode ObjID) (*File, error) {
+	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
+		val = new(File)
+		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			return
 		}
-		val.fullInode = *fullInode
+		val.FullInode = *fullInode
 		val.FS = sv.FS
 		val.populate()
 		return
@@ -314,13 +284,13 @@ func (sv *Subvolume) loadFile(inode btrfs.ObjID) (*file, error) {
 	return val, nil
 }
 
-func (ret *file) populate() {
+func (ret *File) populate() {
 	for _, item := range ret.OtherItems {
 		switch item.Head.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
 			// TODO
 		case btrfsitem.EXTENT_DATA_KEY:
-			ret.Extents = append(ret.Extents, fileExtent{
+			ret.Extents = append(ret.Extents, FileExtent{
 				OffsetWithinFile: int64(item.Head.Key.Offset),
 				FileExtent:       item.Body.(btrfsitem.FileExtent),
 			})
@@ -364,7 +334,7 @@ func (ret *file) populate() {
 	}
 }
 
-func (file *file) ReadAt(dat []byte, off int64) (int, error) {
+func (file *File) ReadAt(dat []byte, off int64) (int, error) {
 	// These stateles maybe-short-reads each do an O(n) extent
 	// lookup, so reading a file is O(n^2), but we expect n to be
 	// small, so whatev.  Turn file.Extents it in to an rbtree if
@@ -380,7 +350,7 @@ func (file *file) ReadAt(dat []byte, off int64) (int, error) {
 	return done, nil
 }
 
-func (file *file) maybeShortReadAt(dat []byte, off int64) (int, error) {
+func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 	for _, extent := range file.Extents {
 		extBeg := extent.OffsetWithinFile
 		if extBeg > off {
@@ -409,4 +379,4 @@ func (file *file) maybeShortReadAt(dat []byte, off int64) (int, error) {
 	return 0, fmt.Errorf("read: could not map position %v", off)
 }
 
-var _ io.ReaderAt = (*file)(nil)
+var _ io.ReaderAt = (*File)(nil)

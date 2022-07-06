@@ -6,6 +6,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/datawire/dlib/dcontext"
+	"github.com/datawire/dlib/dlog"
+	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
 
@@ -15,21 +18,45 @@ import (
 )
 
 type dirState struct {
-	Dir *dir
+	Dir *btrfs.Dir
 }
 
 type fileState struct {
-	File *file
+	File *btrfs.File
 }
 
-type subvolumeFUSE struct {
+type Subvolume struct {
+	btrfs.Subvolume
+	DeviceName string
+	Mountpoint string
+
 	fuseutil.NotImplementedFileSystem
 	lastHandle  uint64
 	dirHandles  util.SyncMap[fuseops.HandleID, *dirState]
 	fileHandles util.SyncMap[fuseops.HandleID, *fileState]
 }
 
-func (sv *subvolumeFUSE) newHandle() fuseops.HandleID {
+func (sv *Subvolume) Run(ctx context.Context) error {
+	mount, err := fuse.Mount(
+		sv.Mountpoint,
+		fuseutil.NewFileSystemServer(sv),
+		&fuse.MountConfig{
+			OpContext:   ctx,
+			ErrorLogger: dlog.StdLogger(ctx, dlog.LogLevelError),
+			DebugLogger: dlog.StdLogger(ctx, dlog.LogLevelDebug),
+
+			FSName:  sv.DeviceName,
+			Subtype: "btrfs",
+
+			ReadOnly: true,
+		})
+	if err != nil {
+		return err
+	}
+	return mount.Join(dcontext.HardContext(ctx))
+}
+
+func (sv *Subvolume) newHandle() fuseops.HandleID {
 	return fuseops.HandleID(atomic.AddUint64(&sv.lastHandle, 1))
 }
 
@@ -73,14 +100,14 @@ func (sv *Subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 
 func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) error {
 	if op.Parent == fuseops.RootInodeID {
-		parent, err := sv.getRootInode()
+		parent, err := sv.GetRootInode()
 		if err != nil {
 			return err
 		}
 		op.Parent = fuseops.InodeID(parent)
 	}
 
-	dir, err := sv.loadDir(btrfs.ObjID(op.Parent))
+	dir, err := sv.LoadDir(btrfs.ObjID(op.Parent))
 	if err != nil {
 		return err
 	}
@@ -91,7 +118,7 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 	if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
 		return fmt.Errorf("child %q is not an inode: %w", op.Name, syscall.ENOSYS)
 	}
-	bareInode, err := sv.loadBareInode(entry.Location.ObjectID)
+	bareInode, err := sv.LoadBareInode(entry.Location.ObjectID)
 	if err != nil {
 		return err
 	}
@@ -105,14 +132,14 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 
 func (sv *Subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeAttributesOp) error {
 	if op.Inode == fuseops.RootInodeID {
-		inode, err := sv.getRootInode()
+		inode, err := sv.GetRootInode()
 		if err != nil {
 			return err
 		}
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	bareInode, err := sv.loadBareInode(btrfs.ObjID(op.Inode))
+	bareInode, err := sv.LoadBareInode(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -123,14 +150,14 @@ func (sv *Subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeA
 
 func (sv *Subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	if op.Inode == fuseops.RootInodeID {
-		inode, err := sv.getRootInode()
+		inode, err := sv.GetRootInode()
 		if err != nil {
 			return err
 		}
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	dir, err := sv.loadDir(btrfs.ObjID(op.Inode))
+	dir, err := sv.LoadDir(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -184,7 +211,7 @@ func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirH
 }
 
 func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
-	file, err := sv.loadFile(btrfs.ObjID(op.Inode))
+	file, err := sv.LoadFile(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
