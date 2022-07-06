@@ -197,11 +197,25 @@ func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
 	return nil
 }
 func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
-	_, ok := sv.fileHandles.Load(op.Handle)
+	state, ok := sv.fileHandles.Load(op.Handle)
 	if !ok {
 		return syscall.EBADF
 	}
-	return syscall.ENOSYS
+
+	size := op.Size
+	var dat []byte
+	if op.Dst != nil {
+		size = util.Min(int64(len(op.Dst)), size)
+		dat = op.Dst
+	} else {
+		dat = make([]byte, op.Size)
+		op.Data = [][]byte{dat}
+	}
+
+	var err error
+	op.BytesRead, err = state.File.ReadAt(dat, op.Offset)
+
+	return err
 }
 func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
 	_, ok := sv.fileHandles.LoadAndDelete(op.Handle)

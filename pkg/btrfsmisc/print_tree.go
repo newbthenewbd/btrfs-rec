@@ -156,18 +156,18 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 						len(body.BodyInline), body.RAMBytes, body.Compression)
 				case btrfsitem.FILE_EXTENT_PREALLOC:
 					fmt.Printf("\t\tprealloc data disk byte %v nr %v\n",
-						body.BodyPrealloc.DiskByteNr,
-						body.BodyPrealloc.DiskNumBytes)
+						body.BodyExtent.DiskByteNr,
+						body.BodyExtent.DiskNumBytes)
 					fmt.Printf("\t\tprealloc data offset %v nr %v\n",
-						body.BodyPrealloc.Offset,
-						body.BodyPrealloc.NumBytes)
+						body.BodyExtent.Offset,
+						body.BodyExtent.NumBytes)
 				case btrfsitem.FILE_EXTENT_REG:
 					fmt.Printf("\t\textent data disk byte %d nr %d\n",
-						body.BodyReg.DiskByteNr,
-						body.BodyReg.DiskNumBytes)
+						body.BodyExtent.DiskByteNr,
+						body.BodyExtent.DiskNumBytes)
 					fmt.Printf("\t\textent data offset %d nr %d ram %v\n",
-						body.BodyReg.Offset,
-						body.BodyReg.NumBytes,
+						body.BodyExtent.Offset,
+						body.BodyExtent.NumBytes,
 						body.RAMBytes)
 					fmt.Printf("\t\textent compression %v\n",
 						body.Compression)

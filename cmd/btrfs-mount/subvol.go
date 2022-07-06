@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/datawire/dlib/dcontext"
@@ -35,9 +37,15 @@ type dir struct {
 	ChildrenByIndex map[uint64]btrfsitem.DirEntry
 }
 
+type fileExtent struct {
+	OffsetWithinFile int64
+	btrfsitem.FileExtent
+}
+
 type file struct {
 	fullInode
-	// TODO
+	Extents []fileExtent
+	FS      *btrfs.FS
 }
 
 type Subvolume struct {
@@ -296,7 +304,8 @@ func (sv *Subvolume) loadFile(inode btrfs.ObjID) (*file, error) {
 			return
 		}
 		val.fullInode = *fullInode
-		// TODO
+		val.FS = sv.FS
+		val.populate()
 		return
 	})
 	if val.Inode == 0 {
@@ -304,3 +313,100 @@ func (sv *Subvolume) loadFile(inode btrfs.ObjID) (*file, error) {
 	}
 	return val, nil
 }
+
+func (ret *file) populate() {
+	for _, item := range ret.OtherItems {
+		switch item.Head.Key.ItemType {
+		case btrfsitem.INODE_REF_KEY:
+			// TODO
+		case btrfsitem.EXTENT_DATA_KEY:
+			ret.Extents = append(ret.Extents, fileExtent{
+				OffsetWithinFile: int64(item.Head.Key.Offset),
+				FileExtent:       item.Body.(btrfsitem.FileExtent),
+			})
+		default:
+			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
+		}
+	}
+
+	// These should already be sorted, because of the nature of
+	// the btree; but this is a recovery tool for corrupt
+	// filesystems, so go ahead and ensure that it's sorted.
+	sort.Slice(ret.Extents, func(i, j int) bool {
+		return ret.Extents[i].OffsetWithinFile < ret.Extents[j].OffsetWithinFile
+	})
+
+	pos := int64(0)
+	for _, extent := range ret.Extents {
+		if extent.OffsetWithinFile != pos {
+			if extent.OffsetWithinFile > pos {
+				ret.Errs = append(ret.Errs, fmt.Errorf("extent gap from %v to %v",
+					pos, extent.OffsetWithinFile))
+			} else {
+				ret.Errs = append(ret.Errs, fmt.Errorf("extent overlap from %v to %v",
+					extent.OffsetWithinFile, pos))
+			}
+		}
+		size, err := extent.Size()
+		if err != nil {
+			ret.Errs = append(ret.Errs, fmt.Errorf("extent %v: %w", extent.OffsetWithinFile, err))
+		}
+		pos += size
+	}
+	if ret.InodeItem != nil && pos != ret.InodeItem.Size {
+		if ret.InodeItem.Size > pos {
+			ret.Errs = append(ret.Errs, fmt.Errorf("extent gap from %v to %v",
+				pos, ret.InodeItem.Size))
+		} else {
+			ret.Errs = append(ret.Errs, fmt.Errorf("extent mapped past end of file from %v to %v",
+				ret.InodeItem.Size, pos))
+		}
+	}
+}
+
+func (file *file) ReadAt(dat []byte, off int64) (int, error) {
+	// These stateles maybe-short-reads each do an O(n) extent
+	// lookup, so reading a file is O(n^2), but we expect n to be
+	// small, so whatev.  Turn file.Extents it in to an rbtree if
+	// it becomes a problem.
+	done := 0
+	for done < len(dat) {
+		n, err := file.maybeShortReadAt(dat[done:], off+int64(done))
+		done += n
+		if err != nil {
+			return done, err
+		}
+	}
+	return done, nil
+}
+
+func (file *file) maybeShortReadAt(dat []byte, off int64) (int, error) {
+	for _, extent := range file.Extents {
+		extBeg := extent.OffsetWithinFile
+		if extBeg > off {
+			break
+		}
+		extLen, err := extent.Size()
+		if err != nil {
+			continue
+		}
+		extEnd := extBeg + extLen
+		if extEnd <= off {
+			continue
+		}
+		offsetWithinExt := off - extent.OffsetWithinFile
+		readSize := util.Min(int64(len(dat)), extLen-offsetWithinExt)
+		switch extent.Type {
+		case btrfsitem.FILE_EXTENT_INLINE:
+			return copy(dat, extent.BodyInline[offsetWithinExt:offsetWithinExt+readSize]), nil
+		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
+			return file.FS.ReadAt(dat[:readSize],
+				extent.BodyExtent.DiskByteNr.
+					Add(extent.BodyExtent.Offset).
+					Add(btrfsvol.AddrDelta(offsetWithinExt)))
+		}
+	}
+	return 0, fmt.Errorf("read: could not map position %v", off)
+}
+
+var _ io.ReaderAt = (*file)(nil)

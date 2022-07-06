@@ -24,26 +24,17 @@ type FileExtent struct { // EXTENT_DATA=108
 	binstruct.End `bin:"off=0x15"`
 
 	// only one of these, depending on .Type
-	BodyInline []byte `bin:"-"`
-	BodyReg    struct {
-		// Position of extent within the device
+	BodyInline []byte   `bin:"-"` // .Type == FILE_EXTENT_INLINE
+	BodyExtent struct { // .Type == FILE_EXTENT_REG or FILE_EXTENT_PREALLOC
+		// Position and size of extent within the device
 		DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
 		DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
 
 		// Position of data within the extent
-		Offset   btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
-		NumBytes btrfsvol.AddrDelta `bin:"off=0x18, siz=0x8"`
+		Offset btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
 
-		binstruct.End `bin:"off=0x20"`
-	} `bin:"-"`
-	BodyPrealloc struct {
-		// Position of extent within the device
-		DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
-		DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
-
-		// Position of data within the extent
-		Offset   btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
-		NumBytes btrfsvol.AddrDelta `bin:"off=0x18, siz=0x8"`
+		// Decompressed/unencrypted size
+		NumBytes int64 `bin:"off=0x18, siz=0x8"`
 
 		binstruct.End `bin:"off=0x20"`
 	} `bin:"-"`
@@ -58,14 +49,8 @@ func (o *FileExtent) UnmarshalBinary(dat []byte) (int, error) {
 	case FILE_EXTENT_INLINE:
 		o.BodyInline = dat[n:]
 		n += len(o.BodyInline)
-	case FILE_EXTENT_REG:
-		_n, err := binstruct.Unmarshal(dat[n:], &o.BodyReg)
-		n += _n
-		if err != nil {
-			return n, err
-		}
-	case FILE_EXTENT_PREALLOC:
-		_n, err := binstruct.Unmarshal(dat[n:], &o.BodyPrealloc)
+	case FILE_EXTENT_REG, FILE_EXTENT_PREALLOC:
+		_n, err := binstruct.Unmarshal(dat[n:], &o.BodyExtent)
 		n += _n
 		if err != nil {
 			return n, err
@@ -84,14 +69,8 @@ func (o FileExtent) MarshalBinary() ([]byte, error) {
 	switch o.Type {
 	case FILE_EXTENT_INLINE:
 		dat = append(dat, o.BodyInline...)
-	case FILE_EXTENT_REG:
-		bs, err := binstruct.Marshal(o.BodyReg)
-		dat = append(dat, bs...)
-		if err != nil {
-			return dat, err
-		}
-	case FILE_EXTENT_PREALLOC:
-		bs, err := binstruct.Marshal(o.BodyPrealloc)
+	case FILE_EXTENT_REG, FILE_EXTENT_PREALLOC:
+		bs, err := binstruct.Marshal(o.BodyExtent)
 		dat = append(dat, bs...)
 		if err != nil {
 			return dat, err
@@ -109,6 +88,17 @@ const (
 	FILE_EXTENT_REG
 	FILE_EXTENT_PREALLOC
 )
+
+func (o FileExtent) Size() (int64, error) {
+	switch o.Type {
+	case FILE_EXTENT_INLINE:
+		return int64(len(o.BodyInline)), nil
+	case FILE_EXTENT_REG, FILE_EXTENT_PREALLOC:
+		return o.BodyExtent.NumBytes, nil
+	default:
+		return 0, fmt.Errorf("unknown file extent type %v", o.Type)
+	}
+}
 
 func (fet FileExtentType) String() string {
 	names := map[FileExtentType]string{
