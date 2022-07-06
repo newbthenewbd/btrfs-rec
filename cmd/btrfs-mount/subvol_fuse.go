@@ -173,9 +173,8 @@ func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	if !ok {
 		return syscall.EBADF
 	}
-	indexes := util.SortedMapKeys(state.Dir.ChildrenByIndex)
 	origOffset := op.Offset
-	for _, index := range indexes {
+	for _, index := range util.SortedMapKeys(state.Dir.ChildrenByIndex) {
 		if index < uint64(origOffset) {
 			continue
 		}
