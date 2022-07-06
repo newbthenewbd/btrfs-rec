@@ -68,7 +68,7 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 		}
 		return fuse.Unmount(os.Args[1])
 	})
-	grp.Go("main", func(ctx context.Context) error {
+	grp.Go("mount", func(ctx context.Context) error {
 		defer atomic.StoreUint32(&mounted, 0)
 		rootSubvol := &Subvolume{
 			Subvolume: btrfs.Subvolume{
@@ -78,7 +78,7 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 			DeviceName: tryAbs(imgfilenames[0]),
 			Mountpoint: mountpoint,
 		}
-		return rootSubvol.Run(ctx)
+		return rootSubvol.Run(ctx, false)
 	})
 	return grp.Wait()
 }

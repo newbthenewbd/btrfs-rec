@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
 	"github.com/datawire/dlib/dcontext"
+	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
@@ -14,6 +19,7 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
+	"lukeshu.com/btrfs-tools/pkg/linux"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
 
@@ -34,13 +40,16 @@ type Subvolume struct {
 	lastHandle  uint64
 	dirHandles  util.SyncMap[fuseops.HandleID, *dirState]
 	fileHandles util.SyncMap[fuseops.HandleID, *fileState]
+
+	subvolMu sync.Mutex
+	subvols  map[string]struct{}
+	grp      *dgroup.Group
 }
 
-func (sv *Subvolume) Run(ctx context.Context) error {
-	mount, err := fuse.Mount(
-		sv.Mountpoint,
-		fuseutil.NewFileSystemServer(sv),
-		&fuse.MountConfig{
+func (sv *Subvolume) Run(ctx context.Context, isSubvol bool) error {
+	sv.grp = dgroup.NewGroup(ctx, dgroup.GroupConfig{})
+	sv.grp.Go("self", func(ctx context.Context) error {
+		cfg := &fuse.MountConfig{
 			OpContext:   ctx,
 			ErrorLogger: dlog.StdLogger(ctx, dlog.LogLevelError),
 			DebugLogger: dlog.StdLogger(ctx, dlog.LogLevelDebug),
@@ -49,11 +58,24 @@ func (sv *Subvolume) Run(ctx context.Context) error {
 			Subtype: "btrfs",
 
 			ReadOnly: true,
-		})
-	if err != nil {
-		return err
-	}
-	return mount.Join(dcontext.HardContext(ctx))
+
+			Options: map[string]string{
+				"allow_other": "",
+			},
+		}
+		if isSubvol {
+			//cfg.Options["nonempty"] = ""
+		}
+		mount, err := fuse.Mount(
+			sv.Mountpoint,
+			fuseutil.NewFileSystemServer(sv),
+			cfg)
+		if err != nil {
+			return err
+		}
+		return mount.Join(dcontext.HardContext(ctx))
+	})
+	return sv.grp.Wait()
 }
 
 func (sv *Subvolume) newHandle() fuseops.HandleID {
@@ -73,6 +95,54 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 		Uid: uint32(itemBody.UID),
 		Gid: uint32(itemBody.GID),
 	}
+}
+
+func (sv *Subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
+	val, err = sv.Subvolume.LoadDir(inode)
+	if val != nil {
+		haveSubvolumes := false
+		for _, index := range util.SortedMapKeys(val.ChildrenByIndex) {
+			entry := val.ChildrenByIndex[index]
+			if entry.Location.ItemType == btrfsitem.ROOT_ITEM_KEY {
+				haveSubvolumes = true
+				break
+			}
+		}
+		if haveSubvolumes {
+			abspath, _err := val.AbsPath()
+			if _err != nil {
+				return
+			}
+			sv.subvolMu.Lock()
+			for _, index := range util.SortedMapKeys(val.ChildrenByIndex) {
+				entry := val.ChildrenByIndex[index]
+				if entry.Location.ItemType != btrfsitem.ROOT_ITEM_KEY {
+					continue
+				}
+				if sv.subvols == nil {
+					sv.subvols = make(map[string]struct{})
+				}
+				subMountpoint := filepath.Join(abspath, string(entry.Name))
+				if _, alreadyMounted := sv.subvols[subMountpoint]; !alreadyMounted {
+					sv.subvols[subMountpoint] = struct{}{}
+					workerName := fmt.Sprintf("%d-%s", val.Inode, filepath.Base(subMountpoint))
+					sv.grp.Go(workerName, func(ctx context.Context) error {
+						subSv := &Subvolume{
+							Subvolume: btrfs.Subvolume{
+								FS:     sv.FS,
+								TreeID: entry.Location.ObjectID,
+							},
+							DeviceName: sv.DeviceName,
+							Mountpoint: filepath.Join(sv.Mountpoint, subMountpoint[1:]),
+						}
+						return subSv.Run(ctx, true)
+					})
+				}
+			}
+			sv.subvolMu.Unlock()
+		}
+	}
+	return
 }
 
 func (sv *Subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
@@ -116,7 +186,16 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 		return syscall.ENOENT
 	}
 	if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
-		return fmt.Errorf("child %q is not an inode: %w", op.Name, syscall.ENOSYS)
+		op.Entry = fuseops.ChildInodeEntry{
+			Child: 2, // an inode number that a real file will never have
+			Attributes: fuseops.InodeAttributes{
+				Nlink: 1,
+				Mode:  uint32(linux.ModeFmtDir | 0700),
+				//Uid:   1000, // TODO
+				//Gid:   1000, // TODO
+			},
+		}
+		return nil
 	}
 	bareInode, err := sv.LoadBareInode(entry.Location.ObjectID)
 	if err != nil {
@@ -240,6 +319,9 @@ func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 
 	var err error
 	op.BytesRead, err = state.File.ReadAt(dat, op.Offset)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
 
 	return err
 }

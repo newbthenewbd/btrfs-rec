@@ -3,6 +3,7 @@ package btrfs
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"sync"
@@ -25,10 +26,17 @@ type FullInode struct {
 	OtherItems []Item
 }
 
+type InodeRef struct {
+	Inode ObjID
+	btrfsitem.InodeRef
+}
+
 type Dir struct {
 	FullInode
+	DotDot          *InodeRef
 	ChildrenByName  map[string]btrfsitem.DirEntry
 	ChildrenByIndex map[uint64]btrfsitem.DirEntry
+	SV              *Subvolume
 }
 
 type FileExtent struct {
@@ -39,7 +47,7 @@ type FileExtent struct {
 type File struct {
 	FullInode
 	Extents []FileExtent
-	FS      *FS
+	SV      *Subvolume
 }
 
 type Subvolume struct {
@@ -182,6 +190,7 @@ func (sv *Subvolume) LoadDir(inode ObjID) (*Dir, error) {
 			return
 		}
 		val.FullInode = *fullInode
+		val.SV = sv
 		val.populate()
 		return
 	})
@@ -197,7 +206,17 @@ func (ret *Dir) populate() {
 	for _, item := range ret.OtherItems {
 		switch item.Head.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
-			// TODO
+			ref := InodeRef{
+				Inode:    ObjID(item.Head.Key.Offset),
+				InodeRef: item.Body.(btrfsitem.InodeRef),
+			}
+			if ret.DotDot != nil {
+				if !reflect.DeepEqual(ref, *ret.DotDot) {
+					ret.Errs = append(ret.Errs, fmt.Errorf("multiple INODE_REF items on a directory"))
+				}
+				continue
+			}
+			ret.DotDot = &ref
 		case btrfsitem.DIR_ITEM_KEY:
 			body := item.Body.(btrfsitem.DirEntries)
 			if len(body) != 1 {
@@ -265,6 +284,28 @@ func (ret *Dir) populate() {
 	return
 }
 
+func (dir *Dir) AbsPath() (string, error) {
+	rootInode, err := dir.SV.GetRootInode()
+	if err != nil {
+		return "", err
+	}
+	if rootInode == dir.Inode {
+		return "/", nil
+	}
+	if dir.DotDot == nil {
+		return "", fmt.Errorf("missing .. entry in dir inode %v", dir.Inode)
+	}
+	parent, err := dir.SV.LoadDir(dir.DotDot.Inode)
+	if err != nil {
+		return "", err
+	}
+	parentName, err := parent.AbsPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parentName, string(dir.DotDot.Name)), nil
+}
+
 func (sv *Subvolume) LoadFile(inode ObjID) (*File, error) {
 	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
 		val = new(File)
@@ -274,7 +315,7 @@ func (sv *Subvolume) LoadFile(inode ObjID) (*File, error) {
 			return
 		}
 		val.FullInode = *fullInode
-		val.FS = sv.FS
+		val.SV = sv
 		val.populate()
 		return
 	})
@@ -370,11 +411,14 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 		case btrfsitem.FILE_EXTENT_INLINE:
 			return copy(dat, extent.BodyInline[offsetWithinExt:offsetWithinExt+readSize]), nil
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			return file.FS.ReadAt(dat[:readSize],
+			return file.SV.FS.ReadAt(dat[:readSize],
 				extent.BodyExtent.DiskByteNr.
 					Add(extent.BodyExtent.Offset).
 					Add(btrfsvol.AddrDelta(offsetWithinExt)))
 		}
+	}
+	if file.InodeItem != nil && off >= file.InodeItem.Size {
+		return 0, io.EOF
 	}
 	return 0, fmt.Errorf("read: could not map position %v", off)
 }

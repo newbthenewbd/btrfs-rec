@@ -57,11 +57,9 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 				fmt.Printf("\t\tctime %v\n", fmtTime(body.CTime))
 				fmt.Printf("\t\tmtime %v\n", fmtTime(body.MTime))
 				fmt.Printf("\t\totime %v\n", fmtTime(body.OTime))
-			case btrfsitem.InodeRefList:
-				for _, ref := range body {
-					fmt.Printf("\t\tindex %v namelen %v name: %s\n",
-						ref.Index, ref.NameLen, ref.Name)
-				}
+			case btrfsitem.InodeRef:
+				fmt.Printf("\t\tindex %v namelen %v name: %s\n",
+					body.Index, body.NameLen, body.Name)
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
 			case btrfsitem.DirEntries:
