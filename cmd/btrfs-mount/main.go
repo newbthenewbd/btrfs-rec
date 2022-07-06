@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
-	"github.com/jacobsa/fuse"
 	"github.com/sirupsen/logrus"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
@@ -57,28 +55,13 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 		maybeSetErr(fs.Close())
 	}()
 
-	mounted := uint32(1)
-	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
-		ShutdownOnNonError: true,
-	})
-	grp.Go("shutdown", func(ctx context.Context) error {
-		<-ctx.Done()
-		if atomic.LoadUint32(&mounted) == 0 {
-			return nil
-		}
-		return fuse.Unmount(os.Args[1])
-	})
-	grp.Go("mount", func(ctx context.Context) error {
-		defer atomic.StoreUint32(&mounted, 0)
-		rootSubvol := &Subvolume{
-			Subvolume: btrfs.Subvolume{
-				FS:     fs,
-				TreeID: btrfs.FS_TREE_OBJECTID,
-			},
-			DeviceName: tryAbs(imgfilenames[0]),
-			Mountpoint: mountpoint,
-		}
-		return rootSubvol.Run(ctx, false)
-	})
-	return grp.Wait()
+	rootSubvol := &Subvolume{
+		Subvolume: btrfs.Subvolume{
+			FS:     fs,
+			TreeID: btrfs.FS_TREE_OBJECTID,
+		},
+		DeviceName: tryAbs(imgfilenames[0]),
+		Mountpoint: mountpoint,
+	}
+	return rootSubvol.Run(ctx)
 }

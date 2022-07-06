@@ -10,9 +10,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"github.com/datawire/dlib/dcontext"
 	"github.com/datawire/dlib/dgroup"
-	"github.com/datawire/dlib/dlog"
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
@@ -46,14 +44,10 @@ type Subvolume struct {
 	grp      *dgroup.Group
 }
 
-func (sv *Subvolume) Run(ctx context.Context, isSubvol bool) error {
+func (sv *Subvolume) Run(ctx context.Context) error {
 	sv.grp = dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 	sv.grp.Go("self", func(ctx context.Context) error {
 		cfg := &fuse.MountConfig{
-			OpContext:   ctx,
-			ErrorLogger: dlog.StdLogger(ctx, dlog.LogLevelError),
-			DebugLogger: dlog.StdLogger(ctx, dlog.LogLevelDebug),
-
 			FSName:  sv.DeviceName,
 			Subtype: "btrfs",
 
@@ -63,17 +57,7 @@ func (sv *Subvolume) Run(ctx context.Context, isSubvol bool) error {
 				"allow_other": "",
 			},
 		}
-		if isSubvol {
-			//cfg.Options["nonempty"] = ""
-		}
-		mount, err := fuse.Mount(
-			sv.Mountpoint,
-			fuseutil.NewFileSystemServer(sv),
-			cfg)
-		if err != nil {
-			return err
-		}
-		return mount.Join(dcontext.HardContext(ctx))
+		return Mount(ctx, sv.Mountpoint, fuseutil.NewFileSystemServer(sv), cfg)
 	})
 	return sv.grp.Wait()
 }
@@ -135,7 +119,7 @@ func (sv *Subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 							DeviceName: sv.DeviceName,
 							Mountpoint: filepath.Join(sv.Mountpoint, subMountpoint[1:]),
 						}
-						return subSv.Run(ctx, true)
+						return subSv.Run(ctx)
 					})
 				}
 			}
@@ -186,13 +170,23 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 		return syscall.ENOENT
 	}
 	if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
+		// Subvolume
+		//
+		// Because each subvolume has its own pool of inodes
+		// (as in 2 different subvolumes can have files with
+		// te same inode number), so to represent that to FUSE
+		// we need to have this be a full separate mountpoint.
+		//
+		// I'd want to return EIO or EINTR or something here,
+		// but both the FUSE userspace tools and the kernel
+		// itself stat the mountpoint before mounting it, so
+		// we've got to return something bogus here to let
+		// that mount happen.
 		op.Entry = fuseops.ChildInodeEntry{
 			Child: 2, // an inode number that a real file will never have
 			Attributes: fuseops.InodeAttributes{
 				Nlink: 1,
 				Mode:  uint32(linux.ModeFmtDir | 0700),
-				//Uid:   1000, // TODO
-				//Gid:   1000, // TODO
 			},
 		}
 		return nil
