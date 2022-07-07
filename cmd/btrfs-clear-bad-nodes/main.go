@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
@@ -58,7 +59,14 @@ func Main(imgfilenames ...string) (err error) {
 				}
 				origErr := err
 				if !uuidsInited {
+					// TODO(lukeshu): Is there a better way to get the chunk
+					// tree UUID.
 					return fmt.Errorf("cannot repair node@%v: not (yet?) sure what the chunk tree UUID is", node.Addr)
+				}
+				nodeLevel := path[len(path)-1].NodeLevel
+				if nodeLevel == math.MaxUint8 {
+					// TODO(lukeshu): Use level from the superblock or whatever.
+					nodeLevel = 0
 				}
 				node.Data = btrfs.Node{
 					Size:         node.Data.Size,
@@ -73,7 +81,7 @@ func Main(imgfilenames ...string) (err error) {
 						Generation:    0,
 						Owner:         treeID,
 						NumItems:      0,
-						Level:         path[len(path)-1].NodeLevel,
+						Level:         nodeLevel,
 					},
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()

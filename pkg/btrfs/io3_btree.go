@@ -152,7 +152,7 @@ func (fs *FS) treeWalk(path TreePath, cbs TreeWalkHandler) error {
 		}
 	}
 	node, err := fs.readNodeAtLevel(path[len(path)-1].NodeAddr, path[len(path)-1].NodeLevel)
-	if node != nil {
+	if node != nil && err == nil {
 		path[len(path)-1].NodeLevel = node.Data.Head.Level
 	}
 	if cbs.Node != nil {
