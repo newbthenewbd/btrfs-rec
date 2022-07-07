@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 	logger := logrus.New()
-	logger.SetLevel(logrus.TraceLevel)
+	//logger.SetLevel(logrus.TraceLevel)
 	ctx = dlog.WithLogger(ctx, dlog.WrapLogrus(logger))
 
 	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{

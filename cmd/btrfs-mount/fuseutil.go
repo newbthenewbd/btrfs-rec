@@ -45,6 +45,7 @@ func Mount(ctx context.Context, mountpoint string, server fuse.Server, cfg *fuse
 		if err != nil {
 			return err
 		}
+		dlog.Infof(ctx, "mounted %q", mountpoint)
 		return mountHandle.Join(dcontext.HardContext(ctx))
 	})
 	return grp.Wait()
