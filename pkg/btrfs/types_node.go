@@ -49,6 +49,13 @@ var nodeFlagNames = []string{
 func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
 func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames, util.HexLower) }
 
+type BackrefRev uint8
+
+const (
+	OldBackrefRev   = BackrefRev(iota)
+	MixedBackrefRev = BackrefRev(iota)
+)
+
 // Node: main //////////////////////////////////////////////////////////////////////////////////////
 
 type Node struct {
@@ -72,7 +79,7 @@ type NodeHeader struct {
 	MetadataUUID  UUID                 `bin:"off=0x20, siz=0x10"`
 	Addr          btrfsvol.LogicalAddr `bin:"off=0x30, siz=0x8"` // Logical address of this node
 	Flags         NodeFlags            `bin:"off=0x38, siz=0x7"`
-	BackrefRev    uint8                `bin:"off=0x3f, siz=0x1"`
+	BackrefRev    BackrefRev           `bin:"off=0x3f, siz=0x1"`
 	ChunkTreeUUID UUID                 `bin:"off=0x40, siz=0x10"`
 	Generation    Generation           `bin:"off=0x50, siz=0x8"`
 	Owner         ObjID                `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
@@ -347,7 +354,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	// sanity checking
 
 	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
-		return nil, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, ErrNotANode)
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, ErrNotANode)
 	}
 
 	stored := nodeRef.Data.Head.Checksum
