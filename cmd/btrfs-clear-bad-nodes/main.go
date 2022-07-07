@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
@@ -33,9 +34,11 @@ func Main(imgfilenames ...string) (err error) {
 	}()
 
 	var treeName string
+	var treeID btrfs.ObjID
 	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
-		PreTree: func(name string, _ btrfsvol.LogicalAddr) {
+		PreTree: func(name string, id btrfs.ObjID, _ btrfsvol.LogicalAddr) {
 			treeName = name
+			treeID = id
 		},
 		Err: func(err error) {
 			fmt.Printf("error: %v\n", err)
@@ -48,29 +51,59 @@ func Main(imgfilenames ...string) (err error) {
 				}
 				origErr := err
 				if len(path) < 2 {
-					// TODO(lukeshu): Get info from the superblock and such
-					// instead of the parent node, so that we can repair broken
-					// root nodes.
-					return fmt.Errorf("root node: %w", err)
-				}
-				parentNode, err := fs.ReadNode(path[len(path)-2].NodeAddr)
-				if err != nil {
-					return err
-				}
-				node.Data = btrfs.Node{
-					Size:         node.Data.Size,
-					ChecksumType: node.Data.ChecksumType,
-					Head: btrfs.NodeHeader{
-						//Checksum:   filled below,
-						MetadataUUID: parentNode.Data.Head.MetadataUUID,
-						Addr:         node.Addr,
-						Flags:        btrfs.NodeWritten,
-						BackrefRev:   parentNode.Data.Head.BackrefRev,
-						Generation:   0,
-						Owner:        parentNode.Data.Head.Owner,
-						NumItems:     0,
-						Level:        parentNode.Data.Head.Level - 1,
-					},
+					sb, err := fs.Superblock()
+					if err != nil {
+						return err
+					}
+					chunkRoot, err := fs.TreeLookup(sb.Data.RootTree, btrfs.Key{
+						ObjectID: btrfs.CHUNK_TREE_OBJECTID,
+						ItemType: btrfsitem.ROOT_ITEM_KEY,
+						Offset:   0,
+					})
+					if err != nil {
+						return err
+					}
+					chunkRootBody, ok := chunkRoot.Body.(btrfsitem.Root)
+					if !ok {
+						return fmt.Errorf("CHUNK_TREE_OBJECTID ROOT_ITEM has malformed body")
+					}
+					node.Data = btrfs.Node{
+						Size:         node.Data.Size,
+						ChecksumType: node.Data.ChecksumType,
+						Head: btrfs.NodeHeader{
+							//Checksum:   filled below,
+							MetadataUUID:  sb.Data.EffectiveMetadataUUID(),
+							Addr:          node.Addr,
+							Flags:         btrfs.NodeWritten,
+							BackrefRev:    btrfs.MixedBackrefRev,
+							ChunkTreeUUID: chunkRootBody.UUID,
+							Generation:    0,
+							Owner:         treeID,
+							NumItems:      0,
+							Level:         0,
+						},
+					}
+				} else {
+					parentNode, err := fs.ReadNode(path[len(path)-2].NodeAddr)
+					if err != nil {
+						return err
+					}
+					node.Data = btrfs.Node{
+						Size:         node.Data.Size,
+						ChecksumType: node.Data.ChecksumType,
+						Head: btrfs.NodeHeader{
+							//Checksum:   filled below,
+							MetadataUUID:  parentNode.Data.Head.MetadataUUID,
+							Addr:          node.Addr,
+							Flags:         btrfs.NodeWritten,
+							BackrefRev:    parentNode.Data.Head.BackrefRev,
+							ChunkTreeUUID: parentNode.Data.Head.ChunkTreeUUID,
+							Generation:    0,
+							Owner:         parentNode.Data.Head.Owner,
+							NumItems:      0,
+							Level:         parentNode.Data.Head.Level - 1,
+						},
+					}
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()
 				if err != nil {

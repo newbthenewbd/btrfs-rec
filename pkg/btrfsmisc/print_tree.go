@@ -221,10 +221,7 @@ func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
 			//case btrfsitem.QGROUP_LIMIT_KEY:
 			//	// TODO
 			case btrfsitem.UUIDMap:
-				for _, subvolID := range body {
-					fmt.Printf("\t\tsubvol_id %d\n",
-						subvolID)
-				}
+				fmt.Printf("\t\tsubvol_id %d\n", body.ObjID)
 			//case btrfsitem.STRING_ITEM_KEY:
 			//	// TODO
 			case btrfsitem.DevStats:

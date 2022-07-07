@@ -27,8 +27,8 @@ func (e WalkErr) Error() string {
 type WalkFSHandler struct {
 	Err func(error)
 	// Callbacks for entire trees
-	PreTree  func(name string, laddr btrfsvol.LogicalAddr)
-	PostTree func(name string, laddr btrfsvol.LogicalAddr)
+	PreTree  func(name string, id btrfs.ObjID, laddr btrfsvol.LogicalAddr)
+	PostTree func(name string, id btrfs.ObjID, laddr btrfsvol.LogicalAddr)
 	// Callbacks for nodes or smaller
 	UnsafeNodes bool
 	btrfs.TreeWalkHandler
@@ -49,6 +49,7 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 
 	var foundTrees []struct {
 		Name string
+		ID   btrfs.ObjID
 		Root btrfsvol.LogicalAddr
 	}
 	origItem := cbs.Item
@@ -60,10 +61,12 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 			} else {
 				foundTrees = append(foundTrees, struct {
 					Name string
+					ID   btrfs.ObjID
 					Root btrfsvol.LogicalAddr
 				}{
 					Name: fmt.Sprintf("tree %v (via %v %v)",
 						item.Head.Key.ObjectID.Format(0), treeName, path),
+					ID:   item.Head.Key.ObjectID,
 					Root: root.ByteNr,
 				})
 			}
@@ -96,58 +99,58 @@ func WalkFS(fs *btrfs.FS, cbs WalkFSHandler) {
 
 	treeName = "root tree"
 	if cbs.PreTree != nil {
-		cbs.PreTree(treeName, superblock.Data.RootTree)
+		cbs.PreTree(treeName, btrfs.ROOT_TREE_OBJECTID, superblock.Data.RootTree)
 	}
 	if err := fs.TreeWalk(superblock.Data.RootTree, cbs.TreeWalkHandler); err != nil {
 		handleErr(nil, err)
 	}
 	if cbs.PostTree != nil {
-		cbs.PostTree(treeName, superblock.Data.RootTree)
+		cbs.PostTree(treeName, btrfs.ROOT_TREE_OBJECTID, superblock.Data.RootTree)
 	}
 
 	treeName = "chunk tree"
 	if cbs.PreTree != nil {
-		cbs.PreTree(treeName, superblock.Data.ChunkTree)
+		cbs.PreTree(treeName, btrfs.CHUNK_TREE_OBJECTID, superblock.Data.ChunkTree)
 	}
 	if err := fs.TreeWalk(superblock.Data.ChunkTree, cbs.TreeWalkHandler); err != nil {
 		handleErr(nil, err)
 	}
 	if cbs.PostTree != nil {
-		cbs.PostTree(treeName, superblock.Data.ChunkTree)
+		cbs.PostTree(treeName, btrfs.CHUNK_TREE_OBJECTID, superblock.Data.ChunkTree)
 	}
 
 	treeName = "log tree"
 	if cbs.PreTree != nil {
-		cbs.PreTree(treeName, superblock.Data.LogTree)
+		cbs.PreTree(treeName, btrfs.TREE_LOG_OBJECTID, superblock.Data.LogTree)
 	}
 	if err := fs.TreeWalk(superblock.Data.LogTree, cbs.TreeWalkHandler); err != nil {
 		handleErr(nil, err)
 	}
 	if cbs.PostTree != nil {
-		cbs.PostTree(treeName, superblock.Data.LogTree)
+		cbs.PostTree(treeName, btrfs.TREE_LOG_OBJECTID, superblock.Data.LogTree)
 	}
 
 	treeName = "block group tree"
 	if cbs.PreTree != nil {
-		cbs.PreTree(treeName, superblock.Data.BlockGroupRoot)
+		cbs.PreTree(treeName, btrfs.BLOCK_GROUP_TREE_OBJECTID, superblock.Data.BlockGroupRoot)
 	}
 	if err := fs.TreeWalk(superblock.Data.BlockGroupRoot, cbs.TreeWalkHandler); err != nil {
 		handleErr(nil, err)
 	}
 	if cbs.PostTree != nil {
-		cbs.PostTree(treeName, superblock.Data.BlockGroupRoot)
+		cbs.PostTree(treeName, btrfs.BLOCK_GROUP_TREE_OBJECTID, superblock.Data.BlockGroupRoot)
 	}
 
 	for _, tree := range foundTrees {
 		treeName = tree.Name
 		if cbs.PreTree != nil {
-			cbs.PreTree(treeName, tree.Root)
+			cbs.PreTree(treeName, tree.ID, tree.Root)
 		}
 		if err := fs.TreeWalk(tree.Root, cbs.TreeWalkHandler); err != nil {
 			handleErr(nil, err)
 		}
 		if cbs.PostTree != nil {
-			cbs.PostTree(treeName, tree.Root)
+			cbs.PostTree(treeName, tree.ID, tree.Root)
 		}
 	}
 }

@@ -84,7 +84,7 @@ func (sv *Subvolume) init() {
 
 		rootBody, ok := root.Body.(btrfsitem.Root)
 		if !ok {
-			sv.rootErr = fmt.Errorf("FS_TREE_ ROOT_ITEM has malformed body")
+			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body")
 			return
 		}
 
