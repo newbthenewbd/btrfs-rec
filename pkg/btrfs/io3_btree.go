@@ -278,7 +278,7 @@ func (fs *FS) treeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (TreeP
 			//
 			// Implement this search as a binary search.
 			beg := 0
-			end := len(node.Data.BodyLeaf) - 1
+			end := len(node.Data.BodyLeaf)
 			for beg < end {
 				midpoint := (beg + end) / 2
 				direction := fn(node.Data.BodyLeaf[midpoint].Head.Key)
@@ -427,7 +427,11 @@ func (fs *FS) TreeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (Item,
 }
 
 func (fs *FS) TreeLookup(treeRoot btrfsvol.LogicalAddr, key Key) (Item, error) {
-	return fs.TreeSearch(treeRoot, key.Cmp)
+	item, err := fs.TreeSearch(treeRoot, key.Cmp)
+	if err != nil {
+		err = fmt.Errorf("item with key=%v: %w", key, err)
+	}
+	return item, err
 }
 
 // If some items are able to be read, but there is an error reading the full set, then it might
