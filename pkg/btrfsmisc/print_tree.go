@@ -15,8 +15,8 @@ import (
 // PrintTree mimics btrfs-progs
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
-func PrintTree(fs *btrfs.FS, root btrfsvol.LogicalAddr) error {
-	return fs.TreeWalk(root, btrfs.TreeWalkHandler{
+func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
+	return fs.TreeWalk(treeID, btrfs.TreeWalkHandler{
 		Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v: %v\n", path, err)

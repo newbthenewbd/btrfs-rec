@@ -41,29 +41,29 @@ func Main(imgfilename string) (err error) {
 	fmt.Printf("btrfs-progs v%v\n", version)
 	if superblock.Data.RootTree != 0 {
 		fmt.Printf("root tree\n")
-		if err := btrfsmisc.PrintTree(fs, superblock.Data.RootTree); err != nil {
+		if err := btrfsmisc.PrintTree(fs, btrfs.ROOT_TREE_OBJECTID); err != nil {
 			return err
 		}
 	}
 	if superblock.Data.ChunkTree != 0 {
 		fmt.Printf("chunk tree\n")
-		if err := btrfsmisc.PrintTree(fs, superblock.Data.ChunkTree); err != nil {
+		if err := btrfsmisc.PrintTree(fs, btrfs.CHUNK_TREE_OBJECTID); err != nil {
 			return err
 		}
 	}
 	if superblock.Data.LogTree != 0 {
 		fmt.Printf("log root tree\n")
-		if err := btrfsmisc.PrintTree(fs, superblock.Data.LogTree); err != nil {
+		if err := btrfsmisc.PrintTree(fs, btrfs.TREE_LOG_OBJECTID); err != nil {
 			return err
 		}
 	}
 	if superblock.Data.BlockGroupRoot != 0 {
 		fmt.Printf("block group tree\n")
-		if err := btrfsmisc.PrintTree(fs, superblock.Data.BlockGroupRoot); err != nil {
+		if err := btrfsmisc.PrintTree(fs, btrfs.BLOCK_GROUP_TREE_OBJECTID); err != nil {
 			return err
 		}
 	}
-	if err := fs.TreeWalk(superblock.Data.RootTree, btrfs.TreeWalkHandler{
+	if err := fs.TreeWalk(btrfs.ROOT_TREE_OBJECTID, btrfs.TreeWalkHandler{
 		Item: func(_ btrfs.TreePath, item btrfs.Item) error {
 			if item.Head.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 				return nil
@@ -92,7 +92,7 @@ func Main(imgfilename string) (err error) {
 				treeName = "file"
 			}
 			fmt.Printf("%v tree %v \n", treeName, btrfsmisc.FmtKey(item.Head.Key))
-			return btrfsmisc.PrintTree(fs, item.Body.(btrfsitem.Root).ByteNr)
+			return btrfsmisc.PrintTree(fs, item.Head.Key.ObjectID)
 		},
 	}); err != nil {
 		return err

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"math"
 	"os"
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
@@ -38,8 +38,8 @@ func Main(imgfilenames ...string) (err error) {
 
 	var treeName string
 	var treeID btrfs.ObjID
-	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
-		PreTree: func(name string, id btrfs.ObjID, _ btrfsvol.LogicalAddr) {
+	btrfsmisc.WalkAllTrees(fs, btrfsmisc.WalkAllTreesHandler{
+		PreTree: func(name string, id btrfs.ObjID) {
 			treeName = name
 			treeID = id
 		},
@@ -49,7 +49,7 @@ func Main(imgfilenames ...string) (err error) {
 		UnsafeNodes: true,
 		TreeWalkHandler: btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
-				if node == nil || err == nil {
+				if err == nil {
 					if !uuidsInited {
 						metadataUUID = node.Data.Head.MetadataUUID
 						chunkTreeUUID = node.Data.Head.ChunkTreeUUID
@@ -57,16 +57,20 @@ func Main(imgfilenames ...string) (err error) {
 					}
 					return nil
 				}
+				if !errors.Is(err, btrfs.ErrNotANode) {
+					err = btrfsmisc.WalkErr{
+						TreeName: treeName,
+						Path:     path,
+						Err:      err,
+					}
+					fmt.Printf("error: %v\n", err)
+					return nil
+				}
 				origErr := err
 				if !uuidsInited {
 					// TODO(lukeshu): Is there a better way to get the chunk
-					// tree UUID.
+					// tree UUID?
 					return fmt.Errorf("cannot repair node@%v: not (yet?) sure what the chunk tree UUID is", node.Addr)
-				}
-				nodeLevel := path[len(path)-1].NodeLevel
-				if nodeLevel == math.MaxUint8 {
-					// TODO(lukeshu): Use level from the superblock or whatever.
-					nodeLevel = 0
 				}
 				node.Data = btrfs.Node{
 					Size:         node.Data.Size,
@@ -81,7 +85,7 @@ func Main(imgfilenames ...string) (err error) {
 						Generation:    0,
 						Owner:         treeID,
 						NumItems:      0,
-						Level:         nodeLevel,
+						Level:         path[len(path)-1].NodeLevel,
 					},
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()

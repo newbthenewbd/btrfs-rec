@@ -153,7 +153,7 @@ func (fs *FS) initDev(sb *util.Ref[btrfsvol.PhysicalAddr, Superblock]) error {
 			}
 		}
 	}
-	if err := fs.TreeWalk(sb.Data.ChunkTree, TreeWalkHandler{
+	if err := fs.TreeWalk(CHUNK_TREE_OBJECTID, TreeWalkHandler{
 		Item: func(_ TreePath, item Item) error {
 			if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 				return nil

@@ -10,7 +10,6 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -54,23 +53,17 @@ const (
 )
 
 func printSubvol(fs *btrfs.FS, prefix0, prefix1, name string, key btrfs.Key) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		fmt.Printf("%s%q error: could not read superblock: %v\n", prefix0, name, err)
-		return
-	}
-
-	root, err := fs.TreeLookup(sb.Data.RootTree, key)
+	root, err := fs.TreeLookup(btrfs.ROOT_TREE_OBJECTID, key)
 	if err != nil {
 		fmt.Printf("%s%q error: could not look up root %v: %v\n", prefix0, name, key, err)
 		return
 	}
 	rootBody := root.Body.(btrfsitem.Root)
 
-	printDir(fs, rootBody.ByteNr, prefix0, prefix1, name, rootBody.RootDirID)
+	printDir(fs, root.Head.Key.ObjectID, prefix0, prefix1, name, rootBody.RootDirID)
 }
 
-func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirName string, dirInode btrfs.ObjID) {
+func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string, dirInode btrfs.ObjID) {
 	var errs derror.MultiError
 	items, err := fs.TreeSearchAll(fsTree, func(key btrfs.Key) int {
 		return util.CmpUint(dirInode, key.ObjectID)
@@ -190,7 +183,7 @@ func printDir(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1, dirNa
 	}
 }
 
-func printDirEntry(fs *btrfs.FS, fsTree btrfsvol.LogicalAddr, prefix0, prefix1 string, entry btrfsitem.DirEntry) {
+func printDirEntry(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1 string, entry btrfsitem.DirEntry) {
 	if len(entry.Data) != 0 {
 		fmt.Printf("%s%q: error: TODO: I don't know how to handle dirent.data\n",
 			prefix0, entry.Name)

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	iofs "io/fs"
-	"math"
 	"strings"
 
 	"github.com/datawire/dlib/derror"
 
+	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -74,16 +74,12 @@ type TreePathElem struct {
 	// being pointed at.
 	NodeAddr btrfsvol.LogicalAddr
 	// NodeLevel is the expected or actual level of the node at
-	// NodeAddr, or 255 if there is no knowledge of the level.
+	// NodeAddr.
 	NodeLevel uint8
 }
 
 func (elem TreePathElem) writeNodeTo(w io.Writer) {
-	if elem.NodeLevel != math.MaxUint8 {
-		fmt.Fprintf(w, "node:%d@%v", elem.NodeLevel, elem.NodeAddr)
-	} else {
-		fmt.Fprintf(w, "node@%v", elem.NodeAddr)
-	}
+	fmt.Fprintf(w, "node:%d@%v", elem.NodeLevel, elem.NodeAddr)
 }
 
 func (path TreePath) String() string {
@@ -100,6 +96,75 @@ func (path TreePath) String() string {
 		}
 	}
 	return ret.String()
+}
+
+// A treeRoot is more-or-less a btrfsitem.Root, but simpler and generalized for
+type treeRoot struct {
+	TreeID     ObjID
+	RootNode   btrfsvol.LogicalAddr
+	Level      uint8
+	Generation Generation
+}
+
+func (fs *FS) lookupTree(treeID ObjID) (*treeRoot, error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, err
+	}
+	switch treeID {
+	case ROOT_TREE_OBJECTID:
+		return &treeRoot{
+			TreeID:     treeID,
+			RootNode:   sb.Data.RootTree,
+			Level:      sb.Data.RootLevel,
+			Generation: sb.Data.Generation, // XXX: same generation as LOG_TREE?
+		}, nil
+	case CHUNK_TREE_OBJECTID:
+		return &treeRoot{
+			TreeID:     treeID,
+			RootNode:   sb.Data.ChunkTree,
+			Level:      sb.Data.ChunkLevel,
+			Generation: sb.Data.ChunkRootGeneration,
+		}, nil
+	case TREE_LOG_OBJECTID:
+		return &treeRoot{
+			TreeID:     treeID,
+			RootNode:   sb.Data.LogTree,
+			Level:      sb.Data.LogLevel,
+			Generation: sb.Data.Generation, // XXX: same generation as ROOT_TREE?
+		}, nil
+	case BLOCK_GROUP_TREE_OBJECTID:
+		return &treeRoot{
+			TreeID:     treeID,
+			RootNode:   sb.Data.BlockGroupRoot,
+			Level:      sb.Data.BlockGroupRootLevel,
+			Generation: sb.Data.BlockGroupRootGeneration,
+		}, nil
+	default:
+		rootItem, err := fs.TreeSearch(ROOT_TREE_OBJECTID, func(key Key) int {
+			if key.ObjectID == treeID && key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+				return 0
+			}
+			return Key{
+				ObjectID: treeID,
+				ItemType: btrfsitem.ROOT_ITEM_KEY,
+				Offset:   0,
+			}.Cmp(key)
+		})
+		if err != nil {
+			return nil, err
+		}
+		rootItemBody, ok := rootItem.Body.(btrfsitem.Root)
+		if !ok {
+			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v", treeID)
+		}
+		return &treeRoot{
+			TreeID:     treeID,
+			RootNode:   rootItemBody.ByteNr,
+			Level:      rootItemBody.Level,
+			Generation: rootItemBody.Generation,
+		}, nil
+	}
 }
 
 type TreeWalkHandler struct {
@@ -127,12 +192,16 @@ type TreeWalkHandler struct {
 //           else:
 //     004     .Item()
 //     007 .PostNode()
-func (fs *FS) TreeWalk(treeRoot btrfsvol.LogicalAddr, cbs TreeWalkHandler) error {
+func (fs *FS) TreeWalk(treeID ObjID, cbs TreeWalkHandler) error {
+	rootInfo, err := fs.lookupTree(treeID)
+	if err != nil {
+		return err
+	}
 	path := TreePath{
 		TreePathElem{
 			ItemIdx:   -1,
-			NodeAddr:  treeRoot,
-			NodeLevel: math.MaxUint8,
+			NodeAddr:  rootInfo.RootNode,
+			NodeLevel: rootInfo.Level,
 		},
 	}
 	return fs.treeWalk(path, cbs)
@@ -216,12 +285,12 @@ func (fs *FS) treeWalk(path TreePath, cbs TreeWalkHandler) error {
 	return nil
 }
 
-func (fs *FS) treeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
 		TreePathElem{
 			ItemIdx:   -1,
-			NodeAddr:  treeRoot,
-			NodeLevel: math.MaxUint8,
+			NodeAddr:  treeRoot.RootNode,
+			NodeLevel: treeRoot.Level,
 		},
 	}
 	for {
@@ -418,16 +487,20 @@ func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (T
 	return path, node, nil
 }
 
-func (fs *FS) TreeSearch(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) (Item, error) {
-	path, node, err := fs.treeSearch(treeRoot, fn)
+func (fs *FS) TreeSearch(treeID ObjID, fn func(Key) int) (Item, error) {
+	rootInfo, err := fs.lookupTree(treeID)
+	if err != nil {
+		return Item{}, err
+	}
+	path, node, err := fs.treeSearch(*rootInfo, fn)
 	if err != nil {
 		return Item{}, err
 	}
 	return node.Data.BodyLeaf[path[len(path)-1].ItemIdx], nil
 }
 
-func (fs *FS) TreeLookup(treeRoot btrfsvol.LogicalAddr, key Key) (Item, error) {
-	item, err := fs.TreeSearch(treeRoot, key.Cmp)
+func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
+	item, err := fs.TreeSearch(treeID, key.Cmp)
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
 	}
@@ -438,8 +511,12 @@ func (fs *FS) TreeLookup(treeRoot btrfsvol.LogicalAddr, key Key) (Item, error) {
 // return *both* a list of items and an error.
 //
 // If no such item is found, an error that is io/fs.ErrNotExist is returned.
-func (fs *FS) TreeSearchAll(treeRoot btrfsvol.LogicalAddr, fn func(Key) int) ([]Item, error) {
-	middlePath, middleNode, err := fs.treeSearch(treeRoot, fn)
+func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
+	rootInfo, err := fs.lookupTree(treeID)
+	if err != nil {
+		return nil, err
+	}
+	middlePath, middleNode, err := fs.treeSearch(*rootInfo, fn)
 	if err != nil {
 		return nil, err
 	}

@@ -66,13 +66,7 @@ type Subvolume struct {
 
 func (sv *Subvolume) init() {
 	sv.rootOnce.Do(func() {
-		sb, err := sv.FS.Superblock()
-		if err != nil {
-			sv.rootErr = err
-			return
-		}
-
-		root, err := sv.FS.TreeLookup(sb.Data.RootTree, Key{
+		root, err := sv.FS.TreeLookup(ROOT_TREE_OBJECTID, Key{
 			ObjectID: sv.TreeID,
 			ItemType: btrfsitem.ROOT_ITEM_KEY,
 			Offset:   0,
@@ -97,22 +91,12 @@ func (sv *Subvolume) GetRootInode() (ObjID, error) {
 	return sv.rootVal.RootDirID, sv.rootErr
 }
 
-func (sv *Subvolume) GetFSTree() (btrfsvol.LogicalAddr, error) {
-	sv.init()
-	return sv.rootVal.ByteNr, sv.rootErr
-}
-
 func (sv *Subvolume) LoadBareInode(inode ObjID) (*BareInode, error) {
 	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
 		}
-		tree, err := sv.GetFSTree()
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			return
-		}
-		item, err := sv.FS.TreeLookup(tree, Key{
+		item, err := sv.FS.TreeLookup(sv.TreeID, Key{
 			ObjectID: inode,
 			ItemType: btrfsitem.INODE_ITEM_KEY,
 			Offset:   0,
@@ -144,12 +128,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 				Inode: inode,
 			},
 		}
-		tree, err := sv.GetFSTree()
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			return
-		}
-		items, err := sv.FS.TreeSearchAll(tree, func(key Key) int {
+		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key Key) int {
 			return util.CmpUint(inode, key.ObjectID)
 		})
 		if err != nil {

@@ -8,7 +8,6 @@ import (
 
 	"lukeshu.com/btrfs-tools/pkg/btrfs"
 	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
 	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
 	"lukeshu.com/btrfs-tools/pkg/util"
 )
@@ -37,11 +36,11 @@ func Main(imgfilenames ...string) (err error) {
 
 	var treeErrCnt int
 	var treeItemCnt map[btrfsitem.Type]int
-	btrfsmisc.WalkFS(fs, btrfsmisc.WalkFSHandler{
-		PreTree: func(name string, _ btrfs.ObjID, laddr btrfsvol.LogicalAddr) {
+	btrfsmisc.WalkAllTrees(fs, btrfsmisc.WalkAllTreesHandler{
+		PreTree: func(name string, treeID btrfs.ObjID) {
 			treeErrCnt = 0
 			treeItemCnt = make(map[btrfsitem.Type]int)
-			fmt.Printf("tree laddr=%v name=%q\n", laddr, name)
+			fmt.Printf("tree id=%v name=%q\n", treeID, name)
 		},
 		Err: func(_ error) {
 			treeErrCnt++
@@ -53,7 +52,7 @@ func Main(imgfilenames ...string) (err error) {
 				return nil
 			},
 		},
-		PostTree: func(name string, _ btrfs.ObjID, laddr btrfsvol.LogicalAddr) {
+		PostTree: func(_ string, _ btrfs.ObjID) {
 			totalItems := 0
 			for _, cnt := range treeItemCnt {
 				totalItems += cnt
