@@ -1,0 +1,11 @@
+# Ref: https://man.sr.ht/builds.sr.ht/
+sources:
+  - https://git.sr.ht/~lukeshu/btrfs-ng
+
+image: archlinux
+packages:
+  - go
+  - make
+tasks:
+  - lint: make -C btrfs-ng lint
+  - check: make -C btrfs-ng check
