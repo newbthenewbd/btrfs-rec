@@ -21,4 +21,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
 
-replace github.com/jacobsa/fuse => ../fuse
+replace github.com/jacobsa/fuse => github.com/lukeshu/jacobsa-fuse v0.0.0-20220706162300-f42bfdd0fc53
