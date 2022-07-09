@@ -212,7 +212,7 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 
 func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	var ret []Mapping
-	lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
+	_ = lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
 		chunk := node.Value
 		var flags *BlockGroupFlags
 		if chunk.Flags != nil {

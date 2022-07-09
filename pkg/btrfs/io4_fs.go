@@ -260,7 +260,6 @@ func (ret *Dir) populate() {
 			nextIndex++
 		}
 	}
-	return
 }
 
 func (dir *Dir) AbsPath() (string, error) {

@@ -1,7 +1,10 @@
+// Based on https://github.com/datawire/ocibuild/blob/master/pkg/python/stat.go
+
 package linux
 
 type StatMode uint32
 
+//nolint:deadcode,varcheck // not all of these modes will be used
 const (
 	// 16 bits = 5⅓ octal characters
 

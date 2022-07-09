@@ -1,0 +1,8 @@
+linters:
+  disable:
+    - structcheck # doesn't support Go 1.18 yet
+  enable:
+    - gofmt
+linters-settings:
+  gofmt:
+    simplify: true

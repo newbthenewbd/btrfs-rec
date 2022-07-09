@@ -1,5 +1,6 @@
 *.log
 *.cov
 *.html
+bin/
 btrfs-mount
 !/cmd/btrfs-mount/

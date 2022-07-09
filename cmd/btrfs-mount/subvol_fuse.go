@@ -301,11 +301,10 @@ func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 		return syscall.EBADF
 	}
 
-	size := op.Size
 	var dat []byte
 	if op.Dst != nil {
-		size = util.Min(int64(len(op.Dst)), size)
-		dat = op.Dst
+		size := util.Min(int64(len(op.Dst)), op.Size)
+		dat = op.Dst[:size]
 	} else {
 		dat = make([]byte, op.Size)
 		op.Data = [][]byte{dat}

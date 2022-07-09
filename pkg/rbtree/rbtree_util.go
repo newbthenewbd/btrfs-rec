@@ -33,13 +33,13 @@ func (t *Tree[K, V]) Equal(u *Tree[K, V]) bool {
 	}
 
 	var tSlice []V
-	t.Walk(func(node *Node[V]) error {
+	_ = t.Walk(func(node *Node[V]) error {
 		tSlice = append(tSlice, node.Value)
 		return nil
 	})
 
 	var uSlice []V
-	u.Walk(func(node *Node[V]) error {
+	_ = u.Walk(func(node *Node[V]) error {
 		uSlice = append(uSlice, node.Value)
 		return nil
 	})

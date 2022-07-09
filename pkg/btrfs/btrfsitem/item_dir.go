@@ -93,7 +93,7 @@ const (
 	FT_SYMLINK  = FileType(7)
 	FT_XATTR    = FileType(8)
 
-	FT_MAX      = FileType(9)
+	FT_MAX = FileType(9)
 )
 
 func (ft FileType) String() string {
