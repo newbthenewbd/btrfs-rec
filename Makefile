@@ -13,11 +13,11 @@ lint: tools/bin/golangci-lint
 .PHONY: lint
 
 generate:
-	$(MAKE) -C pkg/btrfs
+	$(MAKE) -C lib/btrfs
 .PHONY: generate
 
 generate-clean:
-	$(MAKE) -C pkg/btrfs clean
+	$(MAKE) -C lib/btrfs clean
 .PHONY: generate-clean
 
 # tools

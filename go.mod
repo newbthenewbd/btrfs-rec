@@ -1,4 +1,4 @@
-module lukeshu.com/btrfs-tools
+module git.lukeshu.com/btrfs-progs-ng
 
 go 1.18
 

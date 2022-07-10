@@ -10,11 +10,11 @@ import (
 
 	"golang.org/x/text/message"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
-	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
-	"lukeshu.com/btrfs-tools/pkg/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func pass1(fs *btrfs.FS, superblock *util.Ref[btrfsvol.PhysicalAddr, btrfs.Superblock]) (map[btrfsvol.LogicalAddr]struct{}, error) {

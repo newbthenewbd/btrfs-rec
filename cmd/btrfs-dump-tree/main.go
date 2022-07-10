@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
 )
 
 func main() {

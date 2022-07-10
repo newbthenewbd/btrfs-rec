@@ -10,8 +10,8 @@ import (
 	"github.com/datawire/dlib/dlog"
 	"github.com/sirupsen/logrus"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
 )
 
 func main() {

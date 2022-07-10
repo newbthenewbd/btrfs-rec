@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
-	"lukeshu.com/btrfs-tools/pkg/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func pass0(filenames ...string) (*btrfs.FS, *util.Ref[btrfsvol.PhysicalAddr, btrfs.Superblock], error) {

@@ -6,10 +6,10 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsvol"
-	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
-	"lukeshu.com/btrfs-tools/pkg/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func main() {

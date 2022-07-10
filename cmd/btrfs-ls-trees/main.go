@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"lukeshu.com/btrfs-tools/pkg/btrfs"
-	"lukeshu.com/btrfs-tools/pkg/btrfs/btrfsitem"
-	"lukeshu.com/btrfs-tools/pkg/btrfsmisc"
-	"lukeshu.com/btrfs-tools/pkg/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func main() {
