@@ -9,3 +9,11 @@ packages:
 tasks:
   - lint: make -C btrfs-ng lint
   - check: make -C btrfs-ng check
+  - generate: |
+      cd btrfs-ng
+      make generate
+      git add .
+      if [[ -n "$(git status --porcelain)" ]]; then
+        PAGER= git diff --cached
+        exit 1
+      fi

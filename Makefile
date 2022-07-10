@@ -12,6 +12,14 @@ lint: tools/bin/golangci-lint
 	tools/bin/golangci-lint run ./...
 .PHONY: lint
 
+generate:
+	$(MAKE) -C pkg/btrfs
+.PHONY: generate
+
+generate-clean:
+	$(MAKE) -C pkg/btrfs clean
+.PHONY: generate-clean
+
 # tools
 
 tools/bin/%: tools/src/%/pin.go tools/src/%/go.mod
