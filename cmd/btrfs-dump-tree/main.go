@@ -37,5 +37,5 @@ func Main(imgfilename string) (err error) {
 	}()
 
 	fmt.Printf("btrfs-progs v%v\n", version)
-	return btrfsinspect.DumpTrees(fs)
+	return btrfsinspect.DumpTrees(os.Stdout, os.Stderr, fs)
 }

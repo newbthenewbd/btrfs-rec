@@ -7,6 +7,7 @@ package btrfsrepair
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -14,7 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-func ClearBadNodes(fs *btrfs.FS) error {
+func ClearBadNodes(out, errout io.Writer, fs *btrfs.FS) error {
 	var uuidsInited bool
 	var metadataUUID, chunkTreeUUID btrfs.UUID
 
@@ -26,7 +27,7 @@ func ClearBadNodes(fs *btrfs.FS) error {
 			treeID = id
 		},
 		Err: func(err error) {
-			fmt.Printf("error: %v\n", err)
+			fmt.Fprintf(errout, "error: %v\n", err)
 		},
 		UnsafeNodes: true,
 		TreeWalkHandler: btrfs.TreeWalkHandler{
@@ -45,7 +46,7 @@ func ClearBadNodes(fs *btrfs.FS) error {
 						Path:     path,
 						Err:      err,
 					}
-					fmt.Printf("error: %v\n", err)
+					fmt.Fprintf(errout, "error: %v\n", err)
 					return nil
 				}
 				origErr := err
@@ -82,7 +83,7 @@ func ClearBadNodes(fs *btrfs.FS) error {
 					return err
 				}
 
-				fmt.Printf("fixed node@%v (err was %v)\n", node.Addr, origErr)
+				fmt.Fprintf(out, "fixed node@%v (err was %v)\n", node.Addr, origErr)
 				return nil
 			},
 		},

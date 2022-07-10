@@ -34,5 +34,5 @@ func Main(imgfilenames ...string) (err error) {
 		maybeSetErr(fs.Close())
 	}()
 
-	return btrfsrepair.ClearBadNodes(fs)
+	return btrfsrepair.ClearBadNodes(os.Stdout, os.Stderr, fs)
 }
