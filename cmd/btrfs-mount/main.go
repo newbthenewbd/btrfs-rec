@@ -8,14 +8,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 	"github.com/sirupsen/logrus"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
 
 func main() {
@@ -36,14 +35,6 @@ func main() {
 	}
 }
 
-func tryAbs(rel string) string {
-	abs, err := filepath.Abs(rel)
-	if err != nil {
-		return rel
-	}
-	return abs
-}
-
 func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err error) {
 	maybeSetErr := func(_err error) {
 		if _err != nil && err == nil {
@@ -51,7 +42,7 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 		}
 	}
 
-	fs, err := btrfsmisc.Open(os.O_RDONLY, imgfilenames...)
+	fs, err := btrfsutil.Open(os.O_RDONLY, imgfilenames...)
 	if err != nil {
 		return err
 	}
@@ -59,13 +50,5 @@ func Main(ctx context.Context, mountpoint string, imgfilenames ...string) (err e
 		maybeSetErr(fs.Close())
 	}()
 
-	rootSubvol := &Subvolume{
-		Subvolume: btrfs.Subvolume{
-			FS:     fs,
-			TreeID: btrfs.FS_TREE_OBJECTID,
-		},
-		DeviceName: tryAbs(imgfilenames[0]),
-		Mountpoint: mountpoint,
-	}
-	return rootSubvol.Run(ctx)
+	return btrfsinspect.MountRO(ctx, fs, mountpoint)
 }

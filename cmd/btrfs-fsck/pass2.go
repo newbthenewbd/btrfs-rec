@@ -9,7 +9,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -17,7 +17,7 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAddr]struct{}) {
 	fmt.Printf("\nPass 2: orphaned nodes\n")
 
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
-	btrfsmisc.WalkAllTrees(fs, btrfsmisc.WalkAllTreesHandler{
+	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 				visitedNodes[node.Addr] = struct{}{}

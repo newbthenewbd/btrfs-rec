@@ -12,7 +12,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -30,7 +30,7 @@ func Main(imgfilenames ...string) (err error) {
 		}
 	}
 
-	fs, err := btrfsmisc.Open(os.O_RDONLY, imgfilenames...)
+	fs, err := btrfsutil.Open(os.O_RDONLY, imgfilenames...)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func Main(imgfilenames ...string) (err error) {
 
 	var treeErrCnt int
 	var treeItemCnt map[btrfsitem.Type]int
-	btrfsmisc.WalkAllTrees(fs, btrfsmisc.WalkAllTreesHandler{
+	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
 		PreTree: func(name string, treeID btrfs.ObjID) {
 			treeErrCnt = 0
 			treeItemCnt = make(map[btrfsitem.Type]int)

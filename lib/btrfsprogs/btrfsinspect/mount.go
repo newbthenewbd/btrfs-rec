@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package main
+package btrfsinspect
 
 import (
 	"context"
@@ -14,7 +14,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/datawire/dlib/dcontext"
 	"github.com/datawire/dlib/dgroup"
+	"github.com/datawire/dlib/dlog"
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
@@ -25,6 +27,69 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
+func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
+	pvs := fs.LV.PhysicalVolumes()
+	if len(pvs) < 1 {
+		return errors.New("no devices")
+	}
+
+	deviceName := pvs[util.SortedMapKeys(pvs)[0]].Name()
+	if abs, err := filepath.Abs(deviceName); err == nil {
+		deviceName = abs
+	}
+
+	rootSubvol := &subvolume{
+		Subvolume: btrfs.Subvolume{
+			FS:     fs,
+			TreeID: btrfs.FS_TREE_OBJECTID,
+		},
+		DeviceName: deviceName,
+		Mountpoint: mountpoint,
+	}
+	return rootSubvol.Run(ctx)
+}
+
+func fuseMount(ctx context.Context, mountpoint string, server fuse.Server, cfg *fuse.MountConfig) error {
+	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
+		// Allow mountHandle.Join() returning to cause the
+		// "unmount" goroutine to quit.
+		ShutdownOnNonError: true,
+	})
+	mounted := uint32(1)
+	grp.Go("unmount", func(ctx context.Context) error {
+		<-ctx.Done()
+		var err error
+		var gotNil bool
+		// Keep retrying, because the FS might be busy.
+		for atomic.LoadUint32(&mounted) != 0 {
+			if _err := fuse.Unmount(mountpoint); _err == nil {
+				gotNil = true
+			} else if !gotNil {
+				err = _err
+			}
+		}
+		if gotNil {
+			return nil
+		}
+		return err
+	})
+	grp.Go("mount", func(ctx context.Context) error {
+		defer atomic.StoreUint32(&mounted, 0)
+
+		cfg.OpContext = ctx
+		cfg.ErrorLogger = dlog.StdLogger(ctx, dlog.LogLevelError)
+		cfg.DebugLogger = dlog.StdLogger(ctx, dlog.LogLevelDebug)
+
+		mountHandle, err := fuse.Mount(mountpoint, server, cfg)
+		if err != nil {
+			return err
+		}
+		dlog.Infof(ctx, "mounted %q", mountpoint)
+		return mountHandle.Join(dcontext.HardContext(ctx))
+	})
+	return grp.Wait()
+}
+
 type dirState struct {
 	Dir *btrfs.Dir
 }
@@ -33,7 +98,7 @@ type fileState struct {
 	File *btrfs.File
 }
 
-type Subvolume struct {
+type subvolume struct {
 	btrfs.Subvolume
 	DeviceName string
 	Mountpoint string
@@ -48,7 +113,7 @@ type Subvolume struct {
 	grp      *dgroup.Group
 }
 
-func (sv *Subvolume) Run(ctx context.Context) error {
+func (sv *subvolume) Run(ctx context.Context) error {
 	sv.grp = dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 	sv.grp.Go("self", func(ctx context.Context) error {
 		cfg := &fuse.MountConfig{
@@ -61,12 +126,12 @@ func (sv *Subvolume) Run(ctx context.Context) error {
 				"allow_other": "",
 			},
 		}
-		return Mount(ctx, sv.Mountpoint, fuseutil.NewFileSystemServer(sv), cfg)
+		return fuseMount(ctx, sv.Mountpoint, fuseutil.NewFileSystemServer(sv), cfg)
 	})
 	return sv.grp.Wait()
 }
 
-func (sv *Subvolume) newHandle() fuseops.HandleID {
+func (sv *subvolume) newHandle() fuseops.HandleID {
 	return fuseops.HandleID(atomic.AddUint64(&sv.lastHandle, 1))
 }
 
@@ -85,7 +150,7 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 	}
 }
 
-func (sv *Subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
+func (sv *subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 	val, err = sv.Subvolume.LoadDir(inode)
 	if val != nil {
 		haveSubvolumes := false
@@ -115,7 +180,7 @@ func (sv *Subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 					sv.subvols[subMountpoint] = struct{}{}
 					workerName := fmt.Sprintf("%d-%s", val.Inode, filepath.Base(subMountpoint))
 					sv.grp.Go(workerName, func(ctx context.Context) error {
-						subSv := &Subvolume{
+						subSv := &subvolume{
 							Subvolume: btrfs.Subvolume{
 								FS:     sv.FS,
 								TreeID: entry.Location.ObjectID,
@@ -133,7 +198,7 @@ func (sv *Subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 	return
 }
 
-func (sv *Subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
+func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 	// See linux.git/fs/btrfs/super.c:btrfs_statfs()
 	sb, err := sv.FS.Superblock()
 	if err != nil {
@@ -156,7 +221,7 @@ func (sv *Subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 	return nil
 }
 
-func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) error {
+func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) error {
 	if op.Parent == fuseops.RootInodeID {
 		parent, err := sv.GetRootInode()
 		if err != nil {
@@ -207,7 +272,7 @@ func (sv *Subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 	return nil
 }
 
-func (sv *Subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeAttributesOp) error {
+func (sv *subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeAttributesOp) error {
 	if op.Inode == fuseops.RootInodeID {
 		inode, err := sv.GetRootInode()
 		if err != nil {
@@ -225,7 +290,7 @@ func (sv *Subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeA
 	return nil
 }
 
-func (sv *Subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
+func (sv *subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	if op.Inode == fuseops.RootInodeID {
 		inode, err := sv.GetRootInode()
 		if err != nil {
@@ -245,7 +310,7 @@ func (sv *Subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	op.Handle = handle
 	return nil
 }
-func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
+func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	state, ok := sv.dirHandles.Load(op.Handle)
 	if !ok {
 		return syscall.EBADF
@@ -278,7 +343,7 @@ func (sv *Subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	}
 	return nil
 }
-func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error {
+func (sv *subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error {
 	_, ok := sv.dirHandles.LoadAndDelete(op.Handle)
 	if !ok {
 		return syscall.EBADF
@@ -286,7 +351,7 @@ func (sv *Subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirH
 	return nil
 }
 
-func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
+func (sv *subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
 	file, err := sv.LoadFile(btrfs.ObjID(op.Inode))
 	if err != nil {
 		return err
@@ -299,7 +364,7 @@ func (sv *Subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
 	op.KeepPageCache = true
 	return nil
 }
-func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
+func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 	state, ok := sv.fileHandles.Load(op.Handle)
 	if !ok {
 		return syscall.EBADF
@@ -322,7 +387,7 @@ func (sv *Subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 
 	return err
 }
-func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
+func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
 	_, ok := sv.fileHandles.LoadAndDelete(op.Handle)
 	if !ok {
 		return syscall.EBADF
@@ -330,13 +395,13 @@ func (sv *Subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFil
 	return nil
 }
 
-func (sv *Subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
+func (sv *subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
 	return syscall.ENOSYS
 }
 
-func (sv *Subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error { return syscall.ENOSYS }
-func (sv *Subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error {
+func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error { return syscall.ENOSYS }
+func (sv *subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error {
 	return syscall.ENOSYS
 }
 
-func (sv *Subvolume) Destroy() {}
+func (sv *subvolume) Destroy() {}

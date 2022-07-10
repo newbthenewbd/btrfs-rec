@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfsmisc
+package btrfsinspect
 
 import (
 	"fmt"
@@ -16,10 +16,80 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-// PrintTree mimics btrfs-progs
+func DumpTrees(fs *btrfs.FS) error {
+	superblock, err := fs.Superblock()
+	if err != nil {
+		return err
+	}
+
+	if superblock.Data.RootTree != 0 {
+		fmt.Printf("root tree\n")
+		if err := printTree(fs, btrfs.ROOT_TREE_OBJECTID); err != nil {
+			return err
+		}
+	}
+	if superblock.Data.ChunkTree != 0 {
+		fmt.Printf("chunk tree\n")
+		if err := printTree(fs, btrfs.CHUNK_TREE_OBJECTID); err != nil {
+			return err
+		}
+	}
+	if superblock.Data.LogTree != 0 {
+		fmt.Printf("log root tree\n")
+		if err := printTree(fs, btrfs.TREE_LOG_OBJECTID); err != nil {
+			return err
+		}
+	}
+	if superblock.Data.BlockGroupRoot != 0 {
+		fmt.Printf("block group tree\n")
+		if err := printTree(fs, btrfs.BLOCK_GROUP_TREE_OBJECTID); err != nil {
+			return err
+		}
+	}
+	if err := fs.TreeWalk(btrfs.ROOT_TREE_OBJECTID, btrfs.TreeWalkHandler{
+		Item: func(_ btrfs.TreePath, item btrfs.Item) error {
+			if item.Head.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+				return nil
+			}
+			treeName, ok := map[btrfs.ObjID]string{
+				btrfs.ROOT_TREE_OBJECTID:        "root",
+				btrfs.EXTENT_TREE_OBJECTID:      "extent",
+				btrfs.CHUNK_TREE_OBJECTID:       "chunk",
+				btrfs.DEV_TREE_OBJECTID:         "device",
+				btrfs.FS_TREE_OBJECTID:          "fs",
+				btrfs.ROOT_TREE_DIR_OBJECTID:    "directory",
+				btrfs.CSUM_TREE_OBJECTID:        "checksum",
+				btrfs.ORPHAN_OBJECTID:           "orphan",
+				btrfs.TREE_LOG_OBJECTID:         "log",
+				btrfs.TREE_LOG_FIXUP_OBJECTID:   "log fixup",
+				btrfs.TREE_RELOC_OBJECTID:       "reloc",
+				btrfs.DATA_RELOC_TREE_OBJECTID:  "data reloc",
+				btrfs.EXTENT_CSUM_OBJECTID:      "extent checksum",
+				btrfs.QUOTA_TREE_OBJECTID:       "quota",
+				btrfs.UUID_TREE_OBJECTID:        "uuid",
+				btrfs.FREE_SPACE_TREE_OBJECTID:  "free space",
+				btrfs.MULTIPLE_OBJECTIDS:        "multiple",
+				btrfs.BLOCK_GROUP_TREE_OBJECTID: "block group",
+			}[item.Head.Key.ObjectID]
+			if !ok {
+				treeName = "file"
+			}
+			fmt.Printf("%v tree %v \n", treeName, fmtKey(item.Head.Key))
+			return printTree(fs, item.Head.Key.ObjectID)
+		},
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("total bytes %v\n", superblock.Data.TotalBytes)
+	fmt.Printf("bytes used %v\n", superblock.Data.BytesUsed)
+	fmt.Printf("uuid %v\n", superblock.Data.FSUUID)
+	return nil
+}
+
+// printTree mimics btrfs-progs
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
-func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
+func printTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 	return fs.TreeWalk(treeID, btrfs.TreeWalkHandler{
 		Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			if err != nil {
@@ -32,7 +102,7 @@ func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 		},
 		PreKeyPointer: func(_ btrfs.TreePath, item btrfs.KeyPointer) error {
 			fmt.Printf("\t%v block %v gen %v\n",
-				FmtKey(item.Key),
+				fmtKey(item.Key),
 				item.BlockPtr,
 				item.Generation)
 			return nil
@@ -41,12 +111,12 @@ func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 			i := path[len(path)-1].ItemIdx
 			fmt.Printf("\titem %v %v itemoff %v itemsize %v\n",
 				i,
-				FmtKey(item.Head.Key),
+				fmtKey(item.Head.Key),
 				item.Head.DataOffset,
 				item.Head.DataSize)
 			switch body := item.Body.(type) {
 			case btrfsitem.FreeSpaceHeader:
-				fmt.Printf("\t\tlocation %v\n", FmtKey(body.Location))
+				fmt.Printf("\t\tlocation %v\n", fmtKey(body.Location))
 				fmt.Printf("\t\tcache generation %v entries %v bitmaps %v\n",
 					body.Generation, body.NumEntries, body.NumBitmaps)
 			case btrfsitem.Inode:
@@ -69,7 +139,7 @@ func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 			case btrfsitem.DirEntries:
 				for _, dir := range body {
 					fmt.Printf("\t\tlocation %v type %v\n",
-						FmtKey(dir.Location), dir.Type)
+						fmtKey(dir.Location), dir.Type)
 					fmt.Printf("\t\ttransid %v data_len %v name_len %v\n",
 						dir.TransID, dir.DataLen, dir.NameLen)
 					fmt.Printf("\t\tname: %s\n", dir.Name)
@@ -85,7 +155,7 @@ func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 				fmt.Printf("\t\tlast_snapshot %v flags %v refs %v\n",
 					body.LastSnapshot, body.Flags, body.Refs)
 				fmt.Printf("\t\tdrop_progress %v drop_level %v\n",
-					FmtKey(body.DropProgress), body.DropLevel)
+					fmtKey(body.DropProgress), body.DropLevel)
 				fmt.Printf("\t\tlevel %v generation_v2 %v\n",
 					body.Level, body.GenerationV2)
 				if body.Generation == body.GenerationV2 {
@@ -116,7 +186,7 @@ func PrintTree(fs *btrfs.FS, treeID btrfs.ObjID) error {
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
 				if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
 					fmt.Printf("\t\ttree block %v level %v\n",
-						FmtKey(body.Info.Key), body.Info.Level)
+						fmtKey(body.Info.Key), body.Info.Level)
 				}
 				printExtentInlineRefs(body.Refs)
 			case btrfsitem.Metadata:
@@ -340,7 +410,7 @@ func printExtentInlineRefs(refs []btrfsitem.ExtentInlineRef) {
 }
 
 // mimics print-tree.c:btrfs_print_key()
-func FmtKey(key btrfs.Key) string {
+func fmtKey(key btrfs.Key) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {

@@ -14,7 +14,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -32,7 +32,7 @@ func Main(imgfilenames ...string) (err error) {
 		}
 	}
 
-	fs, err := btrfsmisc.Open(os.O_RDONLY, imgfilenames...)
+	fs, err := btrfsutil.Open(os.O_RDONLY, imgfilenames...)
 	if err != nil {
 		return err
 	}

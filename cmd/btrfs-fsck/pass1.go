@@ -17,7 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsmisc"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -26,7 +26,7 @@ func pass1(fs *btrfs.FS, superblock *util.Ref[btrfsvol.PhysicalAddr, btrfs.Super
 
 	fmt.Printf("Pass 1: ... walking fs\n")
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
-	btrfsmisc.WalkAllTrees(fs, btrfsmisc.WalkAllTreesHandler{
+	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 				if err != nil {
@@ -246,7 +246,7 @@ func pass1ScanOneDev_real(dev *btrfs.Device, superblock btrfs.Superblock) (pass1
 	devSize, _ := dev.Size()
 	lastProgress := -1
 
-	err := btrfsmisc.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
+	err := btrfsutil.ScanForNodes(dev, superblock, func(nodeRef *util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			fmt.Printf("Pass 1: ... dev[%q] error: %v\n", dev.Name(), err)
 			return
