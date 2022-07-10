@@ -1,0 +1,38 @@
+btrfs-progs-ng - Better btrfs userspace tools
+Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.  Individual source files may be
+available (at your option) under an alternative license.
+
+Most of the source code is licensed under the terms of the GNU General
+Public License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.  A
+small minority of the source code is licensed under the terms of the
+Apache License, version 2.0.  Refer to the "SPDX-License-Identifier"
+comment in each file to see which license it is made available under.
+
+ > The terms of the GNU General Public License version 2 and terms of
+ > the Apache License version 2.0 are contradictory--they cannot both
+ > be fulfilled at the same time; but the terms of the GNU General
+ > Public License version 3 and the Apache License version 2.0 are not
+ > contradictory and can be fulfilled at the same time.  Because of
+ > this one must take the "or (at your option) any later version" on
+ > the General Public License and treat the combined work as being
+ > under the GNU General Public License version 3 or later.  This is
+ > why the opening paragraph identified the program as being available
+ > under this version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
+
+Along with this program, you should have received a copy of the GNU
+General Public License (in the COPYING.gpl-2.0.txt and
+COPYING.gpl-3.0.txt files) and the Apache License (in the
+COPYING.apache-2.0.txt file).  If not, see
+<https://www.gnu.org/licenses/> and
+<http://www.apache.org/licenses/LICENSE-2.0>.

@@ -1,3 +1,8 @@
+// Copyright (C) 2020-2021  Ambassador Labs
+// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+//
+// SPDX-License-Identifier: Apache-2.0
+//
 // Based on https://github.com/datawire/ocibuild/blob/master/pkg/python/stat.go
 
 package linux

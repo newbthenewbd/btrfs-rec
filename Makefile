@@ -1,3 +1,7 @@
+# Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 # main
 
 build:
@@ -12,13 +16,28 @@ lint: tools/bin/golangci-lint
 	tools/bin/golangci-lint run ./...
 .PHONY: lint
 
-generate:
+# generate
+
+generate/files  = COPYING.gpl-2.0.txt
+generate/files += COPYING.gpl-3.0.txt
+generate/files += COPYING.apache-2.0.txt
+
+generate: generate-clean
 	$(MAKE) -C lib/btrfs
+	$(MAKE) $(generate/files)
 .PHONY: generate
 
 generate-clean:
 	$(MAKE) -C lib/btrfs clean
+	rm -f $(generate/files)
 .PHONY: generate-clean
+
+COPYING.gpl-2.0.txt:
+	curl https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt > $@
+COPYING.gpl-3.0.txt:
+	curl https://www.gnu.org/licenses/gpl-3.0.txt > $@
+COPYING.apache-2.0.txt:
+	curl https://apache.org/licenses/LICENSE-2.0.txt > $@
 
 # tools
 

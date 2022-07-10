@@ -1,3 +1,7 @@
+// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 package rbtree
 
 import (
@@ -285,6 +289,9 @@ func (t *Tree[K, V]) Insert(val V) {
 	}
 
 	// Re-balance
+	//
+	// This is closely based on the algorithm presented in CLRS
+	// 3e.
 
 	for node.Parent.getColor() == Red {
 		if node.Parent == node.Parent.Parent.Left {
@@ -336,6 +343,9 @@ func (t *Tree[K, V]) Delete(key K) {
 	if nodeToDelete == nil {
 		return
 	}
+
+	// This is closely based on the algorithm presented in CLRS
+	// 3e.
 
 	var nodeToRebalance *Node[V]
 	var nodeToRebalanceParent *Node[V] // in case 'nodeToRebalance' is nil, which it can be

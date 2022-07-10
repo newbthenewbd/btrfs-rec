@@ -1,3 +1,7 @@
+// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 module git.lukeshu.com/btrfs-progs-ng
 
 go 1.18
