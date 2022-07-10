@@ -8,7 +8,6 @@ go 1.18
 
 require (
 	github.com/datawire/dlib v1.3.0
-	github.com/davecgh/go-spew v1.1.1
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jacobsa/fuse v0.0.0-20220702091825-13117049f383
 	github.com/sirupsen/logrus v1.6.0
@@ -18,6 +17,7 @@ require (
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
