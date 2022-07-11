@@ -5,7 +5,10 @@
 package btrfsitem
 
 import (
+	"fmt"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
+	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
 )
 
 // key.objectid = inode number of the file
@@ -18,9 +21,19 @@ type InodeRef struct { // INODE_REF=12
 }
 
 func (o *InodeRef) UnmarshalBinary(dat []byte) (int, error) {
+	if err := binutil.NeedNBytes(dat, 0xA); err != nil {
+		return 0, err
+	}
 	n, err := binstruct.UnmarshalWithoutInterface(dat, o)
 	if err != nil {
 		return n, err
+	}
+	if o.NameLen > MaxNameLen {
+		return 0, fmt.Errorf("maximum name len is %v, but .NameLen=%v",
+			MaxNameLen, o.NameLen)
+	}
+	if err := binutil.NeedNBytes(dat, 0xA+int(o.NameLen)); err != nil {
+		return 0, err
 	}
 	dat = dat[n:]
 	o.Name = dat[:o.NameLen]

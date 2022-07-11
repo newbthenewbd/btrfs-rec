@@ -74,8 +74,8 @@ type ExtentHeader struct {
 
 type TreeBlockInfo struct {
 	Key           internal.Key `bin:"off=0, siz=0x11"`
-	Level         uint8        `bin:"off=0x11, siz=0x8"`
-	binstruct.End `bin:"off=0x19"`
+	Level         uint8        `bin:"off=0x11, siz=0x1"`
+	binstruct.End `bin:"off=0x12"`
 }
 
 type ExtentFlags uint64
@@ -131,7 +131,7 @@ func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
 			return n, err
 		}
 	default:
-		return n, fmt.Errorf("btrfsitem.ExtentInlineRef.UnmarshalBinary: unexpected item type %v", o.Type)
+		return n, fmt.Errorf("unexpected item type %v", o.Type)
 	}
 	return n, nil
 }
@@ -163,7 +163,7 @@ func (o ExtentInlineRef) MarshalBinary() ([]byte, error) {
 			return dat, err
 		}
 	default:
-		return dat, fmt.Errorf("btrfsitem.ExtentInlineRef.MarshalBinary: unexpected item type %v", o.Type)
+		return dat, fmt.Errorf("unexpected item type %v", o.Type)
 	}
 	return dat, nil
 }

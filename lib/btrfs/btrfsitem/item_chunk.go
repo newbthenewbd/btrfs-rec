@@ -5,8 +5,6 @@
 package btrfsitem
 
 import (
-	"fmt"
-
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
@@ -70,7 +68,7 @@ func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 		_n, err := binstruct.Unmarshal(dat[n:], &stripe)
 		n += _n
 		if err != nil {
-			return n, fmt.Errorf("%T.UnmarshalBinary: %w", *chunk, err)
+			return n, err
 		}
 		chunk.Stripes = append(chunk.Stripes, stripe)
 	}
@@ -87,7 +85,7 @@ func (chunk Chunk) MarshalBinary() ([]byte, error) {
 		_ret, err := binstruct.Marshal(stripe)
 		ret = append(ret, _ret...)
 		if err != nil {
-			return ret, fmt.Errorf("%T.MarshalBinary: %w", chunk, err)
+			return ret, err
 		}
 	}
 	return ret, nil

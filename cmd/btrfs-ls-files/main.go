@@ -93,48 +93,36 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 		case btrfsitem.INODE_REF_KEY:
 			// TODO
 		case btrfsitem.DIR_ITEM_KEY:
-			body := item.Body.(btrfsitem.DirEntries)
-			if len(body) != 1 {
-				errs = append(errs, fmt.Errorf("read dir: multiple direntries in single DIR_ITEM?"))
+			entry := item.Body.(btrfsitem.DirEntry)
+			namehash := btrfsitem.NameHash(entry.Name)
+			if namehash != item.Head.Key.Offset {
+				errs = append(errs, fmt.Errorf("read dir: direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
+					item.Head.Key.Offset, entry.Name, namehash))
 				continue
 			}
-			for _, entry := range body {
-				namehash := btrfsitem.NameHash(entry.Name)
-				if namehash != item.Head.Key.Offset {
-					errs = append(errs, fmt.Errorf("read dir: direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-						item.Head.Key.Offset, entry.Name, namehash))
-					continue
-				}
-				if other, exists := membersByNameHash[namehash]; exists {
-					if !reflect.DeepEqual(entry, other) {
-						if string(entry.Name) == string(other.Name) {
-							errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry crc32c(%q)=%#x",
-								entry.Name, namehash))
-						} else {
-							errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry crc32c(%q|%q)=%#x",
-								other.Name, entry.Name, namehash))
-						}
+			if other, exists := membersByNameHash[namehash]; exists {
+				if !reflect.DeepEqual(entry, other) {
+					if string(entry.Name) == string(other.Name) {
+						errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry crc32c(%q)=%#x",
+							entry.Name, namehash))
+					} else {
+						errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry crc32c(%q|%q)=%#x",
+							other.Name, entry.Name, namehash))
 					}
-					continue
 				}
-				membersByNameHash[btrfsitem.NameHash(entry.Name)] = entry
+				continue
 			}
+			membersByNameHash[btrfsitem.NameHash(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
 			index := item.Head.Key.Offset
-			body := item.Body.(btrfsitem.DirEntries)
-			if len(body) != 1 {
-				errs = append(errs, fmt.Errorf("read dir: multiple direntries in single DIR_INDEX?"))
+			entry := item.Body.(btrfsitem.DirEntry)
+			if other, exists := membersByIndex[index]; exists {
+				if !reflect.DeepEqual(entry, other) {
+					errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry index %v", index))
+				}
 				continue
 			}
-			for _, entry := range body {
-				if other, exists := membersByIndex[index]; exists {
-					if !reflect.DeepEqual(entry, other) {
-						errs = append(errs, fmt.Errorf("read dir: multiple instances of direntry index %v", index))
-					}
-					continue
-				}
-				membersByIndex[index] = entry
-			}
+			membersByIndex[index] = entry
 		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
 			errs = append(errs, fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))

@@ -136,16 +136,14 @@ func printTree(out, errout io.Writer, fs *btrfs.FS, treeID btrfs.ObjID) error {
 					body.Index, body.NameLen, body.Name)
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
-			case btrfsitem.DirEntries:
-				for _, dir := range body {
-					fmt.Fprintf(out, "\t\tlocation %v type %v\n",
-						fmtKey(dir.Location), dir.Type)
-					fmt.Fprintf(out, "\t\ttransid %v data_len %v name_len %v\n",
-						dir.TransID, dir.DataLen, dir.NameLen)
-					fmt.Fprintf(out, "\t\tname: %s\n", dir.Name)
-					if len(dir.Data) > 0 {
-						fmt.Fprintf(out, "\t\tdata %v\n", dir.Data)
-					}
+			case btrfsitem.DirEntry:
+				fmt.Fprintf(out, "\t\tlocation %v type %v\n",
+					fmtKey(body.Location), body.Type)
+				fmt.Fprintf(out, "\t\ttransid %v data_len %v name_len %v\n",
+					body.TransID, body.DataLen, body.NameLen)
+				fmt.Fprintf(out, "\t\tname: %s\n", body.Name)
+				if len(body.Data) > 0 {
+					fmt.Fprintf(out, "\t\tdata %v\n", body.Data)
 				}
 			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			//	// TODO

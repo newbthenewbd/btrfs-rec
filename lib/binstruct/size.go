@@ -5,6 +5,7 @@
 package binstruct
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 )
@@ -31,6 +32,14 @@ func staticSize(typ reflect.Type) (int, error) {
 	if typ.Implements(staticSizerType) {
 		return reflect.New(typ).Elem().Interface().(StaticSizer).BinaryStaticSize(), nil
 	}
+	if typ.Implements(marshalerType) || typ.Implements(unmarshalerType) {
+		// If you implement binstruct.Marshaler or binstruct.Unmarshaler,
+		// then you must implement if you wish to be statically sized.
+		return 0, &InvalidTypeError{
+			Type: typ,
+			Err:  errors.New("does not implement binstruct.StaticSizer but does implement binstruct.Marshaler or binstruct.Unmarshaler"),
+		}
+	}
 	switch typ.Kind() {
 	case reflect.Uint8, reflect.Int8:
 		return 1, nil
@@ -49,13 +58,12 @@ func staticSize(typ reflect.Type) (int, error) {
 		}
 		return elemSize * typ.Len(), nil
 	case reflect.Struct:
-		if !(typ.Implements(marshalerType) || typ.Implements(unmarshalerType)) {
-			return getStructHandler(typ).Size, nil
-		}
-		return 0, fmt.Errorf("type=%v (kind=%v) does not implement binfmt.StaticSizer but does implement binfmt.Marshaler or binfmt.Unmarshaler",
-			typ, typ.Kind())
+		return getStructHandler(typ).Size, nil
 	default:
-		return 0, fmt.Errorf("type=%v does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
-			typ, typ.Kind())
+		return 0, &InvalidTypeError{
+			Type: typ,
+			Err: fmt.Errorf("does not implement binfmt.StaticSizer and kind=%v is not a supported statically-sized kind",
+				typ.Kind()),
+		}
 	}
 }

@@ -20,7 +20,7 @@ type ExtentCSum struct { // EXTENT_CSUM=128
 
 func (o *ExtentCSum) UnmarshalBinary(dat []byte) (int, error) {
 	if o.ChecksumSize == 0 {
-		return 0, fmt.Errorf("btrfs.ExtentCSum.UnmarshalBinary: .ChecksumSize must be set")
+		return 0, fmt.Errorf(".ChecksumSize must be set")
 	}
 	for len(dat) >= o.ChecksumSize {
 		var csum btrfssum.CSum
@@ -33,7 +33,7 @@ func (o *ExtentCSum) UnmarshalBinary(dat []byte) (int, error) {
 
 func (o ExtentCSum) MarshalBinary() ([]byte, error) {
 	if o.ChecksumSize == 0 {
-		return nil, fmt.Errorf("btrfs.ExtentCSum.MarshalBinary: .ChecksumSize must be set")
+		return nil, fmt.Errorf(".ChecksumSize must be set")
 	}
 	var dat []byte
 	for _, csum := range o.Sums {

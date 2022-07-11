@@ -183,7 +183,10 @@ func getStructHandler(typ reflect.Type) structHandler {
 
 	h, err := genStructHandler(typ)
 	if err != nil {
-		panic(err)
+		panic(&InvalidTypeError{
+			Type: typ,
+			Err:  err,
+		})
 	}
 	structCache[typ] = h
 	return h

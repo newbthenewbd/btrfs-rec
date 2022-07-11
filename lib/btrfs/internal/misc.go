@@ -5,6 +5,7 @@
 package internal
 
 import (
+	"fmt"
 	"time"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
@@ -18,6 +19,10 @@ type Key struct {
 	ItemType      ItemType `bin:"off=0x8, siz=0x1"`
 	Offset        uint64   `bin:"off=0x9, siz=0x8"` // The meaning depends on the item type.
 	binstruct.End `bin:"off=0x11"`
+}
+
+func (k Key) String() string {
+	return fmt.Sprintf("{%v %v %v}", k.ObjectID, k.ItemType, k.Offset)
 }
 
 func (a Key) Cmp(b Key) int {

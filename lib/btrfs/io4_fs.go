@@ -201,42 +201,30 @@ func (ret *Dir) populate() {
 			}
 			ret.DotDot = &ref
 		case btrfsitem.DIR_ITEM_KEY:
-			body := item.Body.(btrfsitem.DirEntries)
-			if len(body) != 1 {
-				ret.Errs = append(ret.Errs, fmt.Errorf("multiple direntries in single DIR_ITEM?"))
+			entry := item.Body.(btrfsitem.DirEntry)
+			namehash := btrfsitem.NameHash(entry.Name)
+			if namehash != item.Head.Key.Offset {
+				ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
+					item.Head.Key.Offset, entry.Name, namehash))
 				continue
 			}
-			for _, entry := range body {
-				namehash := btrfsitem.NameHash(entry.Name)
-				if namehash != item.Head.Key.Offset {
-					ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-						item.Head.Key.Offset, entry.Name, namehash))
-					continue
+			if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
+				if !reflect.DeepEqual(entry, other) {
+					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
 				}
-				if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
-					if !reflect.DeepEqual(entry, other) {
-						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
-					}
-					continue
-				}
-				ret.ChildrenByName[string(entry.Name)] = entry
+				continue
 			}
+			ret.ChildrenByName[string(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
 			index := item.Head.Key.Offset
-			body := item.Body.(btrfsitem.DirEntries)
-			if len(body) != 1 {
-				ret.Errs = append(ret.Errs, fmt.Errorf("multiple direntries in single DIR_INDEX?"))
+			entry := item.Body.(btrfsitem.DirEntry)
+			if other, exists := ret.ChildrenByIndex[index]; exists {
+				if !reflect.DeepEqual(entry, other) {
+					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+				}
 				continue
 			}
-			for _, entry := range body {
-				if other, exists := ret.ChildrenByIndex[index]; exists {
-					if !reflect.DeepEqual(entry, other) {
-						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
-					}
-					continue
-				}
-				ret.ChildrenByIndex[index] = entry
-			}
+			ret.ChildrenByIndex[index] = entry
 		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))

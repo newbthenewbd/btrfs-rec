@@ -5,6 +5,7 @@
 package binstruct
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 )
@@ -15,7 +16,15 @@ type Unmarshaler interface {
 
 func Unmarshal(dat []byte, dstPtr any) (int, error) {
 	if unmar, ok := dstPtr.(Unmarshaler); ok {
-		return unmar.UnmarshalBinary(dat)
+		n, err := unmar.UnmarshalBinary(dat)
+		if err != nil {
+			err = &UnmarshalError{
+				Type:   reflect.TypeOf(dstPtr),
+				Method: "UnmarshalBinary",
+				Err:    err,
+			}
+		}
+		return n, err
 	}
 	return UnmarshalWithoutInterface(dat, dstPtr)
 }
@@ -23,7 +32,10 @@ func Unmarshal(dat []byte, dstPtr any) (int, error) {
 func UnmarshalWithoutInterface(dat []byte, dstPtr any) (int, error) {
 	_dstPtr := reflect.ValueOf(dstPtr)
 	if _dstPtr.Kind() != reflect.Ptr {
-		return 0, fmt.Errorf("not a pointer: %v", _dstPtr.Type())
+		panic(&InvalidTypeError{
+			Type: _dstPtr.Type(),
+			Err:  errors.New("not a pointer"),
+		})
 	}
 	dst := _dstPtr.Elem()
 
@@ -52,7 +64,10 @@ func UnmarshalWithoutInterface(dat []byte, dstPtr any) (int, error) {
 	case reflect.Struct:
 		return getStructHandler(dst.Type()).Unmarshal(dat, dst)
 	default:
-		panic(fmt.Errorf("type=%v does not implement binfmt.Unmarshaler and kind=%v is not a supported statically-sized kind",
-			dst.Type(), dst.Kind()))
+		panic(&InvalidTypeError{
+			Type: _dstPtr.Type(),
+			Err: fmt.Errorf("does not implement binfmt.Unmarshaler and kind=%v is not a supported statically-sized kind",
+				dst.Kind()),
+		})
 	}
 }
