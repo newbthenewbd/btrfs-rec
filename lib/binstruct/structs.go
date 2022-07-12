@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
 )
 
 type End struct{}
@@ -70,6 +72,9 @@ type structField struct {
 }
 
 func (sh structHandler) Unmarshal(dat []byte, dst reflect.Value) (int, error) {
+	if err := binutil.NeedNBytes(dat, sh.Size); err != nil {
+		return 0, fmt.Errorf("struct %q %w", sh.name, err)
+	}
 	var n int
 	for i, field := range sh.fields {
 		if field.skip {

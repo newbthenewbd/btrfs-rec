@@ -128,9 +128,17 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 		Size:         uint32(len(nodeBuf)),
 		ChecksumType: node.ChecksumType,
 	}
+	if len(nodeBuf) <= binstruct.StaticSize(NodeHeader{}) {
+		return 0, fmt.Errorf("size must be greater than %v, but is %v",
+			binstruct.StaticSize(NodeHeader{}),
+			len(nodeBuf))
+	}
 	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
 	if err != nil {
 		return n, err
+	} else if n != binstruct.StaticSize(NodeHeader{}) {
+		return n, fmt.Errorf("header consumed %v bytes but expected %v",
+			n, binstruct.StaticSize(NodeHeader{}))
 	}
 	if node.Head.Level > 0 {
 		_n, err := node.unmarshalInternal(nodeBuf[n:])
