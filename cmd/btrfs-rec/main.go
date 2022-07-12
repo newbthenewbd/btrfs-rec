@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
 
@@ -45,6 +47,7 @@ func main() {
 		Level: logrus.InfoLevel,
 	}
 	var pvsFlag []string
+	var mappingsFlag string
 
 	argparser := &cobra.Command{
 		Use:   "btrfs-rec {[flags]|SUBCOMMAND}",
@@ -68,6 +71,10 @@ func main() {
 		panic(err)
 	}
 	if err := argparser.MarkPersistentFlagRequired("pv"); err != nil {
+		panic(err)
+	}
+	argparser.PersistentFlags().StringVar(&mappingsFlag, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
+	if err := argparser.MarkPersistentFlagFilename("mappings"); err != nil {
 		panic(err)
 	}
 
@@ -121,13 +128,31 @@ func main() {
 							err = _err
 						}
 					}
-					fs, err := btrfsutil.Open(openFlag, pvsFlag...)
+					fs, err := btrfsutil.Open(ctx, openFlag, pvsFlag...)
 					if err != nil {
 						return err
 					}
 					defer func() {
 						maybeSetErr(fs.Close())
 					}()
+
+					if mappingsFlag != "" {
+						bs, err := os.ReadFile(mappingsFlag)
+						if err != nil {
+							return err
+						}
+						var mappingsJSON struct {
+							Mappings []btrfsvol.Mapping
+						}
+						if err := json.Unmarshal(bs, &mappingsJSON); err != nil {
+							return err
+						}
+						for _, mapping := range mappingsJSON.Mappings {
+							if err := fs.LV.AddMapping(mapping); err != nil {
+								return err
+							}
+						}
+					}
 
 					cmd.SetContext(ctx)
 					return runE(fs, cmd, args)

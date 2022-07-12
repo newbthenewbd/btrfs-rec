@@ -5,6 +5,7 @@
 package btrfsutil
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -17,7 +18,7 @@ import (
 // cmds/rescue-chunk-recover.c:scan_one_device(), except rather than
 // doing something itself when it finds a node, it simply calls a
 // callback function.
-func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], error), prog func(btrfsvol.PhysicalAddr)) error {
+func ScanForNodes(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], error), prog func(btrfsvol.PhysicalAddr)) error {
 	devSize, err := dev.Size()
 	if err != nil {
 		return err
@@ -29,6 +30,9 @@ func ScanForNodes(dev *btrfs.Device, sb btrfs.Superblock, fn func(*util.Ref[btrf
 	}
 
 	for pos := btrfsvol.PhysicalAddr(0); pos+btrfsvol.PhysicalAddr(sb.NodeSize) < devSize; pos += btrfsvol.PhysicalAddr(sb.SectorSize) {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if util.InSlice(pos, btrfs.SuperblockAddrs) {
 			//fmt.Printf("sector@%v is a superblock\n", pos)
 			continue

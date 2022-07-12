@@ -99,8 +99,8 @@ type Mapping struct {
 	LAddr      LogicalAddr
 	PAddr      QualifiedPhysicalAddr
 	Size       AddrDelta
-	SizeLocked bool
-	Flags      *BlockGroupFlags
+	SizeLocked bool             `json:",omitempty"`
+	Flags      *BlockGroupFlags `json:",omitempty"`
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
