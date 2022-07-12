@@ -6,47 +6,34 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 
 	"github.com/datawire/dlib/derror"
+	"github.com/datawire/ocibuild/pkg/cliutil"
+	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-func main() {
-	if err := Main(os.Args[1:]...); err != nil {
-		fmt.Fprintf(os.Stderr, "%v: error: %v\n", os.Args[0], err)
-		os.Exit(1)
-	}
-}
-
-func Main(imgfilenames ...string) (err error) {
-	maybeSetErr := func(_err error) {
-		if _err != nil && err == nil {
-			err = _err
-		}
-	}
-
-	fs, err := btrfsutil.Open(os.O_RDONLY, imgfilenames...)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		maybeSetErr(fs.Close())
-	}()
-
-	printSubvol(fs, "", "", "/", btrfs.Key{
-		ObjectID: btrfs.FS_TREE_OBJECTID,
-		ItemType: btrfsitem.ROOT_ITEM_KEY,
-		Offset:   0,
+func init() {
+	inspectors = append(inspectors, subcommand{
+		Command: cobra.Command{
+			Use:   "ls-files",
+			Short: "A listing of all files in the filesystem",
+			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		},
+		RunE: func(fs *btrfs.FS, _ *cobra.Command, _ []string) error {
+			printSubvol(fs, "", "", "/", btrfs.Key{
+				ObjectID: btrfs.FS_TREE_OBJECTID,
+				ItemType: btrfsitem.ROOT_ITEM_KEY,
+				Offset:   0,
+			})
+			return nil
+		},
 	})
-
-	return nil
 }
 
 const (

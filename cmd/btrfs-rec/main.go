@@ -74,7 +74,7 @@ func main() {
 	var openFlag int = os.O_RDONLY
 
 	argparserInspect := &cobra.Command{
-		Use:   "inpsect {[flags]|SUBCOMMAND}",
+		Use:   "inspect {[flags]|SUBCOMMAND}",
 		Short: "Inspect (but don't modify) a broken btrfs filesystem",
 
 		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),

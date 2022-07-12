@@ -7,5 +7,5 @@
 *.html
 bin/
 vendor/
-btrfs-mount
-!/cmd/btrfs-mount/
+btrfs-rec
+!/cmd/btrfs-rec/
