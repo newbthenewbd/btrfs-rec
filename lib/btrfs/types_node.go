@@ -130,23 +130,23 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 	}
 	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
 	if err != nil {
-		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: %w", err)
+		return n, err
 	}
 	if node.Head.Level > 0 {
 		_n, err := node.unmarshalInternal(nodeBuf[n:])
 		n += _n
 		if err != nil {
-			return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: internal: %w", err)
+			return n, fmt.Errorf("internal: %w", err)
 		}
 	} else {
 		_n, err := node.unmarshalLeaf(nodeBuf[n:])
 		n += _n
 		if err != nil {
-			return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: leaf: %w", err)
+			return n, fmt.Errorf("leaf: %w", err)
 		}
 	}
 	if n != len(nodeBuf) {
-		return n, fmt.Errorf("btrfs.Node.UnmarshalBinary: left over data: got %v bytes but only consumed %v",
+		return n, fmt.Errorf("left over data: got %v bytes but only consumed %v",
 			len(nodeBuf), n)
 	}
 	return n, nil
@@ -154,11 +154,12 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 
 func (node Node) MarshalBinary() ([]byte, error) {
 	if node.Size == 0 {
-		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be set")
+		return nil, fmt.Errorf(".Size must be set")
 	}
 	if node.Size <= uint32(binstruct.StaticSize(NodeHeader{})) {
-		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: .Size must be greater than %v",
-			binstruct.StaticSize(NodeHeader{}))
+		return nil, fmt.Errorf(".Size must be greater than %v, but is %v",
+			binstruct.StaticSize(NodeHeader{}),
+			node.Size)
 	}
 	if node.Head.Level > 0 {
 		node.Head.NumItems = uint32(len(node.BodyInternal))
@@ -171,7 +172,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	if bs, err := binstruct.Marshal(node.Head); err != nil {
 		return buf, err
 	} else if len(bs) != binstruct.StaticSize(NodeHeader{}) {
-		return nil, fmt.Errorf("btrfs.Node.MarshalBinary: header is %v bytes but expected %v",
+		return nil, fmt.Errorf("header is %v bytes but expected %v",
 			len(bs), binstruct.StaticSize(NodeHeader{}))
 	} else {
 		copy(buf, bs)
@@ -378,7 +379,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 
 	// parse (main)
 
-	if _, err := nodeRef.Data.UnmarshalBinary(nodeBuf); err != nil {
+	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
 

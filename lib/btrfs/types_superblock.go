@@ -121,12 +121,12 @@ type SysChunk struct {
 func (sc SysChunk) MarshalBinary() ([]byte, error) {
 	dat, err := binstruct.Marshal(sc.Key)
 	if err != nil {
-		return dat, fmt.Errorf("%T.MarshalBinary: %w", sc, err)
+		return dat, err
 	}
 	_dat, err := binstruct.Marshal(sc.Chunk)
 	dat = append(dat, _dat...)
 	if err != nil {
-		return dat, fmt.Errorf("%T.MarshalBinary: %w", sc, err)
+		return dat, err
 	}
 	return dat, nil
 }
@@ -134,12 +134,12 @@ func (sc SysChunk) MarshalBinary() ([]byte, error) {
 func (sc *SysChunk) UnmarshalBinary(dat []byte) (int, error) {
 	n, err := binstruct.Unmarshal(dat, &sc.Key)
 	if err != nil {
-		return n, fmt.Errorf("%T.UnmarshalBinary: %w", *sc, err)
+		return n, err
 	}
 	_n, err := binstruct.Unmarshal(dat[n:], &sc.Chunk)
 	n += _n
 	if err != nil {
-		return n, fmt.Errorf("%T.UnmarshalBinary: %w", *sc, err)
+		return n, err
 	}
 	return n, nil
 }
