@@ -23,8 +23,8 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 			_ = fs.Close()
 			return nil, fmt.Errorf("device file %q: %w", filename, err)
 		}
-		if err := fs.AddDevice(&btrfs.Device{File: fh}); err != nil {
-			dlog.Errorf(ctx, "device file %q: %v", filename, err)
+		if err := fs.AddDevice(ctx, &btrfs.Device{File: fh}); err != nil {
+			return nil, fmt.Errorf("device file %q: %w", filename, err)
 		}
 	}
 	return fs, nil

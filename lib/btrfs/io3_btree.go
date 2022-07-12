@@ -5,7 +5,6 @@
 package btrfs
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	iofs "io/fs"
@@ -66,7 +65,10 @@ import (
 // the path would be
 //
 //     {-1, 0x01, 3}→{8, 0x02, 2}→{7, 0x03, 1}→{4, 0x04, 0}→{2, 0, 0}
-type TreePath []TreePathElem
+type TreePath struct {
+	TreeID ObjID
+	Nodes  []TreePathElem
+}
 
 // A TreePathElem essentially represents a KeyPointer.
 type TreePathElem struct {
@@ -87,19 +89,44 @@ func (elem TreePathElem) writeNodeTo(w io.Writer) {
 }
 
 func (path TreePath) String() string {
-	if len(path) == 0 {
-		return "(empty-path)"
-	}
 	var ret strings.Builder
-	path[0].writeNodeTo(&ret)
-	for _, elem := range path[1:] {
-		fmt.Fprintf(&ret, "[%v]", elem.ItemIdx)
-		if elem.NodeAddr != 0 {
-			ret.WriteString("->")
-			elem.writeNodeTo(&ret)
+	fmt.Fprintf(&ret, "%s->", path.TreeID.Format(btrfsitem.ROOT_ITEM_KEY))
+	if len(path.Nodes) == 0 {
+		ret.WriteString("(empty-path)")
+	} else {
+		path.Nodes[0].writeNodeTo(&ret)
+		for _, elem := range path.Nodes[1:] {
+			fmt.Fprintf(&ret, "[%v]", elem.ItemIdx)
+			if elem.NodeAddr != 0 {
+				ret.WriteString("->")
+				elem.writeNodeTo(&ret)
+			}
 		}
 	}
 	return ret.String()
+}
+
+func (path TreePath) DeepCopy() TreePath {
+	return TreePath{
+		TreeID: path.TreeID,
+		Nodes:  append([]TreePathElem(nil), path.Nodes...),
+	}
+}
+
+func (path TreePath) Append(elem TreePathElem) TreePath {
+	path.Nodes = append(path.Nodes, elem)
+	return path
+}
+
+type TreeError struct {
+	Path TreePath
+	Err  error
+}
+
+func (e *TreeError) Unwrap() error { return e.Err }
+
+func (e *TreeError) Error() string {
+	return fmt.Sprintf("%v: %v", e.Path, e.Err)
 }
 
 // A treeRoot is more-or-less a btrfsitem.Root, but simpler and generalized for
@@ -174,7 +201,8 @@ func (fs *FS) lookupTree(treeID ObjID) (*treeRoot, error) {
 type TreeWalkHandler struct {
 	// Callbacks for entire nodes
 	PreNode  func(TreePath) error
-	Node     func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) error
+	Node     func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node]) error
+	BadNode  func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) error
 	PostNode func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
@@ -187,7 +215,7 @@ type TreeWalkHandler struct {
 //
 //     001 .PreNode()
 //     002 (read node)
-//     003 .Node()
+//     003 .Node() (or .BadNode())
 //         for item in node.items:
 //           if internal:
 //     004     .PreKeyPointer()
@@ -196,116 +224,101 @@ type TreeWalkHandler struct {
 //           else:
 //     004     .Item()
 //     007 .PostNode()
-func (fs *FS) TreeWalk(treeID ObjID, cbs TreeWalkHandler) error {
+func (fs *FS) TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	path := TreePath{
+		TreeID: treeID,
+	}
 	rootInfo, err := fs.lookupTree(treeID)
 	if err != nil {
-		return err
+		errHandle(&TreeError{Path: path, Err: err})
+		return
 	}
-	path := TreePath{
-		TreePathElem{
-			ItemIdx:   -1,
-			NodeAddr:  rootInfo.RootNode,
-			NodeLevel: rootInfo.Level,
-		},
-	}
-	return fs.treeWalk(path, cbs)
+	path = path.Append(TreePathElem{
+		ItemIdx:   -1,
+		NodeAddr:  rootInfo.RootNode,
+		NodeLevel: rootInfo.Level,
+	})
+	fs.treeWalk(path, errHandle, cbs)
 }
 
-func (fs *FS) treeWalk(path TreePath, cbs TreeWalkHandler) error {
-	if path[len(path)-1].NodeAddr == 0 {
-		return nil
+func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	if path.Nodes[len(path.Nodes)-1].NodeAddr == 0 {
+		return
 	}
 
 	if cbs.PreNode != nil {
 		if err := cbs.PreNode(path); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return nil
-			}
-			return err
+			errHandle(&TreeError{Path: path, Err: err})
 		}
 	}
-	node, err := fs.readNodeAtLevel(path[len(path)-1].NodeAddr, path[len(path)-1].NodeLevel)
-	if node != nil && err == nil {
-		path[len(path)-1].NodeLevel = node.Data.Head.Level
-	}
-	if cbs.Node != nil {
-		err = cbs.Node(path, node, err)
+	node, err := fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-1].NodeAddr, path.Nodes[len(path.Nodes)-1].NodeLevel)
+	if err != nil && node != nil && cbs.BadNode != nil {
+		// opportunity to fix the node
+		err = cbs.BadNode(path, node, err)
 	}
 	if err != nil {
-		if errors.Is(err, iofs.SkipDir) {
-			return nil
+		errHandle(&TreeError{Path: path, Err: err})
+	} else {
+		if err := cbs.Node(path, node); err != nil {
+			errHandle(&TreeError{Path: path, Err: err})
 		}
-		return fmt.Errorf("btrfs.FS.TreeWalk: %w", err)
 	}
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
-			itemPath := append(path, TreePathElem{
+			itemPath := path.Append(TreePathElem{
 				ItemIdx:   i,
 				NodeAddr:  item.BlockPtr,
 				NodeLevel: node.Data.Head.Level - 1,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
-					if errors.Is(err, iofs.SkipDir) {
-						continue
-					}
-					return err
+					errHandle(&TreeError{Path: path, Err: err})
 				}
 			}
-			if err := fs.treeWalk(itemPath, cbs); err != nil {
-				return err
-			}
+			fs.treeWalk(itemPath, errHandle, cbs)
 			if cbs.PostKeyPointer != nil {
 				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
-					if errors.Is(err, iofs.SkipDir) {
-						continue
-					}
-					return err
+					errHandle(&TreeError{Path: path, Err: err})
 				}
 			}
 		}
 		for i, item := range node.Data.BodyLeaf {
 			if cbs.Item != nil {
-				itemPath := append(path, TreePathElem{
+				itemPath := path.Append(TreePathElem{
 					ItemIdx: i,
 				})
 				if err := cbs.Item(itemPath, item); err != nil {
-					if errors.Is(err, iofs.SkipDir) {
-						continue
-					}
-					return fmt.Errorf("btrfs.FS.TreeWalk: callback: %w", err)
+					errHandle(&TreeError{Path: path, Err: err})
 				}
 			}
 		}
 	}
 	if cbs.PostNode != nil {
 		if err := cbs.PostNode(path, node); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return nil
-			}
-			return err
+			errHandle(&TreeError{Path: path, Err: err})
 		}
 	}
-	return nil
 }
 
 func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
-		TreePathElem{
-			ItemIdx:   -1,
-			NodeAddr:  treeRoot.RootNode,
-			NodeLevel: treeRoot.Level,
+		TreeID: treeRoot.TreeID,
+		Nodes: []TreePathElem{
+			{
+				ItemIdx:   -1,
+				NodeAddr:  treeRoot.RootNode,
+				NodeLevel: treeRoot.Level,
+			},
 		},
 	}
 	for {
-		if path[len(path)-1].NodeAddr == 0 {
-			return nil, nil, iofs.ErrNotExist
+		if path.Nodes[len(path.Nodes)-1].NodeAddr == 0 {
+			return TreePath{}, nil, iofs.ErrNotExist
 		}
-		node, err := fs.readNodeAtLevel(path[len(path)-1].NodeAddr, path[len(path)-1].NodeLevel)
+		node, err := fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-1].NodeAddr, path.Nodes[len(path.Nodes)-1].NodeLevel)
 		if err != nil {
-			return nil, nil, err
+			return TreePath{}, nil, err
 		}
-		path[len(path)-1].NodeLevel = node.Data.Head.Level
 
 		if node.Data.Head.Level > 0 {
 			// internal node
@@ -330,9 +343,9 @@ func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.R
 				}
 			}
 			if lastGood < 0 {
-				return nil, nil, iofs.ErrNotExist
+				return TreePath{}, nil, iofs.ErrNotExist
 			}
-			path = append(path, TreePathElem{
+			path = path.Append(TreePathElem{
 				ItemIdx:   lastGood,
 				NodeAddr:  node.Data.BodyInternal[lastGood].BlockPtr,
 				NodeLevel: node.Data.Head.Level - 1,
@@ -361,64 +374,64 @@ func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.R
 				case direction > 0:
 					beg = midpoint + 1
 				case direction == 0:
-					path = append(path, TreePathElem{
+					path = path.Append(TreePathElem{
 						ItemIdx: midpoint,
 					})
 					return path, node, nil
 				}
 			}
-			return nil, nil, iofs.ErrNotExist
+			return TreePath{}, nil, iofs.ErrNotExist
 		}
 	}
 }
 
 func (fs *FS) prev(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
-	path = append(TreePath(nil), path...)
+	path = path.DeepCopy()
 
 	// go up
-	for path[len(path)-1].ItemIdx < 1 {
-		path = path[:len(path)-1]
-		if len(path) == 0 {
-			return nil, nil, nil
+	for path.Nodes[len(path.Nodes)-1].ItemIdx < 1 {
+		path.Nodes = path.Nodes[:len(path.Nodes)-1]
+		if len(path.Nodes) == 0 {
+			return TreePath{}, nil, nil
 		}
 	}
 	// go left
-	path[len(path)-1].ItemIdx--
-	if path[len(path)-1].NodeAddr != 0 {
-		if node.Addr != path[len(path)-2].NodeAddr {
-			node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+	path.Nodes[len(path.Nodes)-1].ItemIdx--
+	if path.Nodes[len(path.Nodes)-1].NodeAddr != 0 {
+		if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+			node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 			if err != nil {
-				return nil, nil, err
+				return TreePath{}, nil, err
 			}
-			path[len(path)-1].NodeAddr = node.Data.BodyInternal[path[len(path)-1].ItemIdx].BlockPtr
+			path.Nodes[len(path.Nodes)-1].NodeAddr = node.Data.BodyInternal[path.Nodes[len(path.Nodes)-1].ItemIdx].BlockPtr
 		}
 	}
 	// go down
-	for path[len(path)-1].NodeAddr != 0 {
-		if node.Addr != path[len(path)-1].NodeAddr {
-			node, err = fs.readNodeAtLevel(path[len(path)-1].NodeAddr, path[len(path)-1].NodeLevel)
+	for path.Nodes[len(path.Nodes)-1].NodeAddr != 0 {
+		if node.Addr != path.Nodes[len(path.Nodes)-1].NodeAddr {
+			node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-1].NodeAddr, path.Nodes[len(path.Nodes)-1].NodeLevel)
 			if err != nil {
-				return nil, nil, err
+				return TreePath{}, nil, err
 			}
 		}
 		if node.Data.Head.Level > 0 {
-			path = append(path, TreePathElem{
+			path = path.Append(TreePathElem{
 				ItemIdx:   len(node.Data.BodyInternal) - 1,
 				NodeAddr:  node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
 				NodeLevel: node.Data.Head.Level - 1,
 			})
 		} else {
-			path = append(path, TreePathElem{
+			path = path.Append(TreePathElem{
 				ItemIdx: len(node.Data.BodyLeaf) - 1,
 			})
 		}
 	}
 	// return
-	if node.Addr != path[len(path)-2].NodeAddr {
-		node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+	if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+		node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 		if err != nil {
-			return nil, nil, err
+			return TreePath{}, nil, err
 		}
 	}
 	return path, node, nil
@@ -426,66 +439,66 @@ func (fs *FS) prev(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (T
 
 func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
-	path = append(TreePath(nil), path...)
+	path = path.DeepCopy()
 
 	// go up
-	if node.Addr != path[len(path)-2].NodeAddr {
-		node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+	if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+		node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 		if err != nil {
-			return nil, nil, err
+			return TreePath{}, nil, err
 		}
-		path[len(path)-2].NodeLevel = node.Data.Head.Level
+		path.Nodes[len(path.Nodes)-2].NodeLevel = node.Data.Head.Level
 	}
-	for path[len(path)-1].ItemIdx+1 >= int(node.Data.Head.NumItems) {
-		path = path[:len(path)-1]
-		if len(path) == 1 {
-			return nil, nil, nil
+	for path.Nodes[len(path.Nodes)-1].ItemIdx+1 >= int(node.Data.Head.NumItems) {
+		path.Nodes = path.Nodes[:len(path.Nodes)-1]
+		if len(path.Nodes) == 1 {
+			return TreePath{}, nil, nil
 		}
-		if node.Addr != path[len(path)-2].NodeAddr {
-			node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+		if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+			node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 			if err != nil {
-				return nil, nil, err
+				return TreePath{}, nil, err
 			}
-			path[len(path)-2].NodeLevel = node.Data.Head.Level
+			path.Nodes[len(path.Nodes)-2].NodeLevel = node.Data.Head.Level
 		}
 	}
 	// go left
-	path[len(path)-1].ItemIdx++
-	if path[len(path)-1].NodeAddr != 0 {
-		if node.Addr != path[len(path)-2].NodeAddr {
-			node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+	path.Nodes[len(path.Nodes)-1].ItemIdx++
+	if path.Nodes[len(path.Nodes)-1].NodeAddr != 0 {
+		if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+			node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 			if err != nil {
-				return nil, nil, err
+				return TreePath{}, nil, err
 			}
-			path[len(path)-1].NodeAddr = node.Data.BodyInternal[path[len(path)-1].ItemIdx].BlockPtr
+			path.Nodes[len(path.Nodes)-1].NodeAddr = node.Data.BodyInternal[path.Nodes[len(path.Nodes)-1].ItemIdx].BlockPtr
 		}
 	}
 	// go down
-	for path[len(path)-1].NodeAddr != 0 {
-		if node.Addr != path[len(path)-1].NodeAddr {
-			node, err = fs.readNodeAtLevel(path[len(path)-1].NodeAddr, path[len(path)-1].NodeLevel)
+	for path.Nodes[len(path.Nodes)-1].NodeAddr != 0 {
+		if node.Addr != path.Nodes[len(path.Nodes)-1].NodeAddr {
+			node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-1].NodeAddr, path.Nodes[len(path.Nodes)-1].NodeLevel)
 			if err != nil {
-				return nil, nil, err
+				return TreePath{}, nil, err
 			}
-			path[len(path)-1].NodeLevel = node.Data.Head.Level
+			path.Nodes[len(path.Nodes)-1].NodeLevel = node.Data.Head.Level
 		}
 		if node.Data.Head.Level > 0 {
-			path = append(path, TreePathElem{
+			path = path.Append(TreePathElem{
 				ItemIdx:   0,
 				NodeAddr:  node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
 				NodeLevel: node.Data.Head.Level - 1,
 			})
 		} else {
-			path = append(path, TreePathElem{
+			path = path.Append(TreePathElem{
 				ItemIdx: 0,
 			})
 		}
 	}
 	// return
-	if node.Addr != path[len(path)-2].NodeAddr {
-		node, err = fs.readNodeAtLevel(path[len(path)-2].NodeAddr, path[len(path)-2].NodeLevel)
+	if node.Addr != path.Nodes[len(path.Nodes)-2].NodeAddr {
+		node, err = fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-2].NodeAddr, path.Nodes[len(path.Nodes)-2].NodeLevel)
 		if err != nil {
-			return nil, nil, err
+			return TreePath{}, nil, err
 		}
 	}
 	return path, node, nil
@@ -500,7 +513,7 @@ func (fs *FS) TreeSearch(treeID ObjID, fn func(Key) int) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	return node.Data.BodyLeaf[path[len(path)-1].ItemIdx], nil
+	return node.Data.BodyLeaf[path.Nodes[len(path.Nodes)-1].ItemIdx], nil
 }
 
 func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
@@ -524,7 +537,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	middleItem := middleNode.Data.BodyLeaf[middlePath[len(middlePath)-1].ItemIdx]
+	middleItem := middleNode.Data.BodyLeaf[middlePath.Nodes[len(middlePath.Nodes)-1].ItemIdx]
 
 	var ret = []Item{middleItem}
 	var errs derror.MultiError
@@ -534,10 +547,10 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			errs = append(errs, err)
 			break
 		}
-		if prevPath == nil {
+		if len(prevPath.Nodes) == 0 {
 			break
 		}
-		prevItem := prevNode.Data.BodyLeaf[prevPath[len(prevPath)-1].ItemIdx]
+		prevItem := prevNode.Data.BodyLeaf[prevPath.Nodes[len(prevPath.Nodes)-1].ItemIdx]
 		if fn(prevItem.Head.Key) != 0 {
 			break
 		}
@@ -550,10 +563,10 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			errs = append(errs, err)
 			break
 		}
-		if nextPath == nil {
+		if len(nextPath.Nodes) == 0 {
 			break
 		}
-		nextItem := nextNode.Data.BodyLeaf[nextPath[len(nextPath)-1].ItemIdx]
+		nextItem := nextNode.Data.BodyLeaf[nextPath.Nodes[len(nextPath.Nodes)-1].ItemIdx]
 		if fn(nextItem.Head.Key) != 0 {
 			break
 		}

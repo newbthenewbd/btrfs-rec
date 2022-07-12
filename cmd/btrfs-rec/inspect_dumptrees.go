@@ -22,10 +22,11 @@ func init() {
 			Short: "A clone of `btrfs inspect-internal dump-tree`",
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
-		RunE: func(fs *btrfs.FS, _ *cobra.Command, _ []string) error {
+		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			const version = "5.18.1"
 			fmt.Printf("btrfs-progs v%v\n", version)
-			return btrfsinspect.DumpTrees(os.Stdout, os.Stderr, fs)
+			btrfsinspect.DumpTrees(cmd.Context(), os.Stdout, fs)
+			return nil
 		},
 	})
 }

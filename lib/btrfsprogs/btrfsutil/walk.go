@@ -9,47 +9,33 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-type WalkErr struct {
+type WalkError struct {
 	TreeName string
-	Path     btrfs.TreePath
-	Err      error
+	Err      *btrfs.TreeError
 }
 
-func (e WalkErr) Unwrap() error { return e.Err }
+func (e *WalkError) Unwrap() error { return e.Err }
 
-func (e WalkErr) Error() string {
-	if len(e.Path) == 0 {
-		return fmt.Sprintf("%v: %v", e.TreeName, e.Err)
-	}
-	return fmt.Sprintf("%v: %v: %v", e.TreeName, e.Path, e.Err)
+func (e *WalkError) Error() string {
+	return fmt.Sprintf("%v: %v", e.TreeName, e.Err)
 }
 
 type WalkAllTreesHandler struct {
-	Err func(error)
+	Err func(*WalkError)
 	// Callbacks for entire trees
 	PreTree  func(name string, id btrfs.ObjID)
 	PostTree func(name string, id btrfs.ObjID)
 	// Callbacks for nodes or smaller
-	UnsafeNodes bool
 	btrfs.TreeWalkHandler
 }
 
 // WalkAllTrees walks all trees in a *btrfs.FS.  Rather than returning
 // an error, it calls errCb each time an error is encountered.  The
-// error will always be of type WalkErr.
+// error will always be of type WalkError.
 func WalkAllTrees(fs *btrfs.FS, cbs WalkAllTreesHandler) {
 	var treeName string
-	handleErr := func(path btrfs.TreePath, err error) {
-		cbs.Err(WalkErr{
-			TreeName: treeName,
-			Path:     path,
-			Err:      err,
-		})
-	}
 
 	trees := []struct {
 		Name string
@@ -90,28 +76,17 @@ func WalkAllTrees(fs *btrfs.FS, cbs WalkAllTreesHandler) {
 		return nil
 	}
 
-	if !cbs.UnsafeNodes {
-		origNode := cbs.Node
-		cbs.Node = func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
-			if err != nil {
-				handleErr(path, err)
-			}
-			if node != nil && origNode != nil {
-				return origNode(path, node, nil)
-			}
-			return nil
-		}
-	}
-
 	for i := 0; i < len(trees); i++ {
 		tree := trees[i]
 		treeName = tree.Name
 		if cbs.PreTree != nil {
 			cbs.PreTree(treeName, tree.ID)
 		}
-		if err := fs.TreeWalk(tree.ID, cbs.TreeWalkHandler); err != nil {
-			handleErr(nil, err)
-		}
+		fs.TreeWalk(
+			tree.ID,
+			func(err *btrfs.TreeError) { cbs.Err(&WalkError{TreeName: treeName, Err: err}) },
+			cbs.TreeWalkHandler,
+		)
 		if cbs.PostTree != nil {
 			cbs.PostTree(treeName, tree.ID)
 		}

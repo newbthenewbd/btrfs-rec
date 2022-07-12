@@ -19,12 +19,12 @@ func pass2(fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAddr]struct{}) {
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				visitedNodes[node.Addr] = struct{}{}
 				return nil
 			},
 		},
-		Err: func(err error) {
+		Err: func(err *btrfsutil.WalkError) {
 			fmt.Printf("Pass 2: walk FS: error: %v\n", err)
 		},
 	})

@@ -5,10 +5,12 @@
 package btrfs
 
 import (
+	"context"
 	"fmt"
 	"io"
 
 	"github.com/datawire/dlib/derror"
+	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -26,7 +28,7 @@ type FS struct {
 
 var _ util.File[btrfsvol.LogicalAddr] = (*FS)(nil)
 
-func (fs *FS) AddDevice(dev *Device) error {
+func (fs *FS) AddDevice(ctx context.Context, dev *Device) error {
 	sb, err := dev.Superblock()
 	if err != nil {
 		return err
@@ -37,7 +39,7 @@ func (fs *FS) AddDevice(dev *Device) error {
 	fs.cacheSuperblocks = nil
 	fs.cacheSuperblock = nil
 	if err := fs.initDev(sb); err != nil {
-		return err
+		dlog.Errorf(ctx, "error: AddDevice: %q: %v", dev.Name(), err)
 	}
 	return nil
 }
@@ -157,20 +159,27 @@ func (fs *FS) initDev(sb *util.Ref[btrfsvol.PhysicalAddr, Superblock]) error {
 			}
 		}
 	}
-	if err := fs.TreeWalk(CHUNK_TREE_OBJECTID, TreeWalkHandler{
-		Item: func(_ TreePath, item Item) error {
-			if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-				return nil
-			}
-			for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Head.Key) {
-				if err := fs.LV.AddMapping(mapping); err != nil {
-					return err
-				}
-			}
-			return nil
+	var errs derror.MultiError
+	fs.TreeWalk(CHUNK_TREE_OBJECTID,
+		func(err *TreeError) {
+			errs = append(errs, err)
 		},
-	}); err != nil {
-		return err
+		TreeWalkHandler{
+			Item: func(_ TreePath, item Item) error {
+				if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+					return nil
+				}
+				for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Head.Key) {
+					if err := fs.LV.AddMapping(mapping); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		},
+	)
+	if len(errs) > 0 {
+		return errs
 	}
 	return nil
 }

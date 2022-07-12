@@ -24,18 +24,12 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *util.Ref[btrfsvol.Phys
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
-				if err != nil {
-					err = fmt.Errorf("%v: %w", path, err)
-					fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
-				}
-				if node != nil {
-					visitedNodes[node.Addr] = struct{}{}
-				}
-				return err
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+				visitedNodes[node.Addr] = struct{}{}
+				return nil
 			},
 		},
-		Err: func(err error) {
+		Err: func(err *btrfsutil.WalkError) {
 			fmt.Printf("Pass 1: ... walk fs: error: %v\n", err)
 		},
 	})

@@ -5,8 +5,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
@@ -21,8 +19,8 @@ func init() {
 			Short: "Overwrite corrupt nodes with empty nodes",
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
-		RunE: func(fs *btrfs.FS, _ *cobra.Command, _ []string) error {
-			return btrfsrepair.ClearBadNodes(os.Stdout, os.Stderr, fs)
+		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+			return btrfsrepair.ClearBadNodes(cmd.Context(), fs)
 		},
 	})
 }

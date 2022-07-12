@@ -5,9 +5,11 @@
 package btrfsrepair
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
+
+	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -15,39 +17,26 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-func ClearBadNodes(out, errout io.Writer, fs *btrfs.FS) error {
+func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 	var uuidsInited bool
 	var metadataUUID, chunkTreeUUID btrfs.UUID
 
-	var treeName string
-	var treeID btrfs.ObjID
 	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
-		PreTree: func(name string, id btrfs.ObjID) {
-			treeName = name
-			treeID = id
+		Err: func(err *btrfsutil.WalkError) {
+			dlog.Error(ctx, err)
 		},
-		Err: func(err error) {
-			fmt.Fprintf(errout, "error: %v\n", err)
-		},
-		UnsafeNodes: true,
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
-				if err == nil {
-					if !uuidsInited {
-						metadataUUID = node.Data.Head.MetadataUUID
-						chunkTreeUUID = node.Data.Head.ChunkTreeUUID
-						uuidsInited = true
-					}
-					return nil
+			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+				if !uuidsInited {
+					metadataUUID = node.Data.Head.MetadataUUID
+					chunkTreeUUID = node.Data.Head.ChunkTreeUUID
+					uuidsInited = true
 				}
+				return nil
+			},
+			BadNode: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 				if !errors.Is(err, btrfs.ErrNotANode) {
-					err = btrfsutil.WalkErr{
-						TreeName: treeName,
-						Path:     path,
-						Err:      err,
-					}
-					fmt.Fprintf(errout, "error: %v\n", err)
-					return nil
+					return err
 				}
 				origErr := err
 				if !uuidsInited {
@@ -66,24 +55,20 @@ func ClearBadNodes(out, errout io.Writer, fs *btrfs.FS) error {
 						BackrefRev:    btrfs.MixedBackrefRev,
 						ChunkTreeUUID: chunkTreeUUID,
 						Generation:    0,
-						Owner:         treeID,
+						Owner:         path.TreeID,
 						NumItems:      0,
-						Level:         path[len(path)-1].NodeLevel,
+						Level:         path.Nodes[len(path.Nodes)-1].NodeLevel,
 					},
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()
 				if err != nil {
-					return btrfsutil.WalkErr{
-						TreeName: treeName,
-						Path:     path,
-						Err:      err,
-					}
+					return err
 				}
 				if err := node.Write(); err != nil {
 					return err
 				}
 
-				fmt.Fprintf(out, "fixed node@%v (err was %v)\n", node.Addr, origErr)
+				dlog.Infof(ctx, "fixed node@%v (err was %v)\n", node.Addr, origErr)
 				return nil
 			},
 		},

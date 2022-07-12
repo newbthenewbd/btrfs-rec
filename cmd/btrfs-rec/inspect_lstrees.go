@@ -35,7 +35,7 @@ func init() {
 					treeItemCnt = make(map[btrfsitem.Type]int)
 					fmt.Printf("tree id=%v name=%q\n", treeID, name)
 				},
-				Err: func(_ error) {
+				Err: func(_ *btrfsutil.WalkError) {
 					treeErrCnt++
 				},
 				TreeWalkHandler: btrfs.TreeWalkHandler{
