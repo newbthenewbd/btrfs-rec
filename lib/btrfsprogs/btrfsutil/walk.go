@@ -60,14 +60,14 @@ func WalkAllTrees(fs *btrfs.FS, cbs WalkAllTreesHandler) {
 	}
 	origItem := cbs.Item
 	cbs.Item = func(path btrfs.TreePath, item btrfs.Item) error {
-		if item.Head.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+		if item.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			trees = append(trees, struct {
 				Name string
 				ID   btrfs.ObjID
 			}{
 				Name: fmt.Sprintf("tree %v (via %v %v)",
-					item.Head.Key.ObjectID.Format(0), treeName, path),
-				ID: item.Head.Key.ObjectID,
+					item.Key.ObjectID.Format(0), treeName, path),
+				ID: item.Key.ObjectID,
 			})
 		}
 		if origItem != nil {

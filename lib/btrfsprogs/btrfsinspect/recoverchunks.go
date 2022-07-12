@@ -164,7 +164,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 		}
 		result.FoundNodes[nodeRef.Data.Head.Addr] = append(result.FoundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
 		for i, item := range nodeRef.Data.BodyLeaf {
-			switch item.Head.Key.ItemType {
+			switch item.Key.ItemType {
 			case btrfsitem.CHUNK_ITEM_KEY:
 				chunk, ok := item.Body.(btrfsitem.Chunk)
 				if !ok {
@@ -175,7 +175,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 				//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found chunk",
 				//	dev.Name(), nodeRef.Addr, i)
 				result.FoundChunks = append(result.FoundChunks, btrfs.SysChunk{
-					Key:   item.Head.Key,
+					Key:   item.Key,
 					Chunk: chunk,
 				})
 			case btrfsitem.BLOCK_GROUP_ITEM_KEY:
@@ -188,7 +188,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 				//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found block group",
 				//	dev.Name(), nodeRef.Addr, i)
 				result.FoundBlockGroups = append(result.FoundBlockGroups, SysBlockGroup{
-					Key: item.Head.Key,
+					Key: item.Key,
 					BG:  bg,
 				})
 			case btrfsitem.DEV_EXTENT_KEY:
@@ -201,7 +201,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 				//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found dev extent",
 				//	dev.Name(), nodeRef.Addr, i)
 				result.FoundDevExtents = append(result.FoundDevExtents, SysDevExtent{
-					Key:    item.Head.Key,
+					Key:    item.Key,
 					DevExt: devext,
 				})
 			}

@@ -51,7 +51,7 @@ func printSubvol(fs *btrfs.FS, prefix0, prefix1, name string, key btrfs.Key) {
 	}
 	rootBody := root.Body.(btrfsitem.Root)
 
-	printDir(fs, root.Head.Key.ObjectID, prefix0, prefix1, name, rootBody.RootDirID)
+	printDir(fs, root.Key.ObjectID, prefix0, prefix1, name, rootBody.RootDirID)
 }
 
 func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string, dirInode btrfs.ObjID) {
@@ -67,7 +67,7 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 	membersByIndex := make(map[uint64]btrfsitem.DirEntry)
 	membersByNameHash := make(map[uint64]btrfsitem.DirEntry)
 	for _, item := range items {
-		switch item.Head.Key.ItemType {
+		switch item.Key.ItemType {
 		case btrfsitem.INODE_ITEM_KEY:
 			if dirInodeDatOK {
 				if !reflect.DeepEqual(dirInodeDat, item.Body.(btrfsitem.Inode)) {
@@ -82,9 +82,9 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 		case btrfsitem.DIR_ITEM_KEY:
 			entry := item.Body.(btrfsitem.DirEntry)
 			namehash := btrfsitem.NameHash(entry.Name)
-			if namehash != item.Head.Key.Offset {
+			if namehash != item.Key.Offset {
 				errs = append(errs, fmt.Errorf("read dir: direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-					item.Head.Key.Offset, entry.Name, namehash))
+					item.Key.Offset, entry.Name, namehash))
 				continue
 			}
 			if other, exists := membersByNameHash[namehash]; exists {
@@ -101,7 +101,7 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 			}
 			membersByNameHash[btrfsitem.NameHash(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
-			index := item.Head.Key.Offset
+			index := item.Key.Offset
 			entry := item.Body.(btrfsitem.DirEntry)
 			if other, exists := membersByIndex[index]; exists {
 				if !reflect.DeepEqual(entry, other) {
@@ -112,7 +112,7 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 			membersByIndex[index] = entry
 		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
-			errs = append(errs, fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
+			errs = append(errs, fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
 	}
 	fmt.Printf("%s%q\t[ino=%d",

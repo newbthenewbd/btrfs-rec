@@ -92,12 +92,10 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		superblock, _ := dev.Superblock()
 		reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
-			Head: btrfs.ItemHeader{
-				Key: btrfs.Key{
-					ObjectID: btrfs.DEV_ITEMS_OBJECTID,
-					ItemType: btrfsitem.DEV_ITEM_KEY,
-					Offset:   uint64(superblock.Data.DevItem.DevID),
-				},
+			Key: btrfs.Key{
+				ObjectID: btrfs.DEV_ITEMS_OBJECTID,
+				ItemType: btrfsitem.DEV_ITEM_KEY,
+				Offset:   uint64(superblock.Data.DevItem.DevID),
 			},
 			Body: superblock.Data.DevItem,
 		})
@@ -105,14 +103,12 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 
 	for _, mapping := range fs.LV.Mappings() {
 		chunkIdx := len(reconstructedNode.Data.BodyLeaf) - 1
-		if len(reconstructedNode.Data.BodyLeaf) == 0 || reconstructedNode.Data.BodyLeaf[chunkIdx].Head.Key.Offset != uint64(mapping.LAddr) {
+		if len(reconstructedNode.Data.BodyLeaf) == 0 || reconstructedNode.Data.BodyLeaf[chunkIdx].Key.Offset != uint64(mapping.LAddr) {
 			reconstructedNode.Data.BodyLeaf = append(reconstructedNode.Data.BodyLeaf, btrfs.Item{
-				Head: btrfs.ItemHeader{
-					Key: btrfs.Key{
-						ObjectID: btrfs.FIRST_CHUNK_TREE_OBJECTID,
-						ItemType: btrfsitem.CHUNK_ITEM_KEY,
-						Offset:   uint64(mapping.LAddr),
-					},
+				Key: btrfs.Key{
+					ObjectID: btrfs.FIRST_CHUNK_TREE_OBJECTID,
+					ItemType: btrfsitem.CHUNK_ITEM_KEY,
+					Offset:   uint64(mapping.LAddr),
 				},
 				Body: btrfsitem.Chunk{
 					Head: btrfsitem.ChunkHeader{

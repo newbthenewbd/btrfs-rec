@@ -142,7 +142,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 			}
 		}
 		for _, item := range items {
-			switch item.Head.Key.ItemType {
+			switch item.Key.ItemType {
 			case btrfsitem.INODE_ITEM_KEY:
 				itemBody := item.Body.(btrfsitem.Inode)
 				if val.InodeItem != nil {
@@ -187,10 +187,10 @@ func (ret *Dir) populate() {
 	ret.ChildrenByName = make(map[string]btrfsitem.DirEntry)
 	ret.ChildrenByIndex = make(map[uint64]btrfsitem.DirEntry)
 	for _, item := range ret.OtherItems {
-		switch item.Head.Key.ItemType {
+		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
 			ref := InodeRef{
-				Inode:    ObjID(item.Head.Key.Offset),
+				Inode:    ObjID(item.Key.Offset),
 				InodeRef: item.Body.(btrfsitem.InodeRef),
 			}
 			if ret.DotDot != nil {
@@ -203,9 +203,9 @@ func (ret *Dir) populate() {
 		case btrfsitem.DIR_ITEM_KEY:
 			entry := item.Body.(btrfsitem.DirEntry)
 			namehash := btrfsitem.NameHash(entry.Name)
-			if namehash != item.Head.Key.Offset {
+			if namehash != item.Key.Offset {
 				ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-					item.Head.Key.Offset, entry.Name, namehash))
+					item.Key.Offset, entry.Name, namehash))
 				continue
 			}
 			if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
@@ -216,7 +216,7 @@ func (ret *Dir) populate() {
 			}
 			ret.ChildrenByName[string(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
-			index := item.Head.Key.Offset
+			index := item.Key.Offset
 			entry := item.Body.(btrfsitem.DirEntry)
 			if other, exists := ret.ChildrenByIndex[index]; exists {
 				if !reflect.DeepEqual(entry, other) {
@@ -227,7 +227,7 @@ func (ret *Dir) populate() {
 			ret.ChildrenByIndex[index] = entry
 		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
-			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
+			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
 	}
 	entriesWithIndexes := make(map[string]struct{})
@@ -297,16 +297,16 @@ func (sv *Subvolume) LoadFile(inode ObjID) (*File, error) {
 
 func (ret *File) populate() {
 	for _, item := range ret.OtherItems {
-		switch item.Head.Key.ItemType {
+		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
 			// TODO
 		case btrfsitem.EXTENT_DATA_KEY:
 			ret.Extents = append(ret.Extents, FileExtent{
-				OffsetWithinFile: int64(item.Head.Key.Offset),
+				OffsetWithinFile: int64(item.Key.Offset),
 				FileExtent:       item.Body.(btrfsitem.FileExtent),
 			})
 		default:
-			panic(fmt.Errorf("TODO: handle item type %v", item.Head.Key.ItemType))
+			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
 	}
 

@@ -246,7 +246,7 @@ func (node *Node) marshalInternalTo(bodyBuf []byte) error {
 // Node: "leaf" ////////////////////////////////////////////////////////////////////////////////////
 
 type Item struct {
-	Head ItemHeader
+	Key  Key
 	Body btrfsitem.Item
 }
 
@@ -261,9 +261,8 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 	head := 0
 	tail := len(bodyBuf)
 	for i := uint32(0); i < node.Head.NumItems; i++ {
-		var item Item
-
-		n, err := binstruct.Unmarshal(bodyBuf[head:], &item.Head)
+		var itemHead ItemHeader
+		n, err := binstruct.Unmarshal(bodyBuf[head:], &itemHead)
 		head += n
 		if err != nil {
 			return 0, fmt.Errorf("item %v: head: %w", i, err)
@@ -273,21 +272,23 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 				i, head, tail)
 		}
 
-		dataOff := int(item.Head.DataOffset)
+		dataOff := int(itemHead.DataOffset)
 		if dataOff < head {
 			return 0, fmt.Errorf("item %v: body: beg_offset=%#x is in the head section (offset<%#x)",
 				i, dataOff, head)
 		}
-		dataSize := int(item.Head.DataSize)
+		dataSize := int(itemHead.DataSize)
 		if dataOff+dataSize != tail {
 			return 0, fmt.Errorf("item %v: body: end_offset=%#x is not cur_tail=%#x)",
 				i, dataOff+dataSize, tail)
 		}
 		tail = dataOff
 		dataBuf := bodyBuf[dataOff : dataOff+dataSize]
-		item.Body = btrfsitem.UnmarshalItem(item.Head.Key, node.ChecksumType, dataBuf)
 
-		node.BodyLeaf = append(node.BodyLeaf, item)
+		node.BodyLeaf = append(node.BodyLeaf, Item{
+			Key:  itemHead.Key,
+			Body: btrfsitem.UnmarshalItem(itemHead.Key, node.ChecksumType, dataBuf),
+		})
 	}
 
 	node.Padding = bodyBuf[head:tail]
@@ -302,9 +303,11 @@ func (node *Node) marshalLeafTo(bodyBuf []byte) error {
 		if err != nil {
 			return fmt.Errorf("item %v: body: %w", i, err)
 		}
-		item.Head.DataSize = uint32(len(itemBodyBuf))
-		item.Head.DataOffset = uint32(tail - len(itemBodyBuf))
-		itemHeadBuf, err := binstruct.Marshal(item.Head)
+		itemHeadBuf, err := binstruct.Marshal(ItemHeader{
+			Key:        item.Key,
+			DataSize:   uint32(len(itemBodyBuf)),
+			DataOffset: uint32(tail - len(itemBodyBuf)),
+		})
 		if err != nil {
 			return fmt.Errorf("item %v: head: %w", i, err)
 		}
@@ -334,7 +337,8 @@ func (node *Node) LeafFreeSpace() uint32 {
 	freeSpace -= uint32(binstruct.StaticSize(NodeHeader{}))
 	for _, item := range node.BodyLeaf {
 		freeSpace -= uint32(binstruct.StaticSize(ItemHeader{}))
-		freeSpace -= item.Head.DataSize
+		bs, _ := binstruct.Marshal(item.Body)
+		freeSpace -= uint32(len(bs))
 	}
 	return freeSpace
 }

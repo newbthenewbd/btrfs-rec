@@ -367,7 +367,7 @@ func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.R
 			end := len(node.Data.BodyLeaf)
 			for beg < end {
 				midpoint := (beg + end) / 2
-				direction := fn(node.Data.BodyLeaf[midpoint].Head.Key)
+				direction := fn(node.Data.BodyLeaf[midpoint].Key)
 				switch {
 				case direction < 0:
 					end = midpoint
@@ -551,7 +551,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			break
 		}
 		prevItem := prevNode.Data.BodyLeaf[prevPath.Nodes[len(prevPath.Nodes)-1].ItemIdx]
-		if fn(prevItem.Head.Key) != 0 {
+		if fn(prevItem.Key) != 0 {
 			break
 		}
 		ret = append(ret, prevItem)
@@ -567,7 +567,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			break
 		}
 		nextItem := nextNode.Data.BodyLeaf[nextPath.Nodes[len(nextPath.Nodes)-1].ItemIdx]
-		if fn(nextItem.Head.Key) != 0 {
+		if fn(nextItem.Key) != 0 {
 			break
 		}
 		ret = append(ret, nextItem)

@@ -166,10 +166,10 @@ func (fs *FS) initDev(sb *util.Ref[btrfsvol.PhysicalAddr, Superblock]) error {
 		},
 		TreeWalkHandler{
 			Item: func(_ TreePath, item Item) error {
-				if item.Head.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 					return nil
 				}
-				for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Head.Key) {
+				for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Key) {
 					if err := fs.LV.AddMapping(mapping); err != nil {
 						return err
 					}

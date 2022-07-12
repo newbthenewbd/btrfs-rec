@@ -12,6 +12,7 @@ import (
 
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
@@ -49,7 +50,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 		},
 		btrfs.TreeWalkHandler{
 			Item: func(_ btrfs.TreePath, item btrfs.Item) error {
-				if item.Head.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+				if item.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 					return nil
 				}
 				treeName, ok := map[btrfs.ObjID]string{
@@ -71,12 +72,12 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 					btrfs.FREE_SPACE_TREE_OBJECTID:  "free space",
 					btrfs.MULTIPLE_OBJECTIDS:        "multiple",
 					btrfs.BLOCK_GROUP_TREE_OBJECTID: "block group",
-				}[item.Head.Key.ObjectID]
+				}[item.Key.ObjectID]
 				if !ok {
 					treeName = "file"
 				}
-				fmt.Fprintf(out, "%v tree %v \n", treeName, fmtKey(item.Head.Key))
-				printTree(ctx, out, fs, item.Head.Key.ObjectID)
+				fmt.Fprintf(out, "%v tree %v \n", treeName, fmtKey(item.Key))
+				printTree(ctx, out, fs, item.Key.ObjectID)
 				return nil
 			},
 		},
@@ -90,6 +91,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
 func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.ObjID) {
+	var itemOffset uint32
 	fs.TreeWalk(
 		treeID,
 		func(err *btrfs.TreeError) {
@@ -98,6 +100,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 		btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				printHeaderInfo(out, nodeRef.Data)
+				itemOffset = nodeRef.Data.Size - uint32(binstruct.StaticSize(btrfs.NodeHeader{}))
 				return nil
 			},
 			PreKeyPointer: func(_ btrfs.TreePath, item btrfs.KeyPointer) error {
@@ -109,11 +112,14 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 			},
 			Item: func(path btrfs.TreePath, item btrfs.Item) error {
 				i := path.Nodes[len(path.Nodes)-1].ItemIdx
+				bs, _ := binstruct.Marshal(item.Body)
+				itemSize := uint32(len(bs))
+				itemOffset -= itemSize
 				fmt.Fprintf(out, "\titem %v %v itemoff %v itemsize %v\n",
 					i,
-					fmtKey(item.Head.Key),
-					item.Head.DataOffset,
-					item.Head.DataSize)
+					fmtKey(item.Key),
+					itemOffset,
+					itemSize)
 				switch body := item.Body.(type) {
 				case btrfsitem.FreeSpaceHeader:
 					fmt.Fprintf(out, "\t\tlocation %v\n", fmtKey(body.Location))
@@ -169,13 +175,13 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 					}
 				case btrfsitem.RootRef:
 					var tag string
-					switch item.Head.Key.ItemType {
+					switch item.Key.ItemType {
 					case btrfsitem.ROOT_REF_KEY:
 						tag = "ref"
 					case btrfsitem.ROOT_BACKREF_KEY:
 						tag = "backref"
 					default:
-						tag = fmt.Sprintf("(error: unhandled RootRef item type: %v)", item.Head.Key.ItemType)
+						tag = fmt.Sprintf("(error: unhandled RootRef item type: %v)", item.Key.ItemType)
 					}
 					fmt.Fprintf(out, "\t\troot %v key dirid %v sequence %v name %s\n",
 						tag, body.DirID, body.Sequence, body.Name)
@@ -190,7 +196,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 				case btrfsitem.Metadata:
 					fmt.Fprintf(out, "\t\trefs %v gen %v flags %v\n",
 						body.Head.Refs, body.Head.Generation, body.Head.Flags)
-					fmt.Fprintf(out, "\t\ttree block skinny level %v\n", item.Head.Key.Offset)
+					fmt.Fprintf(out, "\t\ttree block skinny level %v\n", item.Key.Offset)
 					printExtentInlineRefs(out, body.Refs)
 				//case btrfsitem.EXTENT_DATA_REF_KEY:
 				//	// TODO
@@ -200,7 +206,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 					sb, _ := fs.Superblock()
 					sectorSize := btrfsvol.AddrDelta(sb.Data.SectorSize)
 
-					start := btrfsvol.LogicalAddr(item.Head.Key.Offset)
+					start := btrfsvol.LogicalAddr(item.Key.Offset)
 					itemSize := btrfsvol.AddrDelta(len(body.Sums)) * sectorSize
 					fmt.Fprintf(out, "\t\trange start %d end %d length %d",
 						start, start.Add(itemSize), itemSize)
@@ -298,8 +304,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 				//	// TODO
 				case btrfsitem.DevStats:
 					fmt.Fprintf(out, "\t\tpersistent item objectid %v offset %v\n",
-						item.Head.Key.ObjectID.Format(item.Head.Key.ItemType), item.Head.Key.Offset)
-					switch item.Head.Key.ObjectID {
+						item.Key.ObjectID.Format(item.Key.ItemType), item.Key.Offset)
+					switch item.Key.ObjectID {
 					case btrfs.DEV_STATS_OBJECTID:
 						fmt.Fprintf(out, "\t\tdevice stats\n")
 						fmt.Fprintf(out, "\t\twrite_errs %v read_errs %v flush_errs %v corruption_errs %v generation %v\n",
@@ -309,12 +315,12 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 							body.Values[btrfsitem.DEV_STAT_CORRUPTION_ERRS],
 							body.Values[btrfsitem.DEV_STAT_GENERATION_ERRS])
 					default:
-						fmt.Fprintf(out, "\t\tunknown persistent item objectid %v\n", item.Head.Key.ObjectID)
+						fmt.Fprintf(out, "\t\tunknown persistent item objectid %v\n", item.Key.ObjectID)
 					}
 				//case btrfsitem.TEMPORARY_ITEM_KEY:
 				//	// TODO
 				case btrfsitem.Empty:
-					switch item.Head.Key.ItemType {
+					switch item.Key.ItemType {
 					case btrfsitem.ORPHAN_ITEM_KEY: // 48
 						fmt.Fprintf(out, "\t\torphan item\n")
 					case btrfsitem.TREE_BLOCK_REF_KEY: // 176
@@ -330,7 +336,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 					//case btrfsitem.CSUM_ITEM_KEY:
 					//	fmt.Fprintf(out, "\t\tcsum item\n")
 					default:
-						fmt.Fprintf(out, "\t\t(error) unhandled empty item type: %v\n", item.Head.Key.ItemType)
+						fmt.Fprintf(out, "\t\t(error) unhandled empty item type: %v\n", item.Key.ItemType)
 					}
 				case btrfsitem.Error:
 					fmt.Fprintf(out, "\t\t(error) error item: %v\n", body.Err)

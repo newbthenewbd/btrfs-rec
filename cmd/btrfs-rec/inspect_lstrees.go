@@ -40,7 +40,7 @@ func init() {
 				},
 				TreeWalkHandler: btrfs.TreeWalkHandler{
 					Item: func(_ btrfs.TreePath, item btrfs.Item) error {
-						typ := item.Head.Key.ItemType
+						typ := item.Key.ItemType
 						treeItemCnt[typ] = treeItemCnt[typ] + 1
 						return nil
 					},
