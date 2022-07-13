@@ -23,7 +23,7 @@ type FS struct {
 	LV btrfsvol.LogicalVolume[*Device]
 
 	cacheSuperblocks []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
-	cacheSuperblock  *util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	cacheSuperblock  *Superblock
 }
 
 var _ util.File[btrfsvol.LogicalAddr] = (*FS)(nil)
@@ -33,12 +33,12 @@ func (fs *FS) AddDevice(ctx context.Context, dev *Device) error {
 	if err != nil {
 		return err
 	}
-	if err := fs.LV.AddPhysicalVolume(sb.Data.DevItem.DevID, dev); err != nil {
+	if err := fs.LV.AddPhysicalVolume(sb.DevItem.DevID, dev); err != nil {
 		return err
 	}
 	fs.cacheSuperblocks = nil
 	fs.cacheSuperblock = nil
-	if err := fs.initDev(sb); err != nil {
+	if err := fs.initDev(*sb); err != nil {
 		dlog.Errorf(ctx, "error: AddDevice: %q: %v", dev.Name(), err)
 	}
 	return nil
@@ -52,7 +52,7 @@ func (fs *FS) Name() string {
 	if err != nil {
 		return fmt.Sprintf("fs_uuid=%v", "(unreadable)")
 	}
-	name := fmt.Sprintf("fs_uuid=%v", sb.Data.FSUUID)
+	name := fmt.Sprintf("fs_uuid=%v", sb.FSUUID)
 	fs.LV.SetName(name)
 	return name
 }
@@ -92,7 +92,7 @@ func (fs *FS) Superblocks() ([]*util.Ref[btrfsvol.PhysicalAddr, Superblock], err
 	return ret, nil
 }
 
-func (fs *FS) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
+func (fs *FS) Superblock() (*Superblock, error) {
 	if fs.cacheSuperblock != nil {
 		return fs.cacheSuperblock, nil
 	}
@@ -129,8 +129,8 @@ func (fs *FS) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], error)
 		}
 	}
 
-	fs.cacheSuperblock = sbs[0]
-	return sbs[0], nil
+	fs.cacheSuperblock = &sbs[0].Data
+	return &sbs[0].Data, nil
 }
 
 func (fs *FS) ReInit() error {
@@ -140,15 +140,15 @@ func (fs *FS) ReInit() error {
 		if err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
-		if err := fs.initDev(sb); err != nil {
+		if err := fs.initDev(*sb); err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 	}
 	return nil
 }
 
-func (fs *FS) initDev(sb *util.Ref[btrfsvol.PhysicalAddr, Superblock]) error {
-	syschunks, err := sb.Data.ParseSysChunkArray()
+func (fs *FS) initDev(sb Superblock) error {
+	syschunks, err := sb.ParseSysChunkArray()
 	if err != nil {
 		return err
 	}

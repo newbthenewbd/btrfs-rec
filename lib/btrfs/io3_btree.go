@@ -146,30 +146,30 @@ func (fs *FS) lookupTree(treeID ObjID) (*treeRoot, error) {
 	case ROOT_TREE_OBJECTID:
 		return &treeRoot{
 			TreeID:     treeID,
-			RootNode:   sb.Data.RootTree,
-			Level:      sb.Data.RootLevel,
-			Generation: sb.Data.Generation, // XXX: same generation as LOG_TREE?
+			RootNode:   sb.RootTree,
+			Level:      sb.RootLevel,
+			Generation: sb.Generation, // XXX: same generation as LOG_TREE?
 		}, nil
 	case CHUNK_TREE_OBJECTID:
 		return &treeRoot{
 			TreeID:     treeID,
-			RootNode:   sb.Data.ChunkTree,
-			Level:      sb.Data.ChunkLevel,
-			Generation: sb.Data.ChunkRootGeneration,
+			RootNode:   sb.ChunkTree,
+			Level:      sb.ChunkLevel,
+			Generation: sb.ChunkRootGeneration,
 		}, nil
 	case TREE_LOG_OBJECTID:
 		return &treeRoot{
 			TreeID:     treeID,
-			RootNode:   sb.Data.LogTree,
-			Level:      sb.Data.LogLevel,
-			Generation: sb.Data.Generation, // XXX: same generation as ROOT_TREE?
+			RootNode:   sb.LogTree,
+			Level:      sb.LogLevel,
+			Generation: sb.Generation, // XXX: same generation as ROOT_TREE?
 		}, nil
 	case BLOCK_GROUP_TREE_OBJECTID:
 		return &treeRoot{
 			TreeID:     treeID,
-			RootNode:   sb.Data.BlockGroupRoot,
-			Level:      sb.Data.BlockGroupRootLevel,
-			Generation: sb.Data.BlockGroupRootGeneration,
+			RootNode:   sb.BlockGroupRoot,
+			Level:      sb.BlockGroupRootLevel,
+			Generation: sb.BlockGroupRootGeneration,
 		}, nil
 	default:
 		rootItem, err := fs.TreeSearch(ROOT_TREE_OBJECTID, func(key Key) int {

@@ -17,7 +17,7 @@ type Device struct {
 	*os.File
 
 	cacheSuperblocks []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
-	cacheSuperblock  *util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	cacheSuperblock  *Superblock
 }
 
 var _ util.File[btrfsvol.PhysicalAddr] = (*Device)(nil)
@@ -75,7 +75,7 @@ func (dev *Device) Superblocks() ([]*util.Ref[btrfsvol.PhysicalAddr, Superblock]
 	return ret, nil
 }
 
-func (dev *Device) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblock() (*Superblock, error) {
 	if dev.cacheSuperblock != nil {
 		return dev.cacheSuperblock, nil
 	}
@@ -95,6 +95,6 @@ func (dev *Device) Superblock() (*util.Ref[btrfsvol.PhysicalAddr, Superblock], e
 		}
 	}
 
-	dev.cacheSuperblock = sbs[0]
-	return sbs[0], nil
+	dev.cacheSuperblock = &sbs[0].Data
+	return &sbs[0].Data, nil
 }

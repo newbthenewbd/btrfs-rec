@@ -44,7 +44,7 @@ func init() {
 
 			for _, dev := range fs.LV.PhysicalVolumes() {
 				dlog.Infof(ctx, "dev[%q] Scanning for unreachable nodes...", dev.Name())
-				devResult, err := btrfsinspect.ScanOneDev(ctx, dev, superblock.Data)
+				devResult, err := btrfsinspect.ScanOneDev(ctx, dev, *superblock)
 				if err != nil {
 					return err
 				}

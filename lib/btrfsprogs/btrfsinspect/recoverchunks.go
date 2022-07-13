@@ -84,10 +84,10 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 			if err := fs.LV.AddMapping(btrfsvol.Mapping{
 				LAddr: laddr,
 				PAddr: btrfsvol.QualifiedPhysicalAddr{
-					Dev:  sb.Data.DevItem.DevID,
+					Dev:  sb.DevItem.DevID,
 					Addr: paddr,
 				},
-				Size:       btrfsvol.AddrDelta(sb.Data.NodeSize),
+				Size:       btrfsvol.AddrDelta(sb.NodeSize),
 				SizeLocked: false,
 				Flags:      nil,
 			}); err != nil {

@@ -27,19 +27,19 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 		return
 	}
 
-	if superblock.Data.RootTree != 0 {
+	if superblock.RootTree != 0 {
 		fmt.Fprintf(out, "root tree\n")
 		printTree(ctx, out, fs, btrfs.ROOT_TREE_OBJECTID)
 	}
-	if superblock.Data.ChunkTree != 0 {
+	if superblock.ChunkTree != 0 {
 		fmt.Fprintf(out, "chunk tree\n")
 		printTree(ctx, out, fs, btrfs.CHUNK_TREE_OBJECTID)
 	}
-	if superblock.Data.LogTree != 0 {
+	if superblock.LogTree != 0 {
 		fmt.Fprintf(out, "log root tree\n")
 		printTree(ctx, out, fs, btrfs.TREE_LOG_OBJECTID)
 	}
-	if superblock.Data.BlockGroupRoot != 0 {
+	if superblock.BlockGroupRoot != 0 {
 		fmt.Fprintf(out, "block group tree\n")
 		printTree(ctx, out, fs, btrfs.BLOCK_GROUP_TREE_OBJECTID)
 	}
@@ -82,9 +82,9 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 			},
 		},
 	)
-	fmt.Fprintf(out, "total bytes %v\n", superblock.Data.TotalBytes)
-	fmt.Fprintf(out, "bytes used %v\n", superblock.Data.BytesUsed)
-	fmt.Fprintf(out, "uuid %v\n", superblock.Data.FSUUID)
+	fmt.Fprintf(out, "total bytes %v\n", superblock.TotalBytes)
+	fmt.Fprintf(out, "bytes used %v\n", superblock.BytesUsed)
+	fmt.Fprintf(out, "uuid %v\n", superblock.FSUUID)
 }
 
 // printTree mimics btrfs-progs
@@ -199,7 +199,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 			//	// TODO
 			case btrfsitem.ExtentCSum:
 				sb, _ := fs.Superblock()
-				sectorSize := btrfsvol.AddrDelta(sb.Data.SectorSize)
+				sectorSize := btrfsvol.AddrDelta(sb.SectorSize)
 
 				start := btrfsvol.LogicalAddr(item.Key.Offset)
 				itemSize := btrfsvol.AddrDelta(len(body.Sums)) * sectorSize
@@ -214,7 +214,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 					} else {
 						fmt.Fprintf(out, " ")
 					}
-					fmt.Fprintf(out, "[%d] 0x%s", pos, sum.Fmt(sb.Data.ChecksumType))
+					fmt.Fprintf(out, "[%d] 0x%s", pos, sum.Fmt(sb.ChecksumType))
 					pos = pos.Add(sectorSize)
 				}
 				fmt.Fprintf(out, "\n")

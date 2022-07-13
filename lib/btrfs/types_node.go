@@ -406,7 +406,7 @@ func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*util.Ref[btrfsvol.LogicalAdd
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
 
-	return ReadNode[btrfsvol.LogicalAddr](fs, sb.Data, addr, func(claimAddr btrfsvol.LogicalAddr) error {
+	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, addr, func(claimAddr btrfsvol.LogicalAddr) error {
 		if claimAddr != addr {
 			return fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
 				addr, claimAddr)

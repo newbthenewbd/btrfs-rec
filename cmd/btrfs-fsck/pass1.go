@@ -17,7 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-func pass1(ctx context.Context, fs *btrfs.FS, superblock *util.Ref[btrfsvol.PhysicalAddr, btrfs.Superblock]) (map[btrfsvol.LogicalAddr]struct{}, error) {
+func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map[btrfsvol.LogicalAddr]struct{}, error) {
 	fmt.Printf("\nPass 1: chunk mappings...\n")
 
 	fmt.Printf("Pass 1: ... walking fs\n")
@@ -37,7 +37,7 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *util.Ref[btrfsvol.Phys
 	fsFoundNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
-		devResult, err := btrfsinspect.ScanOneDev(ctx, dev, superblock.Data)
+		devResult, err := btrfsinspect.ScanOneDev(ctx, dev, *superblock)
 		if err != nil {
 			return nil, err
 		}
@@ -63,8 +63,7 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *util.Ref[btrfsvol.Phys
 }
 
 func pass1WriteReconstructedChunks(fs *btrfs.FS) {
-	sbRef, _ := fs.Superblock()
-	superblock := sbRef.Data
+	superblock, _ := fs.Superblock()
 
 	// FIXME(lukeshu): OK, so this just assumes that all the
 	// reconstructed stripes fit in one node, and that we can just
@@ -95,9 +94,9 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 			Key: btrfs.Key{
 				ObjectID: btrfs.DEV_ITEMS_OBJECTID,
 				ItemType: btrfsitem.DEV_ITEM_KEY,
-				Offset:   uint64(superblock.Data.DevItem.DevID),
+				Offset:   uint64(superblock.DevItem.DevID),
 			},
-			Body: superblock.Data.DevItem,
+			Body: superblock.DevItem,
 		})
 	}
 
@@ -131,7 +130,7 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 		chunkBody.Stripes = append(chunkBody.Stripes, btrfsitem.ChunkStripe{
 			DeviceID:   mapping.PAddr.Dev,
 			Offset:     mapping.PAddr.Addr,
-			DeviceUUID: devSB.Data.DevItem.DevUUID,
+			DeviceUUID: devSB.DevItem.DevUUID,
 		})
 		reconstructedNode.Data.BodyLeaf[chunkIdx].Body = chunkBody
 	}

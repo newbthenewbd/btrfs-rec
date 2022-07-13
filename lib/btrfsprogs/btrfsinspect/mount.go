@@ -205,9 +205,9 @@ func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 		return err
 	}
 
-	op.IoSize = sb.Data.SectorSize
-	op.BlockSize = sb.Data.SectorSize
-	op.Blocks = sb.Data.TotalBytes / uint64(sb.Data.SectorSize) // TODO: adjust for RAID type
+	op.IoSize = sb.SectorSize
+	op.BlockSize = sb.SectorSize
+	op.Blocks = sb.TotalBytes / uint64(sb.SectorSize) // TODO: adjust for RAID type
 	//op.BlocksFree = TODO
 
 	// btrfs doesn't have a fixed number of inodes
