@@ -7,7 +7,7 @@ package rbtree
 import (
 	"fmt"
 
-	"golang.org/x/exp/constraints"
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type Color bool
@@ -32,7 +32,7 @@ func (node *Node[V]) getColor() Color {
 	return node.Color
 }
 
-type Tree[K constraints.Ordered, V any] struct {
+type Tree[K util.Ordered[K], V any] struct {
 	KeyFn func(V) K
 	root  *Node[V]
 }
@@ -104,14 +104,7 @@ func (node *Node[V]) search(fn func(V) int) (exact, nearest *Node[V]) {
 func (t *Tree[K, V]) exactKey(key K) func(V) int {
 	return func(val V) int {
 		valKey := t.KeyFn(val)
-		switch {
-		case key < valKey:
-			return -1
-		case key > valKey:
-			return 1
-		default: // key == valKey:
-			return 0
-		}
+		return key.Cmp(valKey)
 	}
 }
 
@@ -282,7 +275,7 @@ func (t *Tree[K, V]) Insert(val V) {
 	}
 	if parent == nil {
 		t.root = node
-	} else if key < t.KeyFn(parent.Value) {
+	} else if key.Cmp(t.KeyFn(parent.Value)) < 0 {
 		parent.Left = node
 	} else {
 		parent.Right = node

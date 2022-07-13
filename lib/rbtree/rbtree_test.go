@@ -10,9 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
-func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *Tree[K, V]) {
+func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *Tree[util.NativeOrdered[K], V]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
@@ -62,16 +64,16 @@ func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]str
 	expectedOrder := make([]K, 0, len(expectedSet))
 	for k := range expectedSet {
 		expectedOrder = append(expectedOrder, k)
-		node := tree.Lookup(k)
+		node := tree.Lookup(util.NativeOrdered[K]{Val: k})
 		require.NotNil(t, tree, node)
-		require.Equal(t, k, tree.KeyFn(node.Value))
+		require.Equal(t, k, tree.KeyFn(node.Value).Val)
 	}
 	sort.Slice(expectedOrder, func(i, j int) bool {
 		return expectedOrder[i] < expectedOrder[j]
 	})
 	actOrder := make([]K, 0, len(expectedSet))
 	require.NoError(t, tree.Walk(func(node *Node[V]) error {
-		actOrder = append(actOrder, tree.KeyFn(node.Value))
+		actOrder = append(actOrder, tree.KeyFn(node.Value).Val)
 		return nil
 	}))
 	require.Equal(t, expectedOrder, actOrder)
@@ -100,8 +102,10 @@ func FuzzTree(f *testing.F) {
 	})
 
 	f.Fuzz(func(t *testing.T, dat []uint8) {
-		tree := &Tree[uint8, uint8]{
-			KeyFn: func(x uint8) uint8 { return x },
+		tree := &Tree[util.NativeOrdered[uint8], uint8]{
+			KeyFn: func(x uint8) util.NativeOrdered[uint8] {
+				return util.NativeOrdered[uint8]{Val: x}
+			},
 		}
 		set := make(map[uint8]struct{})
 		checkTree(t, set, tree)
@@ -114,15 +118,15 @@ func FuzzTree(f *testing.F) {
 				tree.Insert(val)
 				set[val] = struct{}{}
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				node := tree.Lookup(val)
+				node := tree.Lookup(util.NativeOrdered[uint8]{Val: val})
 				require.NotNil(t, node)
 				require.Equal(t, val, node.Value)
 			} else {
 				t.Logf("Delete(%v)", val)
-				tree.Delete(val)
+				tree.Delete(util.NativeOrdered[uint8]{Val: val})
 				delete(set, val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				require.Nil(t, tree.Lookup(val))
+				require.Nil(t, tree.Lookup(util.NativeOrdered[uint8]{Val: val}))
 			}
 			checkTree(t, set, tree)
 		}

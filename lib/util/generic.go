@@ -124,3 +124,24 @@ func (m *SyncMap[K, V]) Range(f func(key K, value V) bool) {
 	})
 }
 func (m *SyncMap[K, V]) Store(key K, value V) { m.inner.Store(key, value) }
+
+type Ordered[T interface{ Cmp(T) int }] interface {
+	Cmp(T) int
+}
+
+type NativeOrdered[T constraints.Ordered] struct {
+	Val T
+}
+
+func (a NativeOrdered[T]) Cmp(b NativeOrdered[T]) int {
+	switch {
+	case a.Val < b.Val:
+		return -1
+	case a.Val > b.Val:
+		return 1
+	default:
+		return 0
+	}
+}
+
+var _ Ordered[NativeOrdered[int]] = NativeOrdered[int]{}
