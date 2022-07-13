@@ -17,6 +17,41 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
+type Trees interface {
+	// The lifecycle of callbacks is:
+	//
+	//     001 .PreNode()
+	//     002 (read node)
+	//     003 .Node() (or .BadNode())
+	//         for item in node.items:
+	//           if internal:
+	//     004     .PreKeyPointer()
+	//     005     (recurse)
+	//     006     .PostKeyPointer()
+	//           else:
+	//     004     .Item() (or .BadItem())
+	//     007 .PostNode()
+	TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
+
+	TreeLookup(treeID ObjID, key Key) (Item, error)
+	TreeSearch(treeID ObjID, fn func(Key) int) (Item, error)
+
+	// If some items are able to be read, but there is an error reading the
+	// full set, then it might return *both* a list of items and an error.
+	//
+	// If no such item is found, an error that is io/fs.ErrNotExist is
+	// returned.
+	TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error)
+
+	// For bootstrapping purposes.
+	Superblock() (*Superblock, error)
+
+	// For reading raw data extants pointed at by tree items.
+	ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+}
+
+var _ Trees = (*FS)(nil)
+
 // - The first element will always have an ItemIdx of -1.
 //
 // - For .Item() callbacks, the last element will always have a
@@ -212,19 +247,6 @@ type TreeWalkHandler struct {
 	BadItem func(TreePath, Item) error
 }
 
-// The lifecycle of callbacks is:
-//
-//     001 .PreNode()
-//     002 (read node)
-//     003 .Node() (or .BadNode())
-//         for item in node.items:
-//           if internal:
-//     004     .PreKeyPointer()
-//     005     (recurse)
-//     006     .PostKeyPointer()
-//           else:
-//     004     .Item() (or .BadItem())
-//     007 .PostNode()
 func (fs *FS) TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{
 		TreeID: treeID,
@@ -537,10 +559,6 @@ func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
 	return item, err
 }
 
-// If some items are able to be read, but there is an error reading the full set, then it might
-// return *both* a list of items and an error.
-//
-// If no such item is found, an error that is io/fs.ErrNotExist is returned.
 func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 	rootInfo, err := fs.lookupTree(treeID)
 	if err != nil {

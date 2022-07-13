@@ -55,7 +55,7 @@ type File struct {
 }
 
 type Subvolume struct {
-	FS     *FS
+	FS     Trees
 	TreeID ObjID
 
 	rootOnce sync.Once
