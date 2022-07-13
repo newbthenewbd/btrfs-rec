@@ -57,7 +57,7 @@ func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 						Generation:    0,
 						Owner:         path.TreeID,
 						NumItems:      0,
-						Level:         path.Nodes[len(path.Nodes)-1].NodeLevel,
+						Level:         path.Node(-1).NodeLevel,
 					},
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()
