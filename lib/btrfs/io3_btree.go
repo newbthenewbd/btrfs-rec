@@ -208,7 +208,8 @@ type TreeWalkHandler struct {
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
 	// Callbacks for items on leaf nodes
-	Item func(TreePath, Item) error
+	Item    func(TreePath, Item) error
+	BadItem func(TreePath, Item) error
 }
 
 // The lifecycle of callbacks is:
@@ -222,7 +223,7 @@ type TreeWalkHandler struct {
 //     005     (recurse)
 //     006     .PostKeyPointer()
 //           else:
-//     004     .Item()
+//     004     .Item() (or .BadItem())
 //     007 .PostNode()
 func (fs *FS) TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{
@@ -259,8 +260,10 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 	if err != nil {
 		errHandle(&TreeError{Path: path, Err: err})
 	} else {
-		if err := cbs.Node(path, node); err != nil {
-			errHandle(&TreeError{Path: path, Err: err})
+		if cbs.Node != nil {
+			if err := cbs.Node(path, node); err != nil {
+				errHandle(&TreeError{Path: path, Err: err})
+			}
 		}
 	}
 	if node != nil {
@@ -272,23 +275,33 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
-					errHandle(&TreeError{Path: path, Err: err})
+					errHandle(&TreeError{Path: itemPath, Err: err})
 				}
 			}
 			fs.treeWalk(itemPath, errHandle, cbs)
 			if cbs.PostKeyPointer != nil {
 				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
-					errHandle(&TreeError{Path: path, Err: err})
+					errHandle(&TreeError{Path: itemPath, Err: err})
 				}
 			}
 		}
 		for i, item := range node.Data.BodyLeaf {
-			if cbs.Item != nil {
-				itemPath := path.Append(TreePathElem{
-					ItemIdx: i,
-				})
-				if err := cbs.Item(itemPath, item); err != nil {
-					errHandle(&TreeError{Path: path, Err: err})
+			itemPath := path.Append(TreePathElem{
+				ItemIdx: i,
+			})
+			if errBody, isErr := item.Body.(btrfsitem.Error); isErr {
+				if cbs.BadItem == nil {
+					errHandle(&TreeError{Path: itemPath, Err: errBody.Err})
+				} else {
+					if err := cbs.BadItem(itemPath, item); err != nil {
+						errHandle(&TreeError{Path: itemPath, Err: err})
+					}
+				}
+			} else {
+				if cbs.Item != nil {
+					if err := cbs.Item(itemPath, item); err != nil {
+						errHandle(&TreeError{Path: itemPath, Err: err})
+					}
 				}
 			}
 		}

@@ -44,6 +44,11 @@ func init() {
 						treeItemCnt[typ] = treeItemCnt[typ] + 1
 						return nil
 					},
+					BadItem: func(_ btrfs.TreePath, item btrfs.Item) error {
+						typ := item.Key.ItemType
+						treeItemCnt[typ] = treeItemCnt[typ] + 1
+						return nil
+					},
 				},
 				PostTree: func(_ string, _ btrfs.ObjID) {
 					totalItems := 0

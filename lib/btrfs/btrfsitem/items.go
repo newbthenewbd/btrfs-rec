@@ -35,7 +35,7 @@ func (o *Error) UnmarshalBinary(dat []byte) (int, error) {
 	return len(dat), nil
 }
 
-// Rather than returning a separate error  value, return an Error item.
+// Rather than returning a separate error value, return an Error item.
 func UnmarshalItem(key internal.Key, csumType btrfssum.CSumType, dat []byte) Item {
 	var gotyp reflect.Type
 	if key.ItemType == UNTYPED_KEY {
