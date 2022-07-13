@@ -26,10 +26,10 @@ func init() {
 			Short: "A brief view what types of items are in each tree",
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
-		RunE: func(fs *btrfs.FS, _ *cobra.Command, _ []string) error {
+		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			var treeErrCnt int
 			var treeItemCnt map[btrfsitem.Type]int
-			btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
+			btrfsutil.WalkAllTrees(cmd.Context(), fs, btrfsutil.WalkAllTreesHandler{
 				PreTree: func(name string, treeID btrfs.ObjID) {
 					treeErrCnt = 0
 					treeItemCnt = make(map[btrfsitem.Type]int)

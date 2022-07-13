@@ -44,6 +44,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 		printTree(ctx, out, fs, btrfs.BLOCK_GROUP_TREE_OBJECTID)
 	}
 	fs.TreeWalk(
+		ctx,
 		btrfs.ROOT_TREE_OBJECTID,
 		func(err *btrfs.TreeError) {
 			dlog.Error(ctx, err)
@@ -343,6 +344,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 	}
 	handlers.BadItem = handlers.Item
 	fs.TreeWalk(
+		ctx,
 		treeID,
 		func(err *btrfs.TreeError) {
 			dlog.Error(ctx, err)

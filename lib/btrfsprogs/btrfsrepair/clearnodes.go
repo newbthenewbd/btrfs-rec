@@ -21,7 +21,7 @@ func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 	var uuidsInited bool
 	var metadataUUID, chunkTreeUUID btrfs.UUID
 
-	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
+	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		Err: func(err *btrfsutil.WalkError) {
 			dlog.Error(ctx, err)
 		},

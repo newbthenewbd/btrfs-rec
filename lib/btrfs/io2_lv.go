@@ -38,7 +38,7 @@ func (fs *FS) AddDevice(ctx context.Context, dev *Device) error {
 	}
 	fs.cacheSuperblocks = nil
 	fs.cacheSuperblock = nil
-	if err := fs.initDev(*sb); err != nil {
+	if err := fs.initDev(ctx, *sb); err != nil {
 		dlog.Errorf(ctx, "error: AddDevice: %q: %v", dev.Name(), err)
 	}
 	return nil
@@ -133,21 +133,21 @@ func (fs *FS) Superblock() (*Superblock, error) {
 	return &sbs[0].Data, nil
 }
 
-func (fs *FS) ReInit() error {
+func (fs *FS) ReInit(ctx context.Context) error {
 	fs.LV.ClearMappings()
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		sb, err := dev.Superblock()
 		if err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
-		if err := fs.initDev(*sb); err != nil {
+		if err := fs.initDev(ctx, *sb); err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 	}
 	return nil
 }
 
-func (fs *FS) initDev(sb Superblock) error {
+func (fs *FS) initDev(ctx context.Context, sb Superblock) error {
 	syschunks, err := sb.ParseSysChunkArray()
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ func (fs *FS) initDev(sb Superblock) error {
 		}
 	}
 	var errs derror.MultiError
-	fs.TreeWalk(CHUNK_TREE_OBJECTID,
+	fs.TreeWalk(ctx, CHUNK_TREE_OBJECTID,
 		func(err *TreeError) {
 			errs = append(errs, err)
 		},

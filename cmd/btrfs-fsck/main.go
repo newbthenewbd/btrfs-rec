@@ -37,7 +37,7 @@ func Main(ctx context.Context, imgfilenames ...string) (err error) {
 		return err
 	}
 
-	pass2(fs, foundNodes)
+	pass2(ctx, fs, foundNodes)
 
 	return nil
 }

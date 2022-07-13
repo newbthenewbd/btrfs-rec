@@ -5,6 +5,7 @@
 package btrfs
 
 import (
+	"context"
 	"fmt"
 	"io"
 	iofs "io/fs"
@@ -18,6 +19,9 @@ import (
 )
 
 type Trees interface {
+	// Canceling the Context causes TreeWalk to return early; no
+	// values from the Context are used.
+	//
 	// The lifecycle of callbacks is:
 	//
 	//     001 .PreNode()
@@ -31,7 +35,7 @@ type Trees interface {
 	//           else:
 	//     004     .Item() (or .BadItem())
 	//     007 .PostNode()
-	TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
+	TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
 
 	TreeLookup(treeID ObjID, key Key) (Item, error)
 	TreeSearch(treeID ObjID, fn func(Key) int) (Item, error)
@@ -247,7 +251,7 @@ type TreeWalkHandler struct {
 	BadItem func(TreePath, Item) error
 }
 
-func (fs *FS) TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{
 		TreeID: treeID,
 	}
@@ -261,10 +265,13 @@ func (fs *FS) TreeWalk(treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHan
 		NodeAddr:  rootInfo.RootNode,
 		NodeLevel: rootInfo.Level,
 	})
-	fs.treeWalk(path, errHandle, cbs)
+	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
-func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	if ctx.Err() != nil {
+		return
+	}
 	if path.Nodes[len(path.Nodes)-1].NodeAddr == 0 {
 		return
 	}
@@ -273,8 +280,14 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 		if err := cbs.PreNode(path); err != nil {
 			errHandle(&TreeError{Path: path, Err: err})
 		}
+		if ctx.Err() != nil {
+			return
+		}
 	}
 	node, err := fs.readNodeAtLevel(path.Nodes[len(path.Nodes)-1].NodeAddr, path.Nodes[len(path.Nodes)-1].NodeLevel)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil && node != nil && cbs.BadNode != nil {
 		// opportunity to fix the node
 		err = cbs.BadNode(path, node, err)
@@ -288,6 +301,9 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 			}
 		}
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
 			itemPath := path.Append(TreePathElem{
@@ -299,11 +315,17 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
 					errHandle(&TreeError{Path: itemPath, Err: err})
 				}
+				if ctx.Err() != nil {
+					return
+				}
 			}
-			fs.treeWalk(itemPath, errHandle, cbs)
+			fs.treeWalk(ctx, itemPath, errHandle, cbs)
 			if cbs.PostKeyPointer != nil {
 				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
 					errHandle(&TreeError{Path: itemPath, Err: err})
+				}
+				if ctx.Err() != nil {
+					return
 				}
 			}
 		}
@@ -318,11 +340,17 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 					if err := cbs.BadItem(itemPath, item); err != nil {
 						errHandle(&TreeError{Path: itemPath, Err: err})
 					}
+					if ctx.Err() != nil {
+						return
+					}
 				}
 			} else {
 				if cbs.Item != nil {
 					if err := cbs.Item(itemPath, item); err != nil {
 						errHandle(&TreeError{Path: itemPath, Err: err})
+					}
+					if ctx.Err() != nil {
+						return
 					}
 				}
 			}
@@ -331,6 +359,9 @@ func (fs *FS) treeWalk(path TreePath, errHandle func(*TreeError), cbs TreeWalkHa
 	if cbs.PostNode != nil {
 		if err := cbs.PostNode(path, node); err != nil {
 			errHandle(&TreeError{Path: path, Err: err})
+		}
+		if ctx.Err() != nil {
+			return
 		}
 	}
 }

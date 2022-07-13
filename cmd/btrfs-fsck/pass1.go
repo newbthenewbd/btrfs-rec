@@ -22,7 +22,7 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map
 
 	fmt.Printf("Pass 1: ... walking fs\n")
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
-	btrfsutil.WalkAllTrees(fs, btrfsutil.WalkAllTreesHandler{
+	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				visitedNodes[node.Addr] = struct{}{}
@@ -57,12 +57,12 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map
 	btrfsinspect.PrintPhysicalSpace(os.Stdout, fs)
 
 	fmt.Printf("Pass 1: ... writing re-constructed chunks\n")
-	pass1WriteReconstructedChunks(fs)
+	pass1WriteReconstructedChunks(ctx, fs)
 
 	return fsFoundNodes, nil
 }
 
-func pass1WriteReconstructedChunks(fs *btrfs.FS) {
+func pass1WriteReconstructedChunks(ctx context.Context, fs *btrfs.FS) {
 	superblock, _ := fs.Superblock()
 
 	// FIXME(lukeshu): OK, so this just assumes that all the
@@ -145,7 +145,7 @@ func pass1WriteReconstructedChunks(fs *btrfs.FS) {
 		fmt.Printf("Pass 1: ... write new node: error: %v\n", err)
 	}
 
-	if err := fs.ReInit(); err != nil {
+	if err := fs.ReInit(ctx); err != nil {
 		fmt.Printf("Pass 1: ... re-init mappings: %v\n", err)
 	}
 
