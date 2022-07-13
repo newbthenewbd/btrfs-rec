@@ -23,6 +23,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/linux"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
@@ -40,7 +41,7 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
 
 	rootSubvol := &subvolume{
 		Subvolume: btrfs.Subvolume{
-			FS:     fs,
+			FS:     btrfsutil.NewBrokenTrees(ctx, fs),
 			TreeID: btrfs.FS_TREE_OBJECTID,
 		},
 		DeviceName: deviceName,

@@ -19,6 +19,12 @@ import (
 )
 
 type Trees interface {
+	// TreeWalk walks a tree, triggering callbacks for every node,
+	// key-pointer, and item; as well as for any errors encountered.
+	//
+	// If the tree is valid, then everything is walked in key-order; but if
+	// the tree is broken, then ordering is not guaranteed.
+	//
 	// Canceling the Context causes TreeWalk to return early; no
 	// values from the Context are used.
 	//
@@ -178,43 +184,46 @@ func (e *TreeError) Error() string {
 	return fmt.Sprintf("%v: %v", e.Path, e.Err)
 }
 
-// A treeRoot is more-or-less a btrfsitem.Root, but simpler and generalized for
-type treeRoot struct {
+// A TreeRoot is more-or-less a btrfsitem.Root, but simpler; returned by
+// LookupTreeRoot.
+type TreeRoot struct {
 	TreeID     ObjID
 	RootNode   btrfsvol.LogicalAddr
 	Level      uint8
 	Generation Generation
 }
 
-func (fs *FS) lookupTree(treeID ObjID) (*treeRoot, error) {
+// LookupTreeRoot is a utility function to help with implementing the 'Trees'
+// interface.
+func LookupTreeRoot(fs Trees, treeID ObjID) (*TreeRoot, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
 	}
 	switch treeID {
 	case ROOT_TREE_OBJECTID:
-		return &treeRoot{
+		return &TreeRoot{
 			TreeID:     treeID,
 			RootNode:   sb.RootTree,
 			Level:      sb.RootLevel,
 			Generation: sb.Generation, // XXX: same generation as LOG_TREE?
 		}, nil
 	case CHUNK_TREE_OBJECTID:
-		return &treeRoot{
+		return &TreeRoot{
 			TreeID:     treeID,
 			RootNode:   sb.ChunkTree,
 			Level:      sb.ChunkLevel,
 			Generation: sb.ChunkRootGeneration,
 		}, nil
 	case TREE_LOG_OBJECTID:
-		return &treeRoot{
+		return &TreeRoot{
 			TreeID:     treeID,
 			RootNode:   sb.LogTree,
 			Level:      sb.LogLevel,
 			Generation: sb.Generation, // XXX: same generation as ROOT_TREE?
 		}, nil
 	case BLOCK_GROUP_TREE_OBJECTID:
-		return &treeRoot{
+		return &TreeRoot{
 			TreeID:     treeID,
 			RootNode:   sb.BlockGroupRoot,
 			Level:      sb.BlockGroupRootLevel,
@@ -238,7 +247,7 @@ func (fs *FS) lookupTree(treeID ObjID) (*treeRoot, error) {
 		if !ok {
 			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v", treeID)
 		}
-		return &treeRoot{
+		return &TreeRoot{
 			TreeID:     treeID,
 			RootNode:   rootItemBody.ByteNr,
 			Level:      rootItemBody.Level,
@@ -265,7 +274,7 @@ func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeEr
 	path := TreePath{
 		TreeID: treeID,
 	}
-	rootInfo, err := fs.lookupTree(treeID)
+	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
 		errHandle(&TreeError{Path: path, Err: err})
 		return
@@ -275,6 +284,22 @@ func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeEr
 		NodeAddr:  rootInfo.RootNode,
 		NodeLevel: rootInfo.Level,
 	})
+	fs.treeWalk(ctx, path, errHandle, cbs)
+}
+
+// TreeWalk is a utility function to help with implementing the 'Trees'
+// interface.
+func (fs *FS) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	path := TreePath{
+		TreeID: rootInfo.TreeID,
+		Nodes: []TreePathElem{
+			{
+				ItemIdx:   -1,
+				NodeAddr:  rootInfo.RootNode,
+				NodeLevel: rootInfo.Level,
+			},
+		},
+	}
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
@@ -376,7 +401,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 }
 
-func (fs *FS) treeSearch(treeRoot treeRoot, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
 		TreeID: treeRoot.TreeID,
 		Nodes: []TreePathElem{
@@ -581,7 +606,7 @@ func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (T
 }
 
 func (fs *FS) TreeSearch(treeID ObjID, fn func(Key) int) (Item, error) {
-	rootInfo, err := fs.lookupTree(treeID)
+	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -601,7 +626,7 @@ func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
 }
 
 func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
-	rootInfo, err := fs.lookupTree(treeID)
+	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
 		return nil, err
 	}
