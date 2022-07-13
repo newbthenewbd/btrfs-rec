@@ -397,7 +397,17 @@ func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFil
 }
 
 func (sv *subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
-	return syscall.ENOSYS
+	file, err := sv.LoadFile(btrfs.ObjID(op.Inode))
+	if err != nil {
+		return err
+	}
+	reader := io.NewSectionReader(file, 0, file.InodeItem.Size)
+	tgt, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	op.Target = string(tgt)
+	return nil
 }
 
 func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error { return syscall.ENOSYS }
