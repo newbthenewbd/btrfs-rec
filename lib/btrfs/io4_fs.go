@@ -17,6 +17,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -246,7 +248,7 @@ func (ret *Dir) populate() {
 			ret.ChildrenByName[string(entry.Name)] = entry
 		}
 	}
-	for _, name := range util.SortedMapKeys(ret.ChildrenByName) {
+	for _, name := range maps.SortedKeys(ret.ChildrenByName) {
 		if _, exists := entriesWithIndexes[name]; !exists {
 			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-index direntry for %q", name))
 			ret.ChildrenByIndex[nextIndex] = ret.ChildrenByName[name]
@@ -377,7 +379,7 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 			continue
 		}
 		offsetWithinExt := off - extent.OffsetWithinFile
-		readSize := util.Min(int64(len(dat)), extLen-offsetWithinExt)
+		readSize := slices.Min(int64(len(dat)), extLen-offsetWithinExt)
 		switch extent.Type {
 		case btrfsitem.FILE_EXTENT_INLINE:
 			return copy(dat, extent.BodyInline[offsetWithinExt:offsetWithinExt+readSize]), nil

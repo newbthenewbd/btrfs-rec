@@ -14,6 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -79,7 +80,7 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 	// nodes will be subsumed by other things.)
 	//
 	// Sort them so that progress numbers are predictable.
-	for _, laddr := range util.SortedMapKeys(found.FoundNodes) {
+	for _, laddr := range maps.SortedKeys(found.FoundNodes) {
 		for _, paddr := range found.FoundNodes[laddr] {
 			if err := fs.LV.AddMapping(btrfsvol.Mapping{
 				LAddr: laddr,
@@ -118,7 +119,7 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 			Flags: bg.BG.Flags,
 		}] = struct{}{}
 	}
-	bgsOrdered := util.MapKeys(bgsSet)
+	bgsOrdered := maps.Keys(bgsSet)
 	sort.Slice(bgsOrdered, func(i, j int) bool {
 		return bgsOrdered[i].LAddr < bgsOrdered[j].LAddr
 	})

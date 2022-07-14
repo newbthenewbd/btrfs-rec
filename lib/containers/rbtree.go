@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 type Color bool
@@ -192,7 +192,7 @@ func (t *RBTree[K, V]) SearchRange(fn func(V) int) []V {
 	for node := t.Prev(middle); node != nil && fn(node.Value) == 0; node = t.Prev(node) {
 		ret = append(ret, node.Value)
 	}
-	util.ReverseSlice(ret)
+	slices.Reverse(ret)
 	for node := t.Next(middle); node != nil && fn(node.Value) == 0; node = t.Next(node) {
 		ret = append(ret, node.Value)
 	}

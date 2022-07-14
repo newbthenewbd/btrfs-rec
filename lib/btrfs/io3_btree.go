@@ -15,6 +15,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -653,7 +654,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 		}
 		ret = append(ret, prevItem)
 	}
-	util.ReverseSlice(ret)
+	slices.Reverse(ret)
 	for nextPath, nextNode := middlePath, middleNode; true; {
 		nextPath, nextNode, err = fs.next(nextPath, nextNode)
 		if err != nil {

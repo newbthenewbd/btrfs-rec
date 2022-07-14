@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"sort"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 // logical => []physical
@@ -51,8 +52,8 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	beg := chunks[0].LAddr
 	end := chunks[0].LAddr.Add(chunks[0].Size)
 	for _, chunk := range chunks {
-		beg = util.Min(beg, chunk.LAddr)
-		end = util.Max(end, chunk.LAddr.Add(chunk.Size))
+		beg = slices.Min(beg, chunk.LAddr)
+		end = slices.Max(end, chunk.LAddr.Add(chunk.Size))
 	}
 	ret := chunkMapping{
 		LAddr: beg,
@@ -78,7 +79,7 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 			}] = struct{}{}
 		}
 	}
-	ret.PAddrs = util.MapKeys(paddrs)
+	ret.PAddrs = maps.Keys(paddrs)
 	sort.Slice(ret.PAddrs, func(i, j int) bool {
 		return ret.PAddrs[i].Cmp(ret.PAddrs[j]) < 0
 	})

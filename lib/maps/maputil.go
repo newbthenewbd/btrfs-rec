@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package util
+package maps
 
 import (
 	"golang.org/x/exp/constraints"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func MapKeys[K comparable, V any](m map[K]V) []K {
+func Keys[K comparable, V any](m map[K]V) []K {
 	ret := make([]K, 0, len(m))
 	for k := range m {
 		ret = append(ret, k)
@@ -16,8 +18,8 @@ func MapKeys[K comparable, V any](m map[K]V) []K {
 	return ret
 }
 
-func SortedMapKeys[K constraints.Ordered, V any](m map[K]V) []K {
-	ret := MapKeys(m)
-	SortSlice(ret)
+func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	ret := Keys(m)
+	slices.Sort(ret)
 	return ret
 }

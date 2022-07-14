@@ -24,8 +24,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/linux"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
@@ -34,7 +36,7 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
 		return errors.New("no devices")
 	}
 
-	deviceName := pvs[util.SortedMapKeys(pvs)[0]].Name()
+	deviceName := pvs[maps.SortedKeys(pvs)[0]].Name()
 	if abs, err := filepath.Abs(deviceName); err == nil {
 		deviceName = abs
 	}
@@ -106,8 +108,8 @@ type subvolume struct {
 
 	fuseutil.NotImplementedFileSystem
 	lastHandle  uint64
-	dirHandles  util.SyncMap[fuseops.HandleID, *dirState]
-	fileHandles util.SyncMap[fuseops.HandleID, *fileState]
+	dirHandles  containers.SyncMap[fuseops.HandleID, *dirState]
+	fileHandles containers.SyncMap[fuseops.HandleID, *fileState]
 
 	subvolMu sync.Mutex
 	subvols  map[string]struct{}
@@ -155,7 +157,7 @@ func (sv *subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 	val, err = sv.Subvolume.LoadDir(inode)
 	if val != nil {
 		haveSubvolumes := false
-		for _, index := range util.SortedMapKeys(val.ChildrenByIndex) {
+		for _, index := range maps.SortedKeys(val.ChildrenByIndex) {
 			entry := val.ChildrenByIndex[index]
 			if entry.Location.ItemType == btrfsitem.ROOT_ITEM_KEY {
 				haveSubvolumes = true
@@ -168,7 +170,7 @@ func (sv *subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
 				return
 			}
 			sv.subvolMu.Lock()
-			for _, index := range util.SortedMapKeys(val.ChildrenByIndex) {
+			for _, index := range maps.SortedKeys(val.ChildrenByIndex) {
 				entry := val.ChildrenByIndex[index]
 				if entry.Location.ItemType != btrfsitem.ROOT_ITEM_KEY {
 					continue
@@ -317,7 +319,7 @@ func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 		return syscall.EBADF
 	}
 	origOffset := op.Offset
-	for _, index := range util.SortedMapKeys(state.Dir.ChildrenByIndex) {
+	for _, index := range maps.SortedKeys(state.Dir.ChildrenByIndex) {
 		if index < uint64(origOffset) {
 			continue
 		}
@@ -373,7 +375,7 @@ func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 
 	var dat []byte
 	if op.Dst != nil {
-		size := util.Min(int64(len(op.Dst)), op.Size)
+		size := slices.Min(int64(len(op.Dst)), op.Size)
 		dat = op.Dst[:size]
 	} else {
 		dat = make([]byte, op.Size)

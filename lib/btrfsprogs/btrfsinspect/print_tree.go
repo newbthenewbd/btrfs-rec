@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -206,7 +207,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 				itemSize := btrfsvol.AddrDelta(len(body.Sums)) * sectorSize
 				fmt.Fprintf(out, "\t\trange start %d end %d length %d",
 					start, start.Add(itemSize), itemSize)
-				sumsPerLine := util.Max(1, len(btrfssum.CSum{})/body.ChecksumSize/2)
+				sumsPerLine := slices.Max(1, len(btrfssum.CSum{})/body.ChecksumSize/2)
 
 				pos := start
 				for i, sum := range body.Sums {

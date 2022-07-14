@@ -11,6 +11,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -33,7 +34,7 @@ func ScanForNodes(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock, f
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if util.InSlice(pos, btrfs.SuperblockAddrs) {
+		if slices.Contains(pos, btrfs.SuperblockAddrs) {
 			//fmt.Printf("sector@%v is a superblock\n", pos)
 			continue
 		}

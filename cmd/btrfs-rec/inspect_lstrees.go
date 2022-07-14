@@ -16,7 +16,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 func init() {
@@ -55,11 +56,11 @@ func init() {
 					for _, cnt := range treeItemCnt {
 						totalItems += cnt
 					}
-					numWidth := len(strconv.Itoa(util.Max(treeErrCnt, totalItems)))
+					numWidth := len(strconv.Itoa(slices.Max(treeErrCnt, totalItems)))
 
 					table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 					fmt.Fprintf(table, "        errors\t% *s\n", numWidth, strconv.Itoa(treeErrCnt))
-					for _, typ := range util.SortedMapKeys(treeItemCnt) {
+					for _, typ := range maps.SortedKeys(treeItemCnt) {
 						fmt.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
 					}
 					fmt.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))

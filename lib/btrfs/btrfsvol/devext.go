@@ -7,7 +7,7 @@ package btrfsvol
 import (
 	"fmt"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 // physical => logical
@@ -48,8 +48,8 @@ func (a devextMapping) union(rest ...devextMapping) (devextMapping, error) {
 	beg := exts[0].PAddr
 	end := beg.Add(exts[0].Size)
 	for _, ext := range exts {
-		beg = util.Min(beg, ext.PAddr)
-		end = util.Max(end, ext.PAddr.Add(ext.Size))
+		beg = slices.Min(beg, ext.PAddr)
+		end = slices.Max(end, ext.PAddr.Add(ext.Size))
 	}
 	ret := devextMapping{
 		PAddr: beg,

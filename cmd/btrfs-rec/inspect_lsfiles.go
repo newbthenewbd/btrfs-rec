@@ -16,7 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 func init() {
@@ -129,7 +129,7 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 		}
 		fmt.Printf("]\terror: %v\n", err)
 	}
-	for i, index := range util.SortedMapKeys(membersByIndex) {
+	for i, index := range maps.SortedKeys(membersByIndex) {
 		entry := membersByIndex[index]
 		namehash := btrfsitem.NameHash(entry.Name)
 		if other, ok := membersByNameHash[namehash]; ok {
@@ -148,7 +148,7 @@ func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string
 		}
 		printDirEntry(fs, fsTree, prefix1+p0, prefix1+p1, entry)
 	}
-	for _, namehash := range util.SortedMapKeys(membersByNameHash) {
+	for _, namehash := range maps.SortedKeys(membersByNameHash) {
 		entry := membersByNameHash[namehash]
 		errs = append(errs, fmt.Errorf("read dir: no DIR_INDEX for DIR_ITEM crc32c(%q)=%#x",
 			entry.Name, namehash))
