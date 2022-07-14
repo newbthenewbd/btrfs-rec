@@ -28,8 +28,13 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 		typedFile := &diskio.OSFile[btrfsvol.PhysicalAddr]{
 			File: osFile,
 		}
+		bufFile := diskio.NewBufferedFile[btrfsvol.PhysicalAddr](
+			typedFile,
+			16384, // block size: 16KiB
+			1024,  // number of blocks to buffer; total of 16MiB
+		)
 		devFile := &btrfs.Device{
-			File: typedFile,
+			File: bufFile,
 		}
 		if err := fs.AddDevice(ctx, devFile); err != nil {
 			return nil, fmt.Errorf("device file %q: %w", filename, err)

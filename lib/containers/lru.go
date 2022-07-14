@@ -10,9 +10,20 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 )
 
+// LRUCache is a least-recently-used(ish) cache.  A zero LRUCache is
+// usable and has a cache size of 128 items; use NewLRUCache to set a
+// different size.
 type LRUCache[K comparable, V any] struct {
 	initOnce sync.Once
 	inner    *lru.ARCCache
+}
+
+func NewLRUCache[K comparable, V any](size int) *LRUCache[K, V] {
+	c := new(LRUCache[K, V])
+	c.initOnce.Do(func() {
+		c.inner, _ = lru.NewARC(size)
+	})
+	return c
 }
 
 func (c *LRUCache[K, V]) init() {
