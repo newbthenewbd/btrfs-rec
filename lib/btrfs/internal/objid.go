@@ -6,11 +6,11 @@ package internal
 
 import (
 	"fmt"
-
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type ObjID uint64
+
+const maxUint64pp = 0x1_00000000_00000000
 
 const (
 	// The IDs of the various trees
@@ -30,21 +30,21 @@ const (
 	DEV_STATS_OBJECTID = ObjID(0) // device stats in the device tree
 
 	// ???
-	BALANCE_OBJECTID         = ObjID(util.MaxUint64pp - 4) // for storing balance parameters in the root tree
-	ORPHAN_OBJECTID          = ObjID(util.MaxUint64pp - 5) // orphan objectid for tracking unlinked/truncated files
-	TREE_LOG_OBJECTID        = ObjID(util.MaxUint64pp - 6) // does write ahead logging to speed up fsyncs
-	TREE_LOG_FIXUP_OBJECTID  = ObjID(util.MaxUint64pp - 7)
-	TREE_RELOC_OBJECTID      = ObjID(util.MaxUint64pp - 8) // space balancing
-	DATA_RELOC_TREE_OBJECTID = ObjID(util.MaxUint64pp - 9)
-	EXTENT_CSUM_OBJECTID     = ObjID(util.MaxUint64pp - 10) // extent checksums all have this objectid
-	FREE_SPACE_OBJECTID      = ObjID(util.MaxUint64pp - 11) // For storing free space cache
-	FREE_INO_OBJECTID        = ObjID(util.MaxUint64pp - 12) // stores the inode number for the free-ino cache
+	BALANCE_OBJECTID         = ObjID(maxUint64pp - 4) // for storing balance parameters in the root tree
+	ORPHAN_OBJECTID          = ObjID(maxUint64pp - 5) // orphan objectid for tracking unlinked/truncated files
+	TREE_LOG_OBJECTID        = ObjID(maxUint64pp - 6) // does write ahead logging to speed up fsyncs
+	TREE_LOG_FIXUP_OBJECTID  = ObjID(maxUint64pp - 7)
+	TREE_RELOC_OBJECTID      = ObjID(maxUint64pp - 8) // space balancing
+	DATA_RELOC_TREE_OBJECTID = ObjID(maxUint64pp - 9)
+	EXTENT_CSUM_OBJECTID     = ObjID(maxUint64pp - 10) // extent checksums all have this objectid
+	FREE_SPACE_OBJECTID      = ObjID(maxUint64pp - 11) // For storing free space cache
+	FREE_INO_OBJECTID        = ObjID(maxUint64pp - 12) // stores the inode number for the free-ino cache
 
-	MULTIPLE_OBJECTIDS = ObjID(util.MaxUint64pp - 255) // dummy objectid represents multiple objectids
+	MULTIPLE_OBJECTIDS = ObjID(maxUint64pp - 255) // dummy objectid represents multiple objectids
 
 	// All files have objectids in this range.
 	FIRST_FREE_OBJECTID = ObjID(256)
-	LAST_FREE_OBJECTID  = ObjID(util.MaxUint64pp - 256)
+	LAST_FREE_OBJECTID  = ObjID(maxUint64pp - 256)
 
 	FIRST_CHUNK_TREE_OBJECTID = ObjID(256)
 

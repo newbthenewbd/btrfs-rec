@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/datawire/dlib/dlog"
@@ -19,7 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
@@ -432,7 +432,7 @@ func fmtKey(key btrfs.Key) string {
 	case btrfsitem.ROOT_ITEM_KEY:
 		fmt.Fprintf(&out, " %v)", btrfs.ObjID(key.Offset))
 	default:
-		if key.Offset == util.MaxUint64pp-1 {
+		if key.Offset == math.MaxUint64 {
 			fmt.Fprintf(&out, " -1)")
 		} else {
 			fmt.Fprintf(&out, " %v)", key.Offset)

@@ -26,14 +26,16 @@ func (k Key) String() string {
 }
 
 func (a Key) Cmp(b Key) int {
-	if d := containers.CmpUint(a.ObjectID, b.ObjectID); d != 0 {
+	if d := containers.NativeCmp(a.ObjectID, b.ObjectID); d != 0 {
 		return d
 	}
-	if d := containers.CmpUint(a.ItemType, b.ItemType); d != 0 {
+	if d := containers.NativeCmp(a.ItemType, b.ItemType); d != 0 {
 		return d
 	}
-	return containers.CmpUint(a.Offset, b.Offset)
+	return containers.NativeCmp(a.Offset, b.Offset)
 }
+
+var _ containers.Ordered[Key] = Key{}
 
 type Time struct {
 	Sec           int64  `bin:"off=0x0, siz=0x8"` // Number of seconds since 1970-01-01T00:00:00Z.

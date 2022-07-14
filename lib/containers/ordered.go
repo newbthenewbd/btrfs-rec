@@ -8,17 +8,6 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-func CmpUint[T constraints.Unsigned](a, b T) int {
-	switch {
-	case a < b:
-		return -1
-	case a == b:
-		return 0
-	default:
-		return 1
-	}
-}
-
 type Ordered[T interface{ Cmp(T) int }] interface {
 	Cmp(T) int
 }
@@ -27,15 +16,19 @@ type NativeOrdered[T constraints.Ordered] struct {
 	Val T
 }
 
-func (a NativeOrdered[T]) Cmp(b NativeOrdered[T]) int {
+func NativeCmp[T constraints.Ordered](a, b T) int {
 	switch {
-	case a.Val < b.Val:
+	case a < b:
 		return -1
-	case a.Val > b.Val:
+	case a > b:
 		return 1
 	default:
 		return 0
 	}
+}
+
+func (a NativeOrdered[T]) Cmp(b NativeOrdered[T]) int {
+	return NativeCmp(a.Val, b.Val)
 }
 
 var _ Ordered[NativeOrdered[int]] = NativeOrdered[int]{}

@@ -135,7 +135,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 			},
 		}
 		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key Key) int {
-			return containers.CmpUint(inode, key.ObjectID)
+			return containers.NativeCmp(inode, key.ObjectID)
 		})
 		if err != nil {
 			val.Errs = append(val.Errs, err)

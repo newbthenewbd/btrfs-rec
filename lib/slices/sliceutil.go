@@ -48,18 +48,24 @@ func Reverse[T any](slice []T) {
 	}
 }
 
-func Max[T constraints.Ordered](a, b T) T {
-	if a > b {
-		return a
+func Max[T constraints.Ordered](a T, rest ...T) T {
+	ret := a
+	for _, b := range rest {
+		if b > a {
+			ret = b
+		}
 	}
-	return b
+	return ret
 }
 
-func Min[T constraints.Ordered](a, b T) T {
-	if a < b {
-		return a
+func Min[T constraints.Ordered](a T, rest ...T) T {
+	ret := a
+	for _, b := range rest {
+		if b < a {
+			ret = b
+		}
 	}
-	return b
+	return ret
 }
 
 func Sort[T constraints.Ordered](slice []T) {
