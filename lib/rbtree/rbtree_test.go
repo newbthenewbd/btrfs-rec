@@ -5,7 +5,10 @@
 package rbtree
 
 import (
+	"fmt"
+	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,6 +16,40 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
+
+func (t *Tree[K, V]) ASCIIArt() string {
+	var out strings.Builder
+	t.root.asciiArt(&out, "", "", "")
+	return out.String()
+}
+
+func (node *Node[V]) String() string {
+	switch {
+	case node == nil:
+		return "nil"
+	case node.Color == Red:
+		return fmt.Sprintf("R(%v)", node.Value)
+	default:
+		return fmt.Sprintf("B(%v)", node.Value)
+	}
+}
+
+func (node *Node[V]) asciiArt(w io.Writer, u, m, l string) {
+	if node == nil {
+		fmt.Fprintf(w, "%snil\n", m)
+		return
+	}
+
+	node.Right.asciiArt(w, u+"     ", u+"  ,--", u+"  |  ")
+
+	if node.Color == Red {
+		fmt.Fprintf(w, "%s%v\n", m, node)
+	} else {
+		fmt.Fprintf(w, "%s%v\n", m, node)
+	}
+
+	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")
+}
 
 func checkTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *Tree[util.NativeOrdered[K], V]) {
 	// 1. Every node is either red or black
