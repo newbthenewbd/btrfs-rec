@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
@@ -95,7 +96,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.ObjID) {
 	var itemOffset uint32
 	handlers := btrfs.TreeWalkHandler{
-		Node: func(path btrfs.TreePath, nodeRef *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+		Node: func(path btrfs.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 			printHeaderInfo(out, nodeRef.Data)
 			itemOffset = nodeRef.Data.Size - uint32(binstruct.StaticSize(btrfs.NodeHeader{}))
 			return nil

@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type CSum [0x20]byte
@@ -24,7 +24,7 @@ func (csum CSum) Fmt(typ CSumType) string {
 }
 
 func (csum CSum) Format(f fmt.State, verb rune) {
-	util.FormatByteArrayStringer(csum, csum[:], f, verb)
+	fmtutil.FormatByteArrayStringer(csum, csum[:], f, verb)
 }
 
 type CSumType uint16

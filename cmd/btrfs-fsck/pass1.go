@@ -14,7 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map[btrfsvol.LogicalAddr]struct{}, error) {
@@ -24,7 +24,7 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+			Node: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				visitedNodes[node.Addr] = struct{}{}
 				return nil
 			},
@@ -70,7 +70,7 @@ func pass1WriteReconstructedChunks(ctx context.Context, fs *btrfs.FS) {
 	// store that node at the root node of the chunk tree.  This
 	// isn't true in general, but it's true of my particular
 	// filesystem.
-	reconstructedNode := &util.Ref[btrfsvol.LogicalAddr, btrfs.Node]{
+	reconstructedNode := &diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]{
 		File: fs,
 		Addr: superblock.ChunkTree,
 		Data: btrfs.Node{

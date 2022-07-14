@@ -15,8 +15,8 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type Trees interface {
@@ -260,9 +260,9 @@ func LookupTreeRoot(fs Trees, treeID ObjID) (*TreeRoot, error) {
 type TreeWalkHandler struct {
 	// Callbacks for entire nodes
 	PreNode  func(TreePath) error
-	Node     func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node]) error
-	BadNode  func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) error
-	PostNode func(TreePath, *util.Ref[btrfsvol.LogicalAddr, Node]) error
+	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
+	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
+	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
 	// Callbacks for items on internal nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
@@ -402,7 +402,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 }
 
-func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
 		TreeID: treeRoot.TreeID,
 		Nodes: []TreePathElem{
@@ -487,7 +487,7 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *util.R
 	}
 }
 
-func (fs *FS) prev(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -539,7 +539,7 @@ func (fs *FS) prev(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (T
 	return path, node, nil
 }
 
-func (fs *FS) next(path TreePath, node *util.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = path.DeepCopy()
 

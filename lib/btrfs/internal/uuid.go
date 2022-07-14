@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package util
+package internal
 
 import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type UUID [16]byte
@@ -33,7 +35,7 @@ func (a UUID) Cmp(b UUID) int {
 }
 
 func (uuid UUID) Format(f fmt.State, verb rune) {
-	FormatByteArrayStringer(uuid, uuid[:], f, verb)
+	fmtutil.FormatByteArrayStringer(uuid, uuid[:], f, verb)
 }
 
 func ParseUUID(str string) (UUID, error) {

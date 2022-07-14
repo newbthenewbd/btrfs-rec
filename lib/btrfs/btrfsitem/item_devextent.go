@@ -8,7 +8,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 // key.objectid = device_id
@@ -18,7 +17,7 @@ type DevExtent struct { // DEV_EXTENT=204
 	ChunkObjectID internal.ObjID       `bin:"off=8, siz=8"`
 	ChunkOffset   btrfsvol.LogicalAddr `bin:"off=16, siz=8"`
 	Length        btrfsvol.AddrDelta   `bin:"off=24, siz=8"`
-	ChunkTreeUUID util.UUID            `bin:"off=32, siz=16"`
+	ChunkTreeUUID internal.UUID        `bin:"off=32, siz=16"`
 	binstruct.End `bin:"off=48"`
 }
 

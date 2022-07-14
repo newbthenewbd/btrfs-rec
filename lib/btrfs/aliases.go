@@ -6,7 +6,6 @@ package btrfs
 
 import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type (
@@ -19,5 +18,5 @@ type (
 
 	Key  = internal.Key
 	Time = internal.Time
-	UUID = util.UUID
+	UUID = internal.UUID
 )

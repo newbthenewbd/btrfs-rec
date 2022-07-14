@@ -14,7 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
@@ -26,7 +26,7 @@ func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 			dlog.Error(ctx, err)
 		},
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+			Node: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				if !uuidsInited {
 					metadataUUID = node.Data.Head.MetadataUUID
 					chunkTreeUUID = node.Data.Head.ChunkTreeUUID
@@ -34,7 +34,7 @@ func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 				}
 				return nil
 			},
-			BadNode: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
+			BadNode: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 				if !errors.Is(err, btrfs.ErrNotANode) {
 					return err
 				}

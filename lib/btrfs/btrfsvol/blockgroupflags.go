@@ -5,7 +5,7 @@
 package btrfsvol
 
 import (
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type BlockGroupFlags uint64
@@ -43,7 +43,7 @@ var blockGroupFlagNames = []string{
 
 func (f BlockGroupFlags) Has(req BlockGroupFlags) bool { return f&req == req }
 func (f BlockGroupFlags) String() string {
-	ret := util.BitfieldString(f, blockGroupFlagNames, util.HexNone)
+	ret := fmtutil.BitfieldString(f, blockGroupFlagNames, fmtutil.HexNone)
 	if f&BLOCK_GROUP_RAID_MASK == 0 {
 		if ret == "" {
 			ret = "single"

@@ -5,7 +5,7 @@
 //
 // Based on https://github.com/datawire/ocibuild/blob/master/pkg/python/stat.go
 
-package linux
+package btrfsitem
 
 type StatMode uint32
 

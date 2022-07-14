@@ -25,7 +25,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/linux"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
@@ -258,7 +257,7 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 			Child: 2, // an inode number that a real file will never have
 			Attributes: fuseops.InodeAttributes{
 				Nlink: 1,
-				Mode:  uint32(linux.ModeFmtDir | 0700),
+				Mode:  uint32(btrfsitem.ModeFmtDir | 0700),
 			},
 		}
 		return nil

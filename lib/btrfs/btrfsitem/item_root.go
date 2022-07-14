@@ -8,7 +8,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type Root struct { // ROOT_ITEM=132
@@ -25,9 +25,9 @@ type Root struct { // ROOT_ITEM=132
 	DropLevel     uint8                `bin:"off=0x0ed, siz=0x01"`
 	Level         uint8                `bin:"off=0x0ee, siz=0x01"`
 	GenerationV2  internal.Generation  `bin:"off=0x0ef, siz=0x08"`
-	UUID          util.UUID            `bin:"off=0x0f7, siz=0x10"`
-	ParentUUID    util.UUID            `bin:"off=0x107, siz=0x10"`
-	ReceivedUUID  util.UUID            `bin:"off=0x117, siz=0x10"`
+	UUID          internal.UUID        `bin:"off=0x0f7, siz=0x10"`
+	ParentUUID    internal.UUID        `bin:"off=0x107, siz=0x10"`
+	ReceivedUUID  internal.UUID        `bin:"off=0x117, siz=0x10"`
 	CTransID      int64                `bin:"off=0x127, siz=0x08"`
 	OTransID      int64                `bin:"off=0x12f, siz=0x08"`
 	STransID      int64                `bin:"off=0x137, siz=0x08"`
@@ -52,4 +52,4 @@ var rootFlagNames = []string{
 }
 
 func (f RootFlags) Has(req RootFlags) bool { return f&req == req }
-func (f RootFlags) String() string         { return util.BitfieldString(f, rootFlagNames, util.HexLower) }
+func (f RootFlags) String() string         { return fmtutil.BitfieldString(f, rootFlagNames, fmtutil.HexLower) }

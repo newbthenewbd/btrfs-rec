@@ -9,7 +9,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type Extent struct { // EXTENT_ITEM=168
@@ -91,7 +91,9 @@ var extentFlagNames = []string{
 }
 
 func (f ExtentFlags) Has(req ExtentFlags) bool { return f&req == req }
-func (f ExtentFlags) String() string           { return util.BitfieldString(f, extentFlagNames, util.HexNone) }
+func (f ExtentFlags) String() string {
+	return fmtutil.BitfieldString(f, extentFlagNames, fmtutil.HexNone)
+}
 
 type ExtentInlineRef struct {
 	Type   Type   // only 4 valid values: {TREE,SHARED}_BLOCK_REF_KEY, {EXTENT,SHARED}_DATA_REF_KEY

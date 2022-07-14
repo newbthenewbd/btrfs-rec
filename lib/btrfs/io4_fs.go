@@ -19,7 +19,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type BareInode struct {
@@ -65,10 +64,10 @@ type Subvolume struct {
 	rootVal  btrfsitem.Root
 	rootErr  error
 
-	bareInodeCache util.LRUCache[ObjID, *BareInode]
-	fullInodeCache util.LRUCache[ObjID, *FullInode]
-	dirCache       util.LRUCache[ObjID, *Dir]
-	fileCache      util.LRUCache[ObjID, *File]
+	bareInodeCache containers.LRUCache[ObjID, *BareInode]
+	fullInodeCache containers.LRUCache[ObjID, *FullInode]
+	dirCache       containers.LRUCache[ObjID, *Dir]
+	fileCache      containers.LRUCache[ObjID, *File]
 }
 
 func (sv *Subvolume) init() {

@@ -8,7 +8,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 // key.objectid = BTRFS_DEV_ITEMS_OBJECTID
@@ -30,8 +29,8 @@ type Dev struct { // DEV_ITEM=216
 	SeekSpeed   uint8               `bin:"off=0x40,   siz=0x1"`
 	Bandwidth   uint8               `bin:"off=0x41,   siz=0x1"`
 
-	DevUUID util.UUID `bin:"off=0x42,   siz=0x10"`
-	FSUUID  util.UUID `bin:"off=0x52,   siz=0x10"`
+	DevUUID internal.UUID `bin:"off=0x42,   siz=0x10"`
+	FSUUID  internal.UUID `bin:"off=0x52,   siz=0x10"`
 
 	binstruct.End `bin:"off=0x62"`
 }

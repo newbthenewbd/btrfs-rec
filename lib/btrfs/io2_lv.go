@@ -14,7 +14,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type FS struct {
@@ -22,11 +22,11 @@ type FS struct {
 	// implementing special things like fsck.
 	LV btrfsvol.LogicalVolume[*Device]
 
-	cacheSuperblocks []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
 	cacheSuperblock  *Superblock
 }
 
-var _ util.File[btrfsvol.LogicalAddr] = (*FS)(nil)
+var _ diskio.File[btrfsvol.LogicalAddr] = (*FS)(nil)
 
 func (fs *FS) AddDevice(ctx context.Context, dev *Device) error {
 	sb, err := dev.Superblock()
@@ -72,11 +72,11 @@ func (fs *FS) Resolve(laddr btrfsvol.LogicalAddr) (paddrs map[btrfsvol.Qualified
 	return fs.LV.Resolve(laddr)
 }
 
-func (fs *FS) Superblocks() ([]*util.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
+func (fs *FS) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if fs.cacheSuperblocks != nil {
 		return fs.cacheSuperblocks, nil
 	}
-	var ret []*util.Ref[btrfsvol.PhysicalAddr, Superblock]
+	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
 	devs := fs.LV.PhysicalVolumes()
 	if len(devs) == 0 {
 		return nil, fmt.Errorf("no devices")

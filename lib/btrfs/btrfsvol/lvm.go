@@ -11,10 +11,10 @@ import (
 	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
+type LogicalVolume[PhysicalVolume diskio.File[PhysicalAddr]] struct {
 	name string
 
 	id2pv map[DeviceID]PhysicalVolume
@@ -23,7 +23,7 @@ type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
 	physical2logical map[DeviceID]*containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping]
 }
 
-var _ util.File[LogicalAddr] = (*LogicalVolume[util.File[PhysicalAddr]])(nil)
+var _ diskio.File[LogicalAddr] = (*LogicalVolume[diskio.File[PhysicalAddr]])(nil)
 
 func (lv *LogicalVolume[PhysicalVolume]) init() {
 	if lv.id2pv == nil {

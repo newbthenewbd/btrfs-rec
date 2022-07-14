@@ -7,8 +7,7 @@ package btrfsitem
 import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/linux"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type Inode struct { // INODE_ITEM=1
@@ -20,7 +19,7 @@ type Inode struct { // INODE_ITEM=1
 	NLink         int32               `bin:"off=0x28, siz=0x04"` // stat
 	UID           int32               `bin:"off=0x2C, siz=0x04"` // stat
 	GID           int32               `bin:"off=0x30, siz=0x04"` // stat
-	Mode          linux.StatMode      `bin:"off=0x34, siz=0x04"` // stat
+	Mode          StatMode            `bin:"off=0x34, siz=0x04"` // stat
 	RDev          int64               `bin:"off=0x38, siz=0x08"` // stat
 	Flags         InodeFlags          `bin:"off=0x40, siz=0x08"` // statx.stx_attributes, sorta
 	Sequence      int64               `bin:"off=0x48, siz=0x08"` // NFS
@@ -65,4 +64,6 @@ var inodeFlagNames = []string{
 }
 
 func (f InodeFlags) Has(req InodeFlags) bool { return f&req == req }
-func (f InodeFlags) String() string          { return util.BitfieldString(f, inodeFlagNames, util.HexLower) }
+func (f InodeFlags) String() string {
+	return fmtutil.BitfieldString(f, inodeFlagNames, fmtutil.HexLower)
+}

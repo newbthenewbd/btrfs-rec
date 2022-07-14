@@ -7,7 +7,7 @@ package btrfsvol
 import (
 	"fmt"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type (
@@ -20,9 +20,9 @@ func formatAddr(addr int64, f fmt.State, verb rune) {
 	switch verb {
 	case 'v', 's', 'q':
 		str := fmt.Sprintf("%#016x", addr)
-		fmt.Fprintf(f, util.FmtStateString(f, verb), str)
+		fmt.Fprintf(f, fmtutil.FmtStateString(f, verb), str)
 	default:
-		fmt.Fprintf(f, util.FmtStateString(f, verb), addr)
+		fmt.Fprintf(f, fmtutil.FmtStateString(f, verb), addr)
 	}
 }
 

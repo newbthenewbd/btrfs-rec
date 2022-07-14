@@ -15,7 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type indexItem struct {
@@ -170,7 +170,7 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key) int)
 	}
 
 	ret := make([]btrfs.Item, len(indexItems))
-	var node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]
+	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]
 	for i := range indexItems {
 		if node == nil || node.Addr != indexItems[i].Path.Node(-2).NodeAddr {
 			var err error
@@ -195,7 +195,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 		})
 		return
 	}
-	var node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]
+	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]
 	_ = index.Walk(func(indexItem *containers.RBNode[indexItem]) error {
 		if ctx.Err() != nil {
 			return ctx.Err()

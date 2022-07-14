@@ -13,7 +13,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type NodeFlags uint64
@@ -50,7 +51,7 @@ var nodeFlagNames = []string{
 }
 
 func (f NodeFlags) Has(req NodeFlags) bool { return f&req == req }
-func (f NodeFlags) String() string         { return util.BitfieldString(f, nodeFlagNames, util.HexLower) }
+func (f NodeFlags) String() string         { return fmtutil.BitfieldString(f, nodeFlagNames, fmtutil.HexLower) }
 
 type BackrefRev uint8
 
@@ -347,7 +348,7 @@ func (node *Node) LeafFreeSpace() uint32 {
 
 var ErrNotANode = errors.New("does not look like a node")
 
-func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB func(btrfsvol.LogicalAddr) error) (*util.Ref[Addr, Node], error) {
+func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, laddrCB func(btrfsvol.LogicalAddr) error) (*diskio.Ref[Addr, Node], error) {
 	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
 		return nil, err
@@ -355,7 +356,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 
 	// parse (early)
 
-	nodeRef := &util.Ref[Addr, Node]{
+	nodeRef := &diskio.Ref[Addr, Node]{
 		File: fs,
 		Addr: addr,
 		Data: Node{
@@ -400,7 +401,7 @@ func ReadNode[Addr ~int64](fs util.File[Addr], sb Superblock, addr Addr, laddrCB
 	return nodeRef, nil
 }
 
-func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
@@ -415,7 +416,7 @@ func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*util.Ref[btrfsvol.LogicalAdd
 	})
 }
 
-func (fs *FS) readNodeAtLevel(addr btrfsvol.LogicalAddr, expLevel uint8) (*util.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) readNodeAtLevel(addr btrfsvol.LogicalAddr, expLevel uint8) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	node, err := fs.ReadNode(addr)
 	if err != nil {
 		return node, err

@@ -14,8 +14,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 type ScanOneDevResult struct {
@@ -158,7 +158,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 	devSize, _ := dev.Size()
 	lastProgress := -1
 
-	err := btrfsutil.ScanForNodes(ctx, dev, superblock, func(nodeRef *util.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
+	err := btrfsutil.ScanForNodes(ctx, dev, superblock, func(nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {
 		if err != nil {
 			dlog.Infof(ctx, "... dev[%q] error: %v", dev.Name(), err)
 			return

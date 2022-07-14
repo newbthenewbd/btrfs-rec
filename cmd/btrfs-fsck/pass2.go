@@ -11,7 +11,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func pass2(ctx context.Context, fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAddr]struct{}) {
@@ -20,7 +20,7 @@ func pass2(ctx context.Context, fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAdd
 	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+			Node: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 				visitedNodes[node.Addr] = struct{}{}
 				return nil
 			},
@@ -44,7 +44,7 @@ func pass2(ctx context.Context, fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAdd
 	/*
 		for potentialRoot := range orphanedRoots {
 			if err := fs.TreeWalk(potentialRoot, btrfs.TreeWalkHandler{
-				Node: func(path btrfs.TreePath, _ *util.Ref[btrfsvol.LogicalAddr, btrfs.Node], _ error) error {
+				Node: func(path btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], _ error) error {
 					nodeAddr := path[len(path)-1].NodeAddr
 					if nodeAddr != potentialRoot {
 						delete(orphanedRoots, nodeAddr)
@@ -61,7 +61,7 @@ func pass2(ctx context.Context, fs *btrfs.FS, foundNodes map[btrfsvol.LogicalAdd
 			}
 		}
 
-		for _, node := range util.SortedMapKeys(orphanedRoots) {
+		for _, node := range maps.SortedKeys(orphanedRoots) {
 			fmt.Printf("Pass 2: orphaned root: %v\n", node)
 		}
 	*/

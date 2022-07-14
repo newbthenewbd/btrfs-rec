@@ -12,7 +12,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type Superblock struct {
@@ -233,5 +233,5 @@ var incompatFlagNames = []string{
 
 func (f IncompatFlags) Has(req IncompatFlags) bool { return f&req == req }
 func (f IncompatFlags) String() string {
-	return util.BitfieldString(f, incompatFlagNames, util.HexLower)
+	return fmtutil.BitfieldString(f, incompatFlagNames, fmtutil.HexLower)
 }

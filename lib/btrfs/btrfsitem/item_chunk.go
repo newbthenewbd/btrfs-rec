@@ -8,7 +8,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 // Maps logical address to physical.
@@ -36,7 +35,7 @@ type ChunkHeader struct {
 type ChunkStripe struct {
 	DeviceID      btrfsvol.DeviceID     `bin:"off=0x0,  siz=0x8"`
 	Offset        btrfsvol.PhysicalAddr `bin:"off=0x8,  siz=0x8"`
-	DeviceUUID    util.UUID             `bin:"off=0x10, siz=0x10"`
+	DeviceUUID    internal.UUID         `bin:"off=0x10, siz=0x10"`
 	binstruct.End `bin:"off=0x20"`
 }
 

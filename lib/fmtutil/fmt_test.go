@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package util_test
+package fmtutil_test
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type FmtState struct {
@@ -94,10 +94,10 @@ func FuzzFmtStateString(f *testing.F) {
 		}
 		verb := rune(verbs[int(verbIdx)%len(verbs)])
 
-		t.Logf("(%#v, %c) => %q", input, verb, util.FmtStateString(input, verb))
+		t.Logf("(%#v, %c) => %q", input, verb, fmtutil.FmtStateString(input, verb))
 
 		var output FmtState
-		assert.Equal(t, "", fmt.Sprintf(util.FmtStateString(input, verb), &output))
+		assert.Equal(t, "", fmt.Sprintf(fmtutil.FmtStateString(input, verb), &output))
 		assert.Equal(t, input, output)
 	})
 }
