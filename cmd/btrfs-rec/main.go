@@ -141,13 +141,11 @@ func main() {
 						if err != nil {
 							return err
 						}
-						var mappingsJSON struct {
-							Mappings []btrfsvol.Mapping
-						}
+						var mappingsJSON []btrfsvol.Mapping
 						if err := json.Unmarshal(bs, &mappingsJSON); err != nil {
 							return err
 						}
-						for _, mapping := range mappingsJSON.Mappings {
+						for _, mapping := range mappingsJSON {
 							if err := fs.LV.AddMapping(mapping); err != nil {
 								return err
 							}

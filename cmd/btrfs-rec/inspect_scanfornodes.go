@@ -26,7 +26,8 @@ func init() {
 			Use:   "scan-for-nodes",
 			Short: "Scan devices for (potentially lost) nodes",
 			Long: "" +
-				"The found information is printed as JSON on stdout.\n" +
+				"The found information is printed as JSON on stdout, and can\n" +
+				"be read by `btrfs-rec inspect rebuild-mappings`.\n" +
 				"\n" +
 				"This information is mostly useful for rebuilding a broken\n" +
 				"chunk/dev-extent/blockgroup trees, but can also have some\n" +
@@ -63,7 +64,7 @@ func init() {
 				return err
 			}
 
-			dlog.Info(ctx, "Serializing results...")
+			dlog.Info(ctx, "Writing scan results to stdout...")
 			return json.NewEncoder(os.Stdout).Encode(results)
 		},
 	})

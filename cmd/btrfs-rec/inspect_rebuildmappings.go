@@ -15,13 +15,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 func init() {
 	inspectors = append(inspectors, subcommand{
 		Command: cobra.Command{
-			Use:   "recover-chunks",
+			Use:   "rebuild-mappings SCAN_RESULT.json",
 			Short: "Rebuild broken chunk/dev-extent/blockgroup trees",
 			Long: "" +
 				"The rebuilt information is printed as JSON on stdout, and can\n" +
@@ -31,32 +33,35 @@ func init() {
 				"does a better job, (2) is less buggy, and (3) doesn't actually\n" +
 				"write the info back to the filesystem; instead writing it\n" +
 				"out-of-band to stdout.",
-			Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
+			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
 		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			dlog.Info(ctx, "Reading superblock...")
-			superblock, err := fs.Superblock()
+			scanResultsBytes, err := os.ReadFile(args[0])
 			if err != nil {
 				return err
 			}
+			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
+			if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
+				return err
+			}
 
-			for _, dev := range fs.LV.PhysicalVolumes() {
-				dlog.Infof(ctx, "dev[%q] Scanning for unreachable nodes...", dev.Name())
-				devResult, err := btrfsinspect.ScanOneDev(ctx, dev, *superblock)
-				if err != nil {
-					return err
+			devices := fs.LV.PhysicalVolumes()
+			for _, devID := range maps.SortedKeys(scanResults) {
+				dev, ok := devices[devID]
+				if !ok {
+					return fmt.Errorf("device ID %v mentioned in %q is not part of the filesystem",
+						devID, args[0])
 				}
-
-				dlog.Infof(ctx, "dev[%q] Re-inserting lost+found mappings...", dev.Name())
-				devResult.AddToLV(ctx, fs, dev)
+				dlog.Infof(ctx, "Rebuilding mappings from results on device %v...",
+					dev.Name())
+				scanResults[devID].AddToLV(ctx, fs, dev)
 			}
 
 			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
-
 			mappings := fs.LV.Mappings()
-			_, _ = io.WriteString(os.Stdout, "{\n  \"Mappings\": [\n")
+			_, _ = io.WriteString(os.Stdout, "[\n")
 			for i, mapping := range mappings {
 				suffix := ","
 				if i == len(mappings)-1 {
@@ -66,9 +71,9 @@ func init() {
 				if err != nil {
 					return err
 				}
-				fmt.Printf("    %s%s\n", bs, suffix)
+				fmt.Printf("  %s%s\n", bs, suffix)
 			}
-			_, _ = io.WriteString(os.Stdout, "  ]\n}\n")
+			_, _ = io.WriteString(os.Stdout, "]\n")
 			return nil
 		},
 	})
