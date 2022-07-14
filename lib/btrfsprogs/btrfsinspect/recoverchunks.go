@@ -150,6 +150,8 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 	}
 }
 
+// ScanOneDev mostly mimics btrfs-progs
+// cmds/rescue-chunk-recover.c:scan_one_device().
 func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superblock) (ScanOneDevResult, error) {
 	result := ScanOneDevResult{
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
