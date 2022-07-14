@@ -14,7 +14,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/rbtree"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -24,7 +24,7 @@ type indexItem struct {
 }
 
 type cachedIndex struct {
-	Index *rbtree.Tree[btrfs.Key, indexItem]
+	Index *containers.RBTree[btrfs.Key, indexItem]
 	Err   error
 }
 
@@ -67,7 +67,7 @@ func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) btrfs.Trees {
 	}
 }
 
-func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*rbtree.Tree[btrfs.Key, indexItem], error) {
+func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*containers.RBTree[btrfs.Key, indexItem], error) {
 	var treeRoot *btrfs.TreeRoot
 	var err error
 	if treeID == btrfs.ROOT_TREE_OBJECTID {
@@ -92,7 +92,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*rbtree.Tree[btrfs.Key, in
 	if err != nil {
 		cacheEntry.Err = err
 	} else {
-		cacheEntry.Index = &rbtree.Tree[btrfs.Key, indexItem]{
+		cacheEntry.Index = &containers.RBTree[btrfs.Key, indexItem]{
 			KeyFn: func(item indexItem) btrfs.Key {
 				return item.Key
 			},
@@ -196,7 +196,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 		return
 	}
 	var node *util.Ref[btrfsvol.LogicalAddr, btrfs.Node]
-	_ = index.Walk(func(indexItem *rbtree.Node[indexItem]) error {
+	_ = index.Walk(func(indexItem *containers.RBNode[indexItem]) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

@@ -10,7 +10,7 @@ import (
 	"os"
 	"reflect"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/rbtree"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -19,8 +19,8 @@ type LogicalVolume[PhysicalVolume util.File[PhysicalAddr]] struct {
 
 	id2pv map[DeviceID]PhysicalVolume
 
-	logical2physical *rbtree.Tree[util.NativeOrdered[LogicalAddr], chunkMapping]
-	physical2logical map[DeviceID]*rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping]
+	logical2physical *containers.RBTree[util.NativeOrdered[LogicalAddr], chunkMapping]
+	physical2logical map[DeviceID]*containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping]
 }
 
 var _ util.File[LogicalAddr] = (*LogicalVolume[util.File[PhysicalAddr]])(nil)
@@ -30,18 +30,18 @@ func (lv *LogicalVolume[PhysicalVolume]) init() {
 		lv.id2pv = make(map[DeviceID]PhysicalVolume)
 	}
 	if lv.logical2physical == nil {
-		lv.logical2physical = &rbtree.Tree[util.NativeOrdered[LogicalAddr], chunkMapping]{
+		lv.logical2physical = &containers.RBTree[util.NativeOrdered[LogicalAddr], chunkMapping]{
 			KeyFn: func(chunk chunkMapping) util.NativeOrdered[LogicalAddr] {
 				return util.NativeOrdered[LogicalAddr]{Val: chunk.LAddr}
 			},
 		}
 	}
 	if lv.physical2logical == nil {
-		lv.physical2logical = make(map[DeviceID]*rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping], len(lv.id2pv))
+		lv.physical2logical = make(map[DeviceID]*containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping], len(lv.id2pv))
 	}
 	for devid := range lv.id2pv {
 		if _, ok := lv.physical2logical[devid]; !ok {
-			lv.physical2logical[devid] = &rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping]{
+			lv.physical2logical[devid] = &containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping]{
 				KeyFn: func(ext devextMapping) util.NativeOrdered[PhysicalAddr] {
 					return util.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
 				},
@@ -74,7 +74,7 @@ func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev Phys
 			lv, dev.Name(), other.Name(), id)
 	}
 	lv.id2pv[id] = dev
-	lv.physical2logical[id] = &rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping]{
+	lv.physical2logical[id] = &containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping]{
 		KeyFn: func(ext devextMapping) util.NativeOrdered[PhysicalAddr] {
 			return util.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
 		},
@@ -173,8 +173,8 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
-	physical2logical := make(map[DeviceID]*rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping])
-	if err := lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
+	physical2logical := make(map[DeviceID]*containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping])
+	if err := lv.logical2physical.Walk(func(node *containers.RBNode[chunkMapping]) error {
 		chunk := node.Value
 		for _, stripe := range chunk.PAddrs {
 			if _, devOK := lv.id2pv[stripe.Dev]; !devOK {
@@ -182,7 +182,7 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 					lv, stripe.Dev)
 			}
 			if _, exists := physical2logical[stripe.Dev]; !exists {
-				physical2logical[stripe.Dev] = &rbtree.Tree[util.NativeOrdered[PhysicalAddr], devextMapping]{
+				physical2logical[stripe.Dev] = &containers.RBTree[util.NativeOrdered[PhysicalAddr], devextMapping]{
 					KeyFn: func(ext devextMapping) util.NativeOrdered[PhysicalAddr] {
 						return util.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
 					},
@@ -216,7 +216,7 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 
 func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	var ret []Mapping
-	_ = lv.logical2physical.Walk(func(node *rbtree.Node[chunkMapping]) error {
+	_ = lv.logical2physical.Walk(func(node *containers.RBNode[chunkMapping]) error {
 		chunk := node.Value
 		var flags *BlockGroupFlags
 		if chunk.Flags != nil {
