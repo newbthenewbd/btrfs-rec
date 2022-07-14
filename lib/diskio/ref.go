@@ -6,21 +6,8 @@ package diskio
 
 import (
 	"fmt"
-	"io"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
-)
-
-type File[A ~int64] interface {
-	Name() string
-	Size() (A, error)
-	ReadAt(p []byte, off A) (n int, err error)
-	WriteAt(p []byte, off A) (n int, err error)
-}
-
-var (
-	_ io.WriterAt = File[int64](nil)
-	_ io.ReaderAt = File[int64](nil)
 )
 
 type Ref[A ~int64, T any] struct {

@@ -57,7 +57,7 @@ func (fs *FS) Name() string {
 	return name
 }
 
-func (fs *FS) Size() (btrfsvol.LogicalAddr, error) {
+func (fs *FS) Size() btrfsvol.LogicalAddr {
 	return fs.LV.Size()
 }
 
@@ -185,16 +185,7 @@ func (fs *FS) initDev(ctx context.Context, sb Superblock) error {
 }
 
 func (fs *FS) Close() error {
-	var errs derror.MultiError
-	for _, dev := range fs.LV.PhysicalVolumes() {
-		if err := dev.Close(); err != nil && err == nil {
-			errs = append(errs, err)
-		}
-	}
-	if errs != nil {
-		return errs
-	}
-	return nil
+	return fs.LV.Close()
 }
 
 var _ io.Closer = (*FS)(nil)

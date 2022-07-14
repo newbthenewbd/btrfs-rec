@@ -155,7 +155,7 @@ func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superbl
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
 
-	devSize, _ := dev.Size()
+	devSize := dev.Size()
 	lastProgress := -1
 
 	err := btrfsutil.ScanForNodes(ctx, dev, superblock, func(nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfs.Node], err error) {

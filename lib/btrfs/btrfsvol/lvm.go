@@ -10,6 +10,8 @@ import (
 	"os"
 	"reflect"
 
+	"github.com/datawire/dlib/derror"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
@@ -58,15 +60,27 @@ func (lv *LogicalVolume[PhysicalVolume]) Name() string {
 	return lv.name
 }
 
-func (lv *LogicalVolume[PhysicalVolume]) Size() (LogicalAddr, error) {
+func (lv *LogicalVolume[PhysicalVolume]) Size() LogicalAddr {
 	lv.init()
 	lastChunk := lv.logical2physical.Max()
 	if lastChunk == nil {
-		return 0, nil
+		return 0
 	}
-	return lastChunk.Value.LAddr.Add(lastChunk.Value.Size), nil
+	return lastChunk.Value.LAddr.Add(lastChunk.Value.Size)
 }
 
+func (lv *LogicalVolume[PhysicalVolume]) Close() error {
+	var errs derror.MultiError
+	for _, dev := range lv.id2pv {
+		if err := dev.Close(); err != nil && err == nil {
+			errs = append(errs, err)
+		}
+	}
+	if errs != nil {
+		return errs
+	}
+	return nil
+}
 func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev PhysicalVolume) error {
 	lv.init()
 	if other, exists := lv.id2pv[id]; exists {

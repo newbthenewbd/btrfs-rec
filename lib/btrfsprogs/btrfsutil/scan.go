@@ -20,10 +20,7 @@ import (
 // doing something itself when it finds a node, it simply calls a
 // callback function.
 func ScanForNodes(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock, fn func(*diskio.Ref[btrfsvol.PhysicalAddr, btrfs.Node], error), prog func(btrfsvol.PhysicalAddr)) error {
-	devSize, err := dev.Size()
-	if err != nil {
-		return err
-	}
+	devSize := dev.Size()
 
 	if sb.NodeSize < sb.SectorSize {
 		return fmt.Errorf("node_size(%v) < sector_size(%v)",
