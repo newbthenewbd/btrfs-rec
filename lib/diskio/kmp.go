@@ -2,17 +2,17 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package kmp
+package diskio
 
 import (
 	"errors"
 	"io"
 )
 
-// buildTable takes the string 'substr', and returns a table such
+// buildKMPTable takes the string 'substr', and returns a table such
 // that 'table[matchLen-1]' is the largest value 'val' for which 'val < matchLen' and
 // 'substr[:val] == substr[matchLen-val:matchLen]'.
-func buildTable(substr []byte) []int {
+func buildKMPTable(substr []byte) []int {
 	table := make([]int, len(substr))
 	for j := range table {
 		if j == 0 {
@@ -38,11 +38,13 @@ func buildTable(substr []byte) []int {
 // occurances of 'substr' in the 'r' stream.
 //
 // Will panic if len(substr)==0.
+//
+// Uses the Knuth-Morris-Pratt algorithm.
 func FindAll(r io.ByteReader, substr []byte) ([]int64, error) {
 	if len(substr) == 0 {
-		panic(errors.New("kmp.FindAll: empty substring"))
+		panic(errors.New("diskio.FindAll: empty substring"))
 	}
-	table := buildTable(substr)
+	table := buildKMPTable(substr)
 
 	var matches []int64
 	var curMatchBeg int64

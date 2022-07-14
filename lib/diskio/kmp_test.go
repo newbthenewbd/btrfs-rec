@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package kmp
+package diskio
 
 import (
 	"bytes"
@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBuildTable(t *testing.T) {
+func TestBuildKMPTable(t *testing.T) {
 	substr := []byte("ababaa")
-	table := buildTable(substr)
+	table := buildKMPTable(substr)
 	assert.Equal(t,
 		[]int{0, 0, 1, 2, 3, 1},
 		table)
@@ -24,10 +24,10 @@ func TestBuildTable(t *testing.T) {
 	}
 }
 
-func FuzzBuildTable(f *testing.F) {
+func FuzzBuildKMPTable(f *testing.F) {
 	f.Add([]byte("ababaa"))
 	f.Fuzz(func(t *testing.T, substr []byte) {
-		table := buildTable(substr)
+		table := buildKMPTable(substr)
 		assert.Equal(t, len(substr), len(table), "length")
 		for j, val := range table {
 			matchLen := j + 1
