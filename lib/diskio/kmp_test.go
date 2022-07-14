@@ -55,7 +55,7 @@ func FuzzFindAll(f *testing.F) {
 		t.Logf("str   =%q", str)
 		t.Logf("substr=%q", substr)
 		exp := NaiveFindAll(str, substr)
-		act, err := FindAll(bytes.NewReader(str), substr)
+		act, err := FindAll[int64](bytes.NewReader(str), substr)
 		assert.NoError(t, err)
 		assert.Equal(t, exp, act)
 	})

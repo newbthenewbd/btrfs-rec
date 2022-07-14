@@ -40,17 +40,17 @@ func buildKMPTable(substr []byte) []int {
 // Will panic if len(substr)==0.
 //
 // Uses the Knuth-Morris-Pratt algorithm.
-func FindAll(r io.ByteReader, substr []byte) ([]int64, error) {
+func FindAll[A ~int64](r io.ByteReader, substr []byte) ([]A, error) {
 	if len(substr) == 0 {
 		panic(errors.New("diskio.FindAll: empty substring"))
 	}
 	table := buildKMPTable(substr)
 
-	var matches []int64
-	var curMatchBeg int64
+	var matches []A
+	var curMatchBeg A
 	var curMatchLen int
 
-	pos := int64(-1) // if 'r' were a slice; define 'pos' such that 'chr=r[pos]'
+	pos := A(-1) // if 'r' were a slice; define 'pos' such that 'chr=r[pos]'
 	for {
 		// I/O
 		var chr byte
@@ -66,7 +66,7 @@ func FindAll(r io.ByteReader, substr []byte) ([]int64, error) {
 		// Consider 'chr'
 		for curMatchLen > 0 && chr != substr[curMatchLen] { // shorten the match
 			overlap := table[curMatchLen-1]
-			curMatchBeg += int64(curMatchLen - overlap)
+			curMatchBeg += A(curMatchLen - overlap)
 			curMatchLen = overlap
 		}
 		if chr == substr[curMatchLen] { // lengthen the match
@@ -77,7 +77,7 @@ func FindAll(r io.ByteReader, substr []byte) ([]int64, error) {
 			if curMatchLen == len(substr) {
 				matches = append(matches, curMatchBeg)
 				overlap := table[curMatchLen-1]
-				curMatchBeg += int64(curMatchLen - overlap)
+				curMatchBeg += A(curMatchLen - overlap)
 				curMatchLen = overlap
 			}
 		}
