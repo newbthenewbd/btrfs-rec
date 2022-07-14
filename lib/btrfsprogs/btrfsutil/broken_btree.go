@@ -8,14 +8,17 @@ import (
 	"context"
 	"fmt"
 	iofs "io/fs"
+	"math"
 	"sync"
 
+	"github.com/datawire/dlib/derror"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type indexValue[T any] struct {
@@ -27,9 +30,66 @@ func (v indexValue[T]) keyFn() btrfs.Key {
 	return v.Key
 }
 
+var maxKey = btrfs.Key{
+	ObjectID: math.MaxUint64,
+	ItemType: math.MaxUint8,
+	Offset:   math.MaxUint64,
+}
+
+func keyMm(key btrfs.Key) btrfs.Key {
+	switch {
+	case key.Offset > 0:
+		key.Offset--
+	case key.ItemType > 0:
+		key.ItemType--
+	case key.ObjectID > 0:
+		key.ObjectID--
+	}
+	return key
+}
+
+func span(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
+	// tree root error
+	if len(path.Nodes) == 0 {
+		return btrfs.Key{}, maxKey
+	}
+
+	// item error
+	if path.Node(-1).NodeAddr == 0 {
+		// If we got an item error, then the node is readable
+		node, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+		key := node.Data.BodyLeaf[path.Node(-1).ItemIdx].Key
+		return key, key
+	}
+
+	// node error
+	//
+	// assume that path.Node(-1).NodeAddr is not readable, but that path.Node(-2).NodeAddr is.
+	if len(path.Nodes) == 1 {
+		return btrfs.Key{}, maxKey
+	}
+	parentNode, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+	low := parentNode.Data.BodyInternal[path.Node(-1).ItemIdx].Key
+	var high btrfs.Key
+	if path.Node(-1).ItemIdx+1 < len(parentNode.Data.BodyInternal) {
+		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).ItemIdx+1].Key)
+	} else {
+		parentPath := path.DeepCopy()
+		parentPath.Nodes = parentPath.Nodes[:len(parentPath.Nodes)-1]
+		_, high = span(fs, parentPath)
+	}
+	return low, high
+}
+
+type spanError struct {
+	End btrfs.Key
+	Err error
+}
+
 type cachedIndex struct {
 	TreeRootErr error
 	Items       *containers.RBTree[btrfs.Key, indexValue[btrfs.TreePath]]
+	Errors      map[int]map[btrfs.Key][]spanError
 }
 
 type brokenTrees struct {
@@ -93,6 +153,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) cachedIndex {
 		treeRoot, err = btrfs.LookupTreeRoot(bt, treeID)
 	}
 	var cacheEntry cachedIndex
+	cacheEntry.Errors = make(map[int]map[btrfs.Key][]spanError)
 	if err != nil {
 		cacheEntry.TreeRootErr = err
 	} else {
@@ -104,7 +165,22 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) cachedIndex {
 			bt.ctx,
 			*treeRoot,
 			func(err *btrfs.TreeError) {
-				dlog.Error(bt.ctx, err)
+				if len(err.Path.Nodes) > 0 && err.Path.Node(-1).NodeAddr == 0 {
+					// This is a panic because on the filesystems I'm working with it more likely
+					// indicates a bug in my item parser than a problem with the filesystem.
+					panic(fmt.Errorf("TODO: error parsing item: %w", err))
+				}
+				invLvl := len(err.Path.Nodes)
+				lvlErrs, ok := cacheEntry.Errors[invLvl]
+				if !ok {
+					lvlErrs = make(map[btrfs.Key][]spanError)
+					cacheEntry.Errors[invLvl] = lvlErrs
+				}
+				beg, end := span(bt.inner, err.Path)
+				lvlErrs[beg] = append(lvlErrs[beg], spanError{
+					End: end,
+					Err: err,
+				})
 			},
 			btrfs.TreeWalkHandler{
 				Item: func(path btrfs.TreePath, item btrfs.Item) error {
@@ -185,6 +261,27 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key) int)
 			}
 		}
 		ret[i] = node.Data.BodyLeaf[indexItems[i].Val.Node(-1).ItemIdx]
+	}
+
+	var errs derror.MultiError
+	for _, invLvl := range maps.SortedKeys(index.Errors) {
+		for _, beg := range maps.Keys(index.Errors[invLvl]) {
+			if fn(beg) < 0 {
+				continue
+			}
+			for _, spanErr := range index.Errors[invLvl][beg] {
+				end := spanErr.End
+				err := spanErr.Err
+				if fn(end) > 0 {
+					continue
+				}
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return ret, errs
 	}
 	return ret, nil
 }
