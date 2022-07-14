@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type Generation uint64
@@ -26,13 +26,13 @@ func (k Key) String() string {
 }
 
 func (a Key) Cmp(b Key) int {
-	if d := util.CmpUint(a.ObjectID, b.ObjectID); d != 0 {
+	if d := containers.CmpUint(a.ObjectID, b.ObjectID); d != 0 {
 		return d
 	}
-	if d := util.CmpUint(a.ItemType, b.ItemType); d != 0 {
+	if d := containers.CmpUint(a.ItemType, b.ItemType); d != 0 {
 		return d
 	}
-	return util.CmpUint(a.Offset, b.Offset)
+	return containers.CmpUint(a.Offset, b.Offset)
 }
 
 type Time struct {

@@ -13,8 +13,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
-
-	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
 func (t *RBTree[K, V]) ASCIIArt() string {
@@ -51,7 +49,7 @@ func (node *RBNode[V]) asciiArt(w io.Writer, u, m, l string) {
 	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")
 }
 
-func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *RBTree[util.NativeOrdered[K], V]) {
+func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *RBTree[NativeOrdered[K], V]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
@@ -101,7 +99,7 @@ func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]s
 	expectedOrder := make([]K, 0, len(expectedSet))
 	for k := range expectedSet {
 		expectedOrder = append(expectedOrder, k)
-		node := tree.Lookup(util.NativeOrdered[K]{Val: k})
+		node := tree.Lookup(NativeOrdered[K]{Val: k})
 		require.NotNil(t, tree, node)
 		require.Equal(t, k, tree.KeyFn(node.Value).Val)
 	}
@@ -139,9 +137,9 @@ func FuzzRBTree(f *testing.F) {
 	})
 
 	f.Fuzz(func(t *testing.T, dat []uint8) {
-		tree := &RBTree[util.NativeOrdered[uint8], uint8]{
-			KeyFn: func(x uint8) util.NativeOrdered[uint8] {
-				return util.NativeOrdered[uint8]{Val: x}
+		tree := &RBTree[NativeOrdered[uint8], uint8]{
+			KeyFn: func(x uint8) NativeOrdered[uint8] {
+				return NativeOrdered[uint8]{Val: x}
 			},
 		}
 		set := make(map[uint8]struct{})
@@ -155,15 +153,15 @@ func FuzzRBTree(f *testing.F) {
 				tree.Insert(val)
 				set[val] = struct{}{}
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				node := tree.Lookup(util.NativeOrdered[uint8]{Val: val})
+				node := tree.Lookup(NativeOrdered[uint8]{Val: val})
 				require.NotNil(t, node)
 				require.Equal(t, val, node.Value)
 			} else {
 				t.Logf("Delete(%v)", val)
-				tree.Delete(util.NativeOrdered[uint8]{Val: val})
+				tree.Delete(NativeOrdered[uint8]{Val: val})
 				delete(set, val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				require.Nil(t, tree.Lookup(util.NativeOrdered[uint8]{Val: val}))
+				require.Nil(t, tree.Lookup(NativeOrdered[uint8]{Val: val}))
 			}
 			checkRBTree(t, set, tree)
 		}

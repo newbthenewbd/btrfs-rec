@@ -33,7 +33,7 @@ func (node *RBNode[V]) getColor() Color {
 	return node.Color
 }
 
-type RBTree[K util.Ordered[K], V any] struct {
+type RBTree[K Ordered[K], V any] struct {
 	KeyFn func(V) K
 	root  *RBNode[V]
 }

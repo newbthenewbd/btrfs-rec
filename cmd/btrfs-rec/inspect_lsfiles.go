@@ -15,6 +15,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -57,7 +58,7 @@ func printSubvol(fs *btrfs.FS, prefix0, prefix1, name string, key btrfs.Key) {
 func printDir(fs *btrfs.FS, fsTree btrfs.ObjID, prefix0, prefix1, dirName string, dirInode btrfs.ObjID) {
 	var errs derror.MultiError
 	items, err := fs.TreeSearchAll(fsTree, func(key btrfs.Key) int {
-		return util.CmpUint(dirInode, key.ObjectID)
+		return containers.CmpUint(dirInode, key.ObjectID)
 	})
 	if err != nil {
 		errs = append(errs, fmt.Errorf("read dir: %w", err))

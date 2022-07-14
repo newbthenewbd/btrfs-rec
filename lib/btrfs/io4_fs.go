@@ -16,6 +16,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/util"
 )
 
@@ -133,7 +134,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 			},
 		}
 		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key Key) int {
-			return util.CmpUint(inode, key.ObjectID)
+			return containers.CmpUint(inode, key.ObjectID)
 		})
 		if err != nil {
 			val.Errs = append(val.Errs, err)
