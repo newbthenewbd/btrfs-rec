@@ -348,7 +348,7 @@ func (ret *File) populate() {
 }
 
 func (file *File) ReadAt(dat []byte, off int64) (int, error) {
-	// These stateles maybe-short-reads each do an O(n) extent
+	// These stateless maybe-short-reads each do an O(n) extent
 	// lookup, so reading a file is O(n^2), but we expect n to be
 	// small, so whatev.  Turn file.Extents it in to an rbtree if
 	// it becomes a problem.
