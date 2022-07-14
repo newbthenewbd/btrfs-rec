@@ -28,20 +28,22 @@ type FileExtent struct { // EXTENT_DATA=108
 	binstruct.End `bin:"off=0x15"`
 
 	// only one of these, depending on .Type
-	BodyInline []byte   `bin:"-"` // .Type == FILE_EXTENT_INLINE
-	BodyExtent struct { // .Type == FILE_EXTENT_REG or FILE_EXTENT_PREALLOC
-		// Position and size of extent within the device
-		DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
-		DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
+	BodyInline []byte           `bin:"-"` // .Type == FILE_EXTENT_INLINE
+	BodyExtent FileExtentExtent `bin:"-"` // .Type == FILE_EXTENT_REG or FILE_EXTENT_PREALLOC
+}
 
-		// Position of data within the extent
-		Offset btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
+type FileExtentExtent struct {
+	// Position and size of extent within the device
+	DiskByteNr   btrfsvol.LogicalAddr `bin:"off=0x0, siz=0x8"`
+	DiskNumBytes btrfsvol.AddrDelta   `bin:"off=0x8, siz=0x8"`
 
-		// Decompressed/unencrypted size
-		NumBytes int64 `bin:"off=0x18, siz=0x8"`
+	// Position of data within the extent
+	Offset btrfsvol.AddrDelta `bin:"off=0x10, siz=0x8"`
 
-		binstruct.End `bin:"off=0x20"`
-	} `bin:"-"`
+	// Decompressed/unencrypted size
+	NumBytes int64 `bin:"off=0x18, siz=0x8"`
+
+	binstruct.End `bin:"off=0x20"`
 }
 
 func (o *FileExtent) UnmarshalBinary(dat []byte) (int, error) {

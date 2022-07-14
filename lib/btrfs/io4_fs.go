@@ -191,9 +191,15 @@ func (ret *Dir) populate() {
 	for _, item := range ret.OtherItems {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
+			body := item.Body.(btrfsitem.InodeRefs)
+			if len(body) != 1 {
+				ret.Errs = append(ret.Errs, fmt.Errorf("INODE_REF item with %d entries on a directory",
+					len(body)))
+				continue
+			}
 			ref := InodeRef{
 				Inode:    ObjID(item.Key.Offset),
-				InodeRef: item.Body.(btrfsitem.InodeRef),
+				InodeRef: body[0],
 			}
 			if ret.DotDot != nil {
 				if !reflect.DeepEqual(ref, *ret.DotDot) {
@@ -336,13 +342,13 @@ func (ret *File) populate() {
 		}
 		pos += size
 	}
-	if ret.InodeItem != nil && pos != ret.InodeItem.Size {
-		if ret.InodeItem.Size > pos {
+	if ret.InodeItem != nil && pos != ret.InodeItem.NumBytes {
+		if ret.InodeItem.NumBytes > pos {
 			ret.Errs = append(ret.Errs, fmt.Errorf("extent gap from %v to %v",
-				pos, ret.InodeItem.Size))
+				pos, ret.InodeItem.NumBytes))
 		} else {
 			ret.Errs = append(ret.Errs, fmt.Errorf("extent mapped past end of file from %v to %v",
-				ret.InodeItem.Size, pos))
+				ret.InodeItem.NumBytes, pos))
 		}
 	}
 }

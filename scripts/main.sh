@@ -9,3 +9,5 @@ if ! test -s ../scratch/dump.rebuilt-mappings.json; then
 	     > ../scratch/dump.rebuilt-mappings.json \
 	     2> >(tee >&2 ../scratch/dump.rebuilt-mappings.log)
 fi
+time ./btrfs-rec --pv=../scratch/dump-zero.img --mappings=../scratch/dump.rebuilt-mappings.json inspect ls-files \
+     &> ../scratch/dump.ls-files.txt

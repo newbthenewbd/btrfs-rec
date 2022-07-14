@@ -135,9 +135,11 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 				fmt.Fprintf(out, "\t\tctime %v\n", fmtTime(body.CTime))
 				fmt.Fprintf(out, "\t\tmtime %v\n", fmtTime(body.MTime))
 				fmt.Fprintf(out, "\t\totime %v\n", fmtTime(body.OTime))
-			case btrfsitem.InodeRef:
-				fmt.Fprintf(out, "\t\tindex %v namelen %v name: %s\n",
-					body.Index, body.NameLen, body.Name)
+			case btrfsitem.InodeRefs:
+				for _, ref := range body {
+					fmt.Fprintf(out, "\t\tindex %v namelen %v name: %s\n",
+						ref.Index, ref.NameLen, ref.Name)
+				}
 			//case btrfsitem.INODE_EXTREF_KEY:
 			//	// TODO
 			case btrfsitem.DirEntry:

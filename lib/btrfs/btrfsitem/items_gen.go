@@ -57,7 +57,7 @@ var keytype2gotype = map[Type]reflect.Type{
 	FREE_SPACE_EXTENT_KEY:    reflect.TypeOf(Empty{}),
 	FREE_SPACE_INFO_KEY:      reflect.TypeOf(FreeSpaceInfo{}),
 	INODE_ITEM_KEY:           reflect.TypeOf(Inode{}),
-	INODE_REF_KEY:            reflect.TypeOf(InodeRef{}),
+	INODE_REF_KEY:            reflect.TypeOf(InodeRefs{}),
 	METADATA_ITEM_KEY:        reflect.TypeOf(Metadata{}),
 	ORPHAN_ITEM_KEY:          reflect.TypeOf(Empty{}),
 	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
@@ -91,7 +91,7 @@ func (FreeSpaceBitmap) isItem() {}
 func (FreeSpaceHeader) isItem() {}
 func (FreeSpaceInfo) isItem()   {}
 func (Inode) isItem()           {}
-func (InodeRef) isItem()        {}
+func (InodeRefs) isItem()       {}
 func (Metadata) isItem()        {}
 func (Root) isItem()            {}
 func (RootRef) isItem()         {}
