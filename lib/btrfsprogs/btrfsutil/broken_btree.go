@@ -18,14 +18,18 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-type indexItem struct {
-	Key  btrfs.Key
-	Path btrfs.TreePath
+type indexValue[T any] struct {
+	Key btrfs.Key
+	Val T
+}
+
+func (v indexValue[T]) keyFn() btrfs.Key {
+	return v.Key
 }
 
 type cachedIndex struct {
-	Index *containers.RBTree[btrfs.Key, indexItem]
-	Err   error
+	TreeRootErr error
+	Items       *containers.RBTree[btrfs.Key, indexValue[btrfs.TreePath]]
 }
 
 type brokenTrees struct {
@@ -67,14 +71,14 @@ func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) btrfs.Trees {
 	}
 }
 
-func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*containers.RBTree[btrfs.Key, indexItem], error) {
+func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) cachedIndex {
 	var treeRoot *btrfs.TreeRoot
 	var err error
 	if treeID == btrfs.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
 		defer bt.rootTreeMu.Unlock()
 		if bt.rootTreeIndex != nil {
-			return bt.rootTreeIndex.Index, bt.rootTreeIndex.Err
+			return *bt.rootTreeIndex
 		}
 		treeRoot, err = btrfs.LookupTreeRoot(bt.inner, treeID)
 	} else {
@@ -84,18 +88,16 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*containers.RBTree[btrfs.K
 			bt.treeIndexes = make(map[btrfs.ObjID]cachedIndex)
 		}
 		if cacheEntry, exists := bt.treeIndexes[treeID]; exists {
-			return cacheEntry.Index, cacheEntry.Err
+			return cacheEntry
 		}
 		treeRoot, err = btrfs.LookupTreeRoot(bt, treeID)
 	}
 	var cacheEntry cachedIndex
 	if err != nil {
-		cacheEntry.Err = err
+		cacheEntry.TreeRootErr = err
 	} else {
-		cacheEntry.Index = &containers.RBTree[btrfs.Key, indexItem]{
-			KeyFn: func(item indexItem) btrfs.Key {
-				return item.Key
-			},
+		cacheEntry.Items = &containers.RBTree[btrfs.Key, indexValue[btrfs.TreePath]]{
+			KeyFn: indexValue[btrfs.TreePath].keyFn,
 		}
 		dlog.Infof(bt.ctx, "indexing tree %v...", treeID)
 		bt.inner.RawTreeWalk(
@@ -106,12 +108,15 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*containers.RBTree[btrfs.K
 			},
 			btrfs.TreeWalkHandler{
 				Item: func(path btrfs.TreePath, item btrfs.Item) error {
-					if cacheEntry.Index.Lookup(item.Key) != nil {
+					if cacheEntry.Items.Lookup(item.Key) != nil {
+						// This is a panic because I'm not really sure what the best way to
+						// handle this is, and so if this happens I want the program to crash
+						// and force me to figure out how to handle it.
 						panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
 					}
-					cacheEntry.Index.Insert(indexItem{
-						Path: path.DeepCopy(),
-						Key:  item.Key,
+					cacheEntry.Items.Insert(indexValue[btrfs.TreePath]{
+						Key: item.Key,
+						Val: path.DeepCopy(),
 					})
 					return nil
 				},
@@ -124,7 +129,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) (*containers.RBTree[btrfs.K
 	} else {
 		bt.treeIndexes[treeID] = cacheEntry
 	}
-	return cacheEntry.Index, cacheEntry.Err
+	return cacheEntry
 }
 
 func (bt *brokenTrees) TreeLookup(treeID btrfs.ObjID, key btrfs.Key) (btrfs.Item, error) {
@@ -136,33 +141,33 @@ func (bt *brokenTrees) TreeLookup(treeID btrfs.ObjID, key btrfs.Key) (btrfs.Item
 }
 
 func (bt *brokenTrees) TreeSearch(treeID btrfs.ObjID, fn func(btrfs.Key) int) (btrfs.Item, error) {
-	index, err := bt.treeIndex(treeID)
-	if err != nil {
-		return btrfs.Item{}, err
+	index := bt.treeIndex(treeID)
+	if index.TreeRootErr != nil {
+		return btrfs.Item{}, index.TreeRootErr
 	}
-	indexItem := index.Search(func(indexItem indexItem) int {
+	indexItem := index.Items.Search(func(indexItem indexValue[btrfs.TreePath]) int {
 		return fn(indexItem.Key)
 	})
 	if indexItem == nil {
 		return btrfs.Item{}, iofs.ErrNotExist
 	}
 
-	node, err := bt.inner.ReadNode(indexItem.Value.Path.Node(-2).NodeAddr)
+	node, err := bt.inner.ReadNode(indexItem.Value.Val.Node(-2).NodeAddr)
 	if err != nil {
 		return btrfs.Item{}, err
 	}
 
-	item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).ItemIdx]
+	item := node.Data.BodyLeaf[indexItem.Value.Val.Node(-1).ItemIdx]
 
 	return item, nil
 }
 
 func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key) int) ([]btrfs.Item, error) {
-	index, err := bt.treeIndex(treeID)
-	if err != nil {
-		return nil, err
+	index := bt.treeIndex(treeID)
+	if index.TreeRootErr != nil {
+		return nil, index.TreeRootErr
 	}
-	indexItems := index.SearchRange(func(indexItem indexItem) int {
+	indexItems := index.Items.SearchRange(func(indexItem indexValue[btrfs.TreePath]) int {
 		return fn(indexItem.Key)
 	})
 	if len(indexItems) == 0 {
@@ -172,31 +177,31 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key) int)
 	ret := make([]btrfs.Item, len(indexItems))
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]
 	for i := range indexItems {
-		if node == nil || node.Addr != indexItems[i].Path.Node(-2).NodeAddr {
+		if node == nil || node.Addr != indexItems[i].Val.Node(-2).NodeAddr {
 			var err error
-			node, err = bt.inner.ReadNode(indexItems[i].Path.Node(-2).NodeAddr)
+			node, err = bt.inner.ReadNode(indexItems[i].Val.Node(-2).NodeAddr)
 			if err != nil {
 				return nil, err
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[indexItems[i].Path.Node(-1).ItemIdx]
+		ret[i] = node.Data.BodyLeaf[indexItems[i].Val.Node(-1).ItemIdx]
 	}
 	return ret, nil
 }
 
 func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHandle func(*btrfs.TreeError), cbs btrfs.TreeWalkHandler) {
-	index, err := bt.treeIndex(treeID)
-	if err != nil {
+	index := bt.treeIndex(treeID)
+	if index.TreeRootErr != nil {
 		errHandle(&btrfs.TreeError{
 			Path: btrfs.TreePath{
 				TreeID: treeID,
 			},
-			Err: err,
+			Err: index.TreeRootErr,
 		})
 		return
 	}
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]
-	_ = index.Walk(func(indexItem *containers.RBNode[indexItem]) error {
+	_ = index.Items.Walk(func(indexItem *containers.RBNode[indexValue[btrfs.TreePath]]) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -204,17 +209,17 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 			return bt.ctx.Err()
 		}
 		if cbs.Item != nil {
-			if node == nil || node.Addr != indexItem.Value.Path.Node(-2).NodeAddr {
+			if node == nil || node.Addr != indexItem.Value.Val.Node(-2).NodeAddr {
 				var err error
-				node, err = bt.inner.ReadNode(indexItem.Value.Path.Node(-2).NodeAddr)
+				node, err = bt.inner.ReadNode(indexItem.Value.Val.Node(-2).NodeAddr)
 				if err != nil {
-					errHandle(&btrfs.TreeError{Path: indexItem.Value.Path, Err: err})
+					errHandle(&btrfs.TreeError{Path: indexItem.Value.Val, Err: err})
 					return nil
 				}
 			}
-			item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).ItemIdx]
-			if err := cbs.Item(indexItem.Value.Path, item); err != nil {
-				errHandle(&btrfs.TreeError{Path: indexItem.Value.Path, Err: err})
+			item := node.Data.BodyLeaf[indexItem.Value.Val.Node(-1).ItemIdx]
+			if err := cbs.Item(indexItem.Value.Val, item); err != nil {
+				errHandle(&btrfs.TreeError{Path: indexItem.Value.Val, Err: err})
 			}
 		}
 		return nil
