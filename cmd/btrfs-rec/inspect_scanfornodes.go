@@ -46,6 +46,7 @@ func init() {
 			results := make(map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult)
 			grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 			for _, dev := range fs.LV.PhysicalVolumes() {
+				dev := dev
 				grp.Go(dev.Name(), func(ctx context.Context) error {
 					superblock, err := dev.Superblock()
 					if err != nil {
