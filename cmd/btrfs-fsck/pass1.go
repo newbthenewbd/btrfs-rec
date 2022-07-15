@@ -114,7 +114,7 @@ func pass1WriteReconstructedChunks(ctx context.Context, fs *btrfs.FS) {
 						Size:           mapping.Size,
 						Owner:          btrfs.EXTENT_TREE_OBJECTID,
 						StripeLen:      65536, // ???
-						Type:           *mapping.Flags,
+						Type:           mapping.Flags.Val,
 						IOOptimalAlign: superblock.DevItem.IOOptimalAlign,
 						IOOptimalWidth: superblock.DevItem.IOOptimalWidth,
 						IOMinSize:      superblock.DevItem.IOMinSize,

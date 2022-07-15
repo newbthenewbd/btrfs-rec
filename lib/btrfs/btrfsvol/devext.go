@@ -7,6 +7,7 @@ package btrfsvol
 import (
 	"fmt"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
@@ -16,7 +17,7 @@ type devextMapping struct {
 	LAddr      LogicalAddr
 	Size       AddrDelta
 	SizeLocked bool
-	Flags      *BlockGroupFlags
+	Flags      containers.Optional[BlockGroupFlags]
 }
 
 // return -1 if 'a' is wholly to the left of 'b'
@@ -77,15 +78,14 @@ func (a devextMapping) union(rest ...devextMapping) (devextMapping, error) {
 	}
 	// figure out the flags (.Flags)
 	for _, ext := range exts {
-		if ext.Flags == nil {
+		if !ext.Flags.OK {
 			continue
 		}
-		if ret.Flags == nil {
-			val := *ext.Flags
-			ret.Flags = &val
+		if !ret.Flags.OK {
+			ret.Flags = ext.Flags
 		}
-		if *ret.Flags != *ext.Flags {
-			return ret, fmt.Errorf("mismatch flags: %v != %v", *ret.Flags, *ext.Flags)
+		if ret.Flags != ext.Flags {
+			return ret, fmt.Errorf("mismatch flags: %v != %v", ret.Flags.Val, ext.Flags.Val)
 		}
 	}
 	// done

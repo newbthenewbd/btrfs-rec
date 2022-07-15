@@ -8,6 +8,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 // Maps logical address to physical.
@@ -50,7 +51,10 @@ func (chunk Chunk) Mappings(key internal.Key) []btrfsvol.Mapping {
 			},
 			Size:       chunk.Head.Size,
 			SizeLocked: true,
-			Flags:      &chunk.Head.Type,
+			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
+				OK:  true,
+				Val: chunk.Head.Type,
+			},
 		})
 	}
 	return ret

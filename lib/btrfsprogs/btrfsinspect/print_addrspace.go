@@ -26,12 +26,12 @@ func PrintLogicalSpace(out io.Writer, fs *btrfs.FS) {
 			sumHole += size
 		}
 		if mapping.LAddr != prevBeg {
-			if mapping.Flags == nil {
+			if !mapping.Flags.OK {
 				fmt.Fprintf(out, "chunk laddr=%v size=%v flags=(missing)\n",
 					mapping.LAddr, mapping.Size)
 			} else {
 				fmt.Fprintf(out, "chunk laddr=%v size=%v flags=%v\n",
-					mapping.LAddr, mapping.Size, *mapping.Flags)
+					mapping.LAddr, mapping.Size, mapping.Flags.Val)
 			}
 		}
 		fmt.Fprintf(out, "\tstripe dev_id=%v paddr=%v\n",

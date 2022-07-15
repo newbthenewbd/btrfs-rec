@@ -14,6 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
@@ -90,7 +91,6 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 				},
 				Size:       btrfsvol.AddrDelta(sb.NodeSize),
 				SizeLocked: false,
-				Flags:      nil,
 			}); err != nil {
 				dlog.Errorf(ctx, "... dev[%q] error: adding node ident: %v",
 					dev.Name(), err)
@@ -132,16 +132,15 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 		}
 
 		offsetWithinChunk := otherLAddr.Sub(bg.LAddr)
-		flags := bg.Flags
 		mapping := btrfsvol.Mapping{
-			LAddr: bg.LAddr,
-			PAddr: btrfsvol.QualifiedPhysicalAddr{
-				Dev:  otherPAddr.Dev,
-				Addr: otherPAddr.Addr.Add(-offsetWithinChunk),
-			},
+			LAddr:      bg.LAddr,
+			PAddr:      otherPAddr.Add(-offsetWithinChunk),
 			Size:       bg.Size,
 			SizeLocked: true,
-			Flags:      &flags,
+			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
+				OK:  true,
+				Val: bg.Flags,
+			},
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
 			dlog.Errorf(ctx, "... dev[%q] error: adding flags from blockgroup: %v",

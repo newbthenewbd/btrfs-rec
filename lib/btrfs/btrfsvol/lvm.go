@@ -113,8 +113,8 @@ type Mapping struct {
 	LAddr      LogicalAddr
 	PAddr      QualifiedPhysicalAddr
 	Size       AddrDelta
-	SizeLocked bool             `json:",omitempty"`
-	Flags      *BlockGroupFlags `json:",omitempty"`
+	SizeLocked bool                                 `json:",omitempty"`
+	Flags      containers.Optional[BlockGroupFlags] `json:",omitempty"`
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
@@ -232,17 +232,12 @@ func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	var ret []Mapping
 	_ = lv.logical2physical.Walk(func(node *containers.RBNode[chunkMapping]) error {
 		chunk := node.Value
-		var flags *BlockGroupFlags
-		if chunk.Flags != nil {
-			val := *chunk.Flags
-			flags = &val
-		}
 		for _, slice := range chunk.PAddrs {
 			ret = append(ret, Mapping{
 				LAddr: chunk.LAddr,
 				PAddr: slice,
 				Size:  chunk.Size,
-				Flags: flags,
+				Flags: chunk.Flags,
 			})
 		}
 		return nil
@@ -264,10 +259,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[
 	paddrs = make(map[QualifiedPhysicalAddr]struct{})
 	maxlen = chunk.Size - offsetWithinChunk
 	for _, stripe := range chunk.PAddrs {
-		paddrs[QualifiedPhysicalAddr{
-			Dev:  stripe.Dev,
-			Addr: stripe.Addr.Add(offsetWithinChunk),
-		}] = struct{}{}
+		paddrs[stripe.Add(offsetWithinChunk)] = struct{}{}
 	}
 
 	return paddrs, maxlen

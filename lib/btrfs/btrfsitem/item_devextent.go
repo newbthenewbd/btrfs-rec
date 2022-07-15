@@ -30,6 +30,5 @@ func (devext DevExtent) Mapping(key internal.Key) btrfsvol.Mapping {
 		},
 		Size:       devext.Length,
 		SizeLocked: true,
-		Flags:      nil,
 	}
 }

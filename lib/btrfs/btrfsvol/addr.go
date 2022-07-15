@@ -43,6 +43,13 @@ type QualifiedPhysicalAddr struct {
 	Addr PhysicalAddr
 }
 
+func (a QualifiedPhysicalAddr) Add(b AddrDelta) QualifiedPhysicalAddr {
+	return QualifiedPhysicalAddr{
+		Dev:  a.Dev,
+		Addr: a.Addr.Add(b),
+	}
+}
+
 func (a QualifiedPhysicalAddr) Cmp(b QualifiedPhysicalAddr) int {
 	if d := int(a.Dev - b.Dev); d != 0 {
 		return d

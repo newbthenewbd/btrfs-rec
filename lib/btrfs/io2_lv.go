@@ -68,10 +68,6 @@ func (fs *FS) WriteAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.WriteAt(p, off)
 }
 
-func (fs *FS) Resolve(laddr btrfsvol.LogicalAddr) (paddrs map[btrfsvol.QualifiedPhysicalAddr]struct{}, maxlen btrfsvol.AddrDelta) {
-	return fs.LV.Resolve(laddr)
-}
-
 func (fs *FS) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
 	if fs.cacheSuperblocks != nil {
 		return fs.cacheSuperblocks, nil

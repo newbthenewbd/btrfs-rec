@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
@@ -18,7 +19,7 @@ type chunkMapping struct {
 	PAddrs     []QualifiedPhysicalAddr
 	Size       AddrDelta
 	SizeLocked bool
-	Flags      *BlockGroupFlags
+	Flags      containers.Optional[BlockGroupFlags]
 }
 
 type ChunkMapping = chunkMapping
@@ -73,10 +74,7 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	for _, chunk := range chunks {
 		offsetWithinRet := chunk.LAddr.Sub(ret.LAddr)
 		for _, stripe := range chunk.PAddrs {
-			paddrs[QualifiedPhysicalAddr{
-				Dev:  stripe.Dev,
-				Addr: stripe.Addr.Add(-offsetWithinRet),
-			}] = struct{}{}
+			paddrs[stripe.Add(-offsetWithinRet)] = struct{}{}
 		}
 	}
 	ret.PAddrs = maps.Keys(paddrs)
@@ -85,15 +83,14 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	})
 	// figure out the flags (.Flags)
 	for _, chunk := range chunks {
-		if chunk.Flags == nil {
+		if !chunk.Flags.OK {
 			continue
 		}
-		if ret.Flags == nil {
-			val := *chunk.Flags
-			ret.Flags = &val
+		if !ret.Flags.OK {
+			ret.Flags = chunk.Flags
 		}
-		if *ret.Flags != *chunk.Flags {
-			return ret, fmt.Errorf("mismatch flags: %v != %v", *ret.Flags, *chunk.Flags)
+		if ret.Flags != chunk.Flags {
+			return ret, fmt.Errorf("mismatch flags: %v != %v", ret.Flags.Val, chunk.Flags.Val)
 		}
 	}
 	// done
