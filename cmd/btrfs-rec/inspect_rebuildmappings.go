@@ -60,21 +60,35 @@ func init() {
 			}
 
 			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
-			mappings := fs.LV.Mappings()
-			_, _ = io.WriteString(os.Stdout, "[\n")
-			for i, mapping := range mappings {
-				suffix := ","
-				if i == len(mappings)-1 {
-					suffix = ""
-				}
-				bs, err := json.Marshal(mapping)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("  %s%s\n", bs, suffix)
+			if err := writeMappingsJSON(os.Stdout, fs); err != nil {
+				return err
 			}
-			_, _ = io.WriteString(os.Stdout, "]\n")
+
 			return nil
 		},
 	})
+}
+
+func writeMappingsJSON(w io.Writer, fs *btrfs.FS) error {
+	mappings := fs.LV.Mappings()
+	if _, err := io.WriteString(w, "[\n"); err != nil {
+		return err
+	}
+	for i, mapping := range mappings {
+		suffix := ","
+		if i == len(mappings)-1 {
+			suffix = ""
+		}
+		bs, err := json.Marshal(mapping)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Printf("  %s%s\n", bs, suffix); err != nil {
+			return err
+		}
+	}
+	if _, err := io.WriteString(w, "]\n"); err != nil {
+		return err
+	}
+	return nil
 }

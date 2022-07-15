@@ -5,9 +5,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"os"
 	"runtime"
 	"sort"
@@ -23,7 +21,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 const csumBlockSize = 4 * 1024
@@ -42,6 +39,14 @@ func init() {
 			dlog.Info(ctx, "Reading checksum tree...")
 			sum2laddrs := listUnmappedCheckummedExtents(ctx, fs)
 			dlog.Info(ctx, "... done reading checksum tree")
+
+			dlog.Info(ctx, "Pruning duplicate sums...")
+			for sum, addrs := range sum2laddrs {
+				if len(addrs) != 1 {
+					delete(sum2laddrs, sum)
+				}
+			}
+			dlog.Info(ctx, "... done pruning")
 
 			devs := fs.LV.PhysicalVolumes()
 			gaps := listPhysicalGaps(fs)
@@ -66,29 +71,14 @@ func init() {
 				return err
 			}
 
-			dlog.Info(ctx, "Writing scan results to stdout...")
-			out := bufio.NewWriter(os.Stdout)
-			_, _ = out.WriteString("{")
-			for i, sum := range maps.SortedKeys(sum2laddrs) {
-				_, _ = out.WriteString("\n  ")
+			dlog.Info(ctx, "Rebuilding mappings from results...")
+			rebuildMappings(ctx, fs, devs, sum2laddrs, sum2paddrs)
+			dlog.Info(ctx, "... done rebuilding mappings")
 
-				kBytes, _ := json.Marshal(sum)
-				_, _ = out.Write(kBytes)
-
-				_, _ = out.WriteString(": ")
-
-				vBytes, _ := json.Marshal(map[string]interface{}{
-					"laddrs": sum2laddrs[sum],
-					"paddrs": sum2paddrs[sum],
-				})
-				_, _ = out.Write(vBytes)
-
-				if i != len(sum2laddrs)-1 {
-					_, _ = out.WriteString(",")
-				}
+			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
+			if err := writeMappingsJSON(os.Stdout, fs); err != nil {
+				return err
 			}
-			_, _ = out.WriteString("\n}")
-			out.Flush()
 
 			return nil
 		},
@@ -167,11 +157,18 @@ func scanOneDev[T any](ctx context.Context, dev *btrfs.Device, gaps []physicalGa
 		return nil, err
 	}
 
-	devSize := dev.Size()
+	var totalBlocks int64
+	for _, gap := range gaps {
+		for paddr := roundUp(gap.Beg, csumBlockSize); paddr+csumBlockSize <= gap.End; paddr += csumBlockSize {
+			totalBlocks++
+		}
+	}
+
 	lastProgress := -1
-	progress := func(pos btrfsvol.PhysicalAddr) {
-		pct := int(100 * float64(pos) / float64(devSize))
-		if pct != lastProgress || pos == devSize {
+	var curBlock int64
+	progress := func() {
+		pct := int(100 * float64(curBlock) / float64(totalBlocks))
+		if pct != lastProgress || curBlock == totalBlocks {
 			dlog.Infof(ctx, "... dev[%q] scanned %v%%",
 				dev.Name(), pct)
 			lastProgress = pct
@@ -187,7 +184,8 @@ func scanOneDev[T any](ctx context.Context, dev *btrfs.Device, gaps []physicalGa
 	devSum2paddrs := make(map[shortSum][]btrfsvol.QualifiedPhysicalAddr)
 	for _, gap := range gaps {
 		for paddr := roundUp(gap.Beg, csumBlockSize); paddr+csumBlockSize <= gap.End; paddr += csumBlockSize {
-			progress(paddr)
+			progress()
+			curBlock++
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
@@ -211,6 +209,47 @@ func scanOneDev[T any](ctx context.Context, dev *btrfs.Device, gaps []physicalGa
 			})
 		}
 	}
-	progress(devSize)
+	progress()
 	return devSum2paddrs, nil
+}
+
+func rebuildMappings(ctx context.Context, fs *btrfs.FS,
+	devs map[btrfsvol.DeviceID]*btrfs.Device,
+	sum2laddrs map[shortSum][]btrfsvol.LogicalAddr,
+	sum2paddrs map[shortSum][]btrfsvol.QualifiedPhysicalAddr) {
+
+	totalPairs := len(sum2paddrs)
+	lastProgress := -1
+	var donePairs int
+	progress := func() {
+		pct := int(100 * float64(donePairs) / float64(totalPairs))
+		if pct != lastProgress || donePairs == totalPairs {
+			dlog.Infof(ctx, "... rebuilt %v%% (%v/%v)", pct, donePairs, totalPairs)
+			lastProgress = pct
+			if pct%5 == 0 {
+				runtime.GC()
+			}
+		}
+	}
+
+	for sum, paddrs := range sum2paddrs {
+		progress()
+		if len(paddrs) == 1 {
+			mapping := btrfsvol.Mapping{
+				LAddr: sum2laddrs[sum][0],
+				PAddr: paddrs[0],
+				Size:  csumBlockSize,
+			}
+			if err := fs.LV.AddMapping(mapping); err != nil {
+				dlog.Errorf(ctx, "... dev[%q] error: adding chunk: %v",
+					devs[paddrs[0].Dev].Name(), err)
+			}
+		} else {
+			delete(sum2paddrs, sum)
+			delete(sum2laddrs, sum)
+		}
+		donePairs++
+
+	}
+	progress()
 }

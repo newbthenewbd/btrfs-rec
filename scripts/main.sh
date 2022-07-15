@@ -10,7 +10,9 @@ if ! test -s ../scratch/dump-zero.mappings.0.json; then
 	     2> >(tee >&2 ../scratch/dump-zero.mappings.0.log)
 fi
 time ./btrfs-rec --pv=../scratch/dump-zero.img --mappings=../scratch/dump-zero.mappings.0.json inspect scan-for-extents \
-     > ../scratch/dump-zero.scan-for-extents.json
+     > ../scratch/dump-zero.mappings.1.json
+time ./btrfs-rec --pv=../scratch/dump-zero.img --mappings=../scratch/dump-zero.mappings.1.json inspect rebuild-mappings ../scratch/dump-zero.scan-for-nodes.json \
+     > ../scratch/dump-zero.mappings.2.json
 
 #time ./btrfs-rec --pv=../scratch/dump-zero.img --mappings=../scratch/dump-zero.mappings.0.json inspect ls-files \
 #     &> ../scratch/dump-zero.ls-files.txt
