@@ -6,6 +6,7 @@ package btrfsvol
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -117,7 +118,13 @@ type Mapping struct {
 	Flags      containers.Optional[BlockGroupFlags] `json:",omitempty"`
 }
 
+func (lv *LogicalVolume[PhysicalVolume]) CouldAddMapping(m Mapping) bool {
+	return lv.addMapping(m, true) == nil
+}
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
+	return lv.addMapping(m, false)
+}
+func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) error {
 	lv.init()
 	// sanity check
 	if _, haveDev := lv.id2pv[m.PAddr.Dev]; !haveDev {
@@ -152,6 +159,10 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 	newExt, err = newExt.union(physicalOverlaps...)
 	if err != nil {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
+	}
+
+	if dryRun {
+		return nil
 	}
 
 	// optimize
@@ -301,10 +312,12 @@ func (lv *LogicalVolume[PhysicalVolume]) ReadAt(dat []byte, laddr LogicalAddr) (
 	return done, nil
 }
 
+var ErrCouldNotMap = errors.New("could not map logical address")
+
 func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := lv.Resolve(laddr)
 	if len(paddrs) == 0 {
-		return 0, fmt.Errorf("read: could not map logical address %v", laddr)
+		return 0, fmt.Errorf("read: %w %v", ErrCouldNotMap, laddr)
 	}
 	if AddrDelta(len(dat)) > maxlen {
 		dat = dat[:maxlen]
@@ -346,7 +359,7 @@ func (lv *LogicalVolume[PhysicalVolume]) WriteAt(dat []byte, laddr LogicalAddr) 
 func (lv *LogicalVolume[PhysicalVolume]) maybeShortWriteAt(dat []byte, laddr LogicalAddr) (int, error) {
 	paddrs, maxlen := lv.Resolve(laddr)
 	if len(paddrs) == 0 {
-		return 0, fmt.Errorf("write: could not map logical address %v", laddr)
+		return 0, fmt.Errorf("write: %w %v", ErrCouldNotMap, laddr)
 	}
 	if AddrDelta(len(dat)) > maxlen {
 		dat = dat[:maxlen]
