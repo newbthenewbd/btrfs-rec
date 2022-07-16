@@ -69,6 +69,16 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockGroups *BlockGroupTr
 	return nil
 }
 
+type csumCacheEntry struct {
+	Sum shortSum
+	Err error
+}
+
+type csumCachePhysKey struct {
+	Dev  *btrfs.Device
+	Addr btrfsvol.PhysicalAddr
+}
+
 type ExtentMappings struct {
 	// input
 	InFS          btrfs.Trees
@@ -82,6 +92,9 @@ type ExtentMappings struct {
 	alg                btrfssum.CSumType
 	internedMappingsMu sync.Mutex
 	internedMappings   map[btrfsvol.Mapping]*btrfsvol.Mapping
+
+	cacheLogical  containers.LRUCache[btrfsvol.LogicalAddr, csumCacheEntry]
+	cachePhysical containers.LRUCache[csumCachePhysKey, csumCacheEntry]
 
 	// output
 	sum2lock        map[shortSum]*sync.Mutex
@@ -104,6 +117,32 @@ func (em *ExtentMappings) init() error {
 		em.OutSum2mappings = make(map[shortSum][]*btrfsvol.Mapping)
 	})
 	return em.initErr
+}
+
+func (em *ExtentMappings) logicalSum(laddr btrfsvol.LogicalAddr) (shortSum, error) {
+	entry, ok := em.cacheLogical.Get(laddr)
+	if !ok {
+		sum, err := LookupCSum(em.InFS, em.alg, laddr)
+		entry.Sum = shortSum(sum[:em.alg.Size()])
+		entry.Err = err
+		em.cacheLogical.Add(laddr, entry)
+	}
+	return entry.Sum, entry.Err
+}
+
+func (em *ExtentMappings) physicalSum(dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) (shortSum, error) {
+	key := csumCachePhysKey{
+		Dev:  dev,
+		Addr: paddr,
+	}
+	entry, ok := em.cachePhysical.Get(key)
+	if !ok {
+		sum, err := ChecksumPhysical(dev, em.alg, paddr)
+		entry.Sum = shortSum(sum[:em.alg.Size()])
+		entry.Err = err
+		em.cachePhysical.Add(key, entry)
+	}
+	return entry.Sum, entry.Err
 }
 
 func (em *ExtentMappings) considerMapping(ctx context.Context, dev *btrfs.Device, laddr btrfsvol.LogicalAddr, paddr btrfsvol.QualifiedPhysicalAddr) (btrfsvol.Mapping, bool) {
@@ -136,14 +175,14 @@ func (em *ExtentMappings) considerMapping(ctx context.Context, dev *btrfs.Device
 		if err := ctx.Err(); err != nil {
 			return btrfsvol.Mapping{}, false
 		}
-		expCSum, err := LookupCSum(em.InFS, em.alg, mapping.LAddr.Add(offset))
+		expCSum, err := em.logicalSum(mapping.LAddr.Add(offset))
 		if err != nil {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
 			return btrfsvol.Mapping{}, false
 		}
-		actCSum, err := ChecksumPhysical(dev, em.alg, mapping.PAddr.Addr.Add(offset))
+		actCSum, err := em.physicalSum(dev, mapping.PAddr.Addr.Add(offset))
 		if err != nil {
 			return btrfsvol.Mapping{}, false
 		}
