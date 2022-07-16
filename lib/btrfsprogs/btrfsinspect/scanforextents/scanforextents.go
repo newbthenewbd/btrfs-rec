@@ -29,6 +29,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockGroups *BlockGroupTr
 		return nil
 	}
 	runtime.GC()
+	dlog.Info(ctx, "...GC'd")
 
 	devs := fs.LV.PhysicalVolumes()
 	gaps := ListPhysicalGaps(fs)
@@ -122,10 +123,18 @@ func (em *ExtentMappings) init() error {
 func (em *ExtentMappings) logicalSum(laddr btrfsvol.LogicalAddr) (shortSum, error) {
 	entry, ok := em.cacheLogical.Get(laddr)
 	if !ok {
-		sum, err := LookupCSum(em.InFS, em.alg, laddr)
-		entry.Sum = shortSum(sum[:em.alg.Size()])
-		entry.Err = err
-		em.cacheLogical.Add(laddr, entry)
+		sums, err := LookupCSum(em.InFS, em.alg, laddr)
+		if err != nil {
+			entry.Err = err
+			em.cacheLogical.Add(laddr, entry)
+		} else {
+			for laddr, sum := range sums {
+				entry.Sum = shortSum(sum[:em.alg.Size()])
+				em.cacheLogical.Add(laddr, entry)
+			}
+			sum := sums[laddr]
+			entry.Sum = shortSum(sum[:em.alg.Size()])
+		}
 	}
 	return entry.Sum, entry.Err
 }

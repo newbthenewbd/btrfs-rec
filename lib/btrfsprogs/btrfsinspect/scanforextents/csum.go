@@ -100,7 +100,7 @@ func readCSumTree(ctx context.Context, fs btrfs.Trees) map[shortSum][]btrfsvol.L
 	return sum2laddrs
 }
 
-func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.CSum, error) {
+func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (map[btrfsvol.LogicalAddr]btrfssum.CSum, error) {
 	item, err := fs.TreeSearch(btrfs.CSUM_TREE_OBJECTID, func(key btrfs.Key, size uint32) int {
 		itemBeg := btrfsvol.LogicalAddr(key.ObjectID)
 		numSums := int64(size) / int64(alg.Size())
@@ -115,11 +115,15 @@ func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAdd
 		}
 	})
 	if err != nil {
-		return btrfssum.CSum{}, err
+		return nil, err
 	}
 	body, ok := item.Body.(btrfsitem.ExtentCSum)
 	if !ok {
-		return btrfssum.CSum{}, fmt.Errorf("item body is %T not ExtentCSum", item.Body)
+		return nil, fmt.Errorf("item body is %T not ExtentCSum", item.Body)
 	}
-	return body.Sums[int(laddr-btrfsvol.LogicalAddr(item.Key.ObjectID))/csumBlockSize], nil
+	ret := make(map[btrfsvol.LogicalAddr]btrfssum.CSum, len(body.Sums))
+	for i, sum := range body.Sums {
+		ret[btrfsvol.LogicalAddr(item.Key.ObjectID)+(btrfsvol.LogicalAddr(i)*csumBlockSize)] = sum
+	}
+	return ret, nil
 }
