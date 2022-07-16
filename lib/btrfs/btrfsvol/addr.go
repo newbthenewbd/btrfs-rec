@@ -56,3 +56,13 @@ func (a QualifiedPhysicalAddr) Cmp(b QualifiedPhysicalAddr) int {
 	}
 	return int(a.Addr - b.Addr)
 }
+
+type _IntAddr[T any] interface {
+	~int64
+	Sub(T) AddrDelta
+	Add(AddrDelta) T
+}
+
+// IntAddr is a type constraint that you can use to accept LogicalAddr
+// or PhysicalAddr.
+type IntAddr[T _IntAddr[T]] _IntAddr[T]

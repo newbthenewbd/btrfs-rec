@@ -25,10 +25,12 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 
 	dlog.Info(ctx, "Reverse-indexing and validating logical sums...")
 	var totalSums int
-	_ = sums.WalkLogical(func(btrfsvol.LogicalAddr, ShortSum) error {
+	if err := sums.WalkLogical(ctx, func(btrfsvol.LogicalAddr, ShortSum) error {
 		totalSums++
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 	sum2laddrs := make(map[ShortSum][]btrfsvol.LogicalAddr)
 	var curSum int
 	lastPct := -1
@@ -39,10 +41,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 			lastPct = pct
 		}
 	}
-	if err := sums.WalkLogical(func(laddr btrfsvol.LogicalAddr, expShortSum ShortSum) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, expShortSum ShortSum) error {
 		progress(curSum)
 		curSum++
 		readSum, err := ChecksumLogical(fs, sb.ChecksumType, laddr)
@@ -53,7 +52,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 			}
 			return err
 		}
-		readShortSum := ShortSum(readSum[:sums.ChecksumSize])
+		readShortSum := ShortSum(readSum[:len(expShortSum)])
 		if readShortSum != expShortSum {
 			return fmt.Errorf("checksum mismatch at laddr=%v: CSUM_TREE=%x != read=%x",
 				laddr, []byte(expShortSum), []byte(readShortSum))
