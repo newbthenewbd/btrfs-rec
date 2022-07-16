@@ -433,19 +433,11 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 			//
 			// There may or may not be a value that returns '0'.
 			//
-			// Implement this search as a binary search.
-			lastGood := -1
-			firstBad := len(node.Data.BodyInternal)
-			for firstBad > lastGood+1 {
-				midpoint := (lastGood + firstBad) / 2
-				direction := fn(node.Data.BodyInternal[midpoint].Key, math.MaxUint32)
-				if direction < 0 {
-					firstBad = midpoint
-				} else {
-					lastGood = midpoint
-				}
-			}
-			if lastGood < 0 {
+			// i.e. find the highest value that isn't too high.
+			lastGood, ok := slices.SearchHighest(node.Data.BodyInternal, func(kp KeyPointer) int {
+				return slices.Min(fn(kp.Key, math.MaxUint32), 0) // don't return >0; a key can't be "too low"
+			})
+			if !ok {
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
 			path = path.Append(TreePathElem{
@@ -466,26 +458,16 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 			// is returned.
 			//
 			// Implement this search as a binary search.
-			beg := 0
-			end := len(node.Data.BodyLeaf)
-			for beg < end {
-				midpoint := (beg + end) / 2
-				direction := fn(
-					node.Data.BodyLeaf[midpoint].Key,
-					node.Data.BodyLeaf[midpoint].BodySize)
-				switch {
-				case direction < 0:
-					end = midpoint
-				case direction > 0:
-					beg = midpoint + 1
-				case direction == 0:
-					path = path.Append(TreePathElem{
-						ItemIdx: midpoint,
-					})
-					return path, node, nil
-				}
+			idx, ok := slices.Search(node.Data.BodyLeaf, func(item Item) int {
+				return fn(item.Key, item.BodySize)
+			})
+			if !ok {
+				return TreePath{}, nil, iofs.ErrNotExist
 			}
-			return TreePath{}, nil, iofs.ErrNotExist
+			path = path.Append(TreePathElem{
+				ItemIdx: idx,
+			})
+			return path, node, nil
 		}
 	}
 }
