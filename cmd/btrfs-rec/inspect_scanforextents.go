@@ -19,8 +19,8 @@ import (
 func init() {
 	inspectors = append(inspectors, subcommand{
 		Command: cobra.Command{
-			Use:  "scan-for-extents SCAN_RESULT.json",
-			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
+			Use:  "scan-for-extents NODESCAN.json DUMPSUMS.gob",
+			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(2)),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -33,7 +33,14 @@ func init() {
 			runtime.GC()
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			if err := scanforextents.ScanForExtents(ctx, fs, bgs); err != nil {
+			dlog.Infof(ctx, "Reading %q...", args[1])
+			sums, err := scanforextents.ReadAllSums(args[1])
+			if err != nil {
+				return err
+			}
+			dlog.Infof(ctx, "... done reading %q", args[1])
+
+			if err := scanforextents.ScanForExtents(ctx, fs, bgs, sums); err != nil {
 				return err
 			}
 

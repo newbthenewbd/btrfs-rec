@@ -52,7 +52,7 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 	return ((x + multiple - 1) / multiple) * multiple
 }
 
-func WalkGapsOneDev(ctx context.Context, dev *btrfs.Device,
+func WalkGaps(ctx context.Context,
 	gaps []PhysicalGap, blockSize btrfsvol.PhysicalAddr,
 	progress func(cur, total int64),
 	main func(btrfsvol.PhysicalAddr) error,
