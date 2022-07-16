@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	iofs "io/fs"
+	"math"
 	"strings"
 
 	"github.com/datawire/dlib/derror"
@@ -45,14 +46,14 @@ type Trees interface {
 	TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
 
 	TreeLookup(treeID ObjID, key Key) (Item, error)
-	TreeSearch(treeID ObjID, fn func(Key) int) (Item, error)
+	TreeSearch(treeID ObjID, fn func(key Key, size uint32) int) (Item, error) // size is math.MaxUint32 for key-pointers
 
 	// If some items are able to be read, but there is an error reading the
 	// full set, then it might return *both* a list of items and an error.
 	//
 	// If no such item is found, an error that is io/fs.ErrNotExist is
 	// returned.
-	TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error)
+	TreeSearchAll(treeID ObjID, fn func(key Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
 
 	// For bootstrapping purposes.
 	Superblock() (*Superblock, error)
@@ -231,7 +232,7 @@ func LookupTreeRoot(fs Trees, treeID ObjID) (*TreeRoot, error) {
 			Generation: sb.BlockGroupRootGeneration,
 		}, nil
 	default:
-		rootItem, err := fs.TreeSearch(ROOT_TREE_OBJECTID, func(key Key) int {
+		rootItem, err := fs.TreeSearch(ROOT_TREE_OBJECTID, func(key Key, _ uint32) int {
 			if key.ObjectID == treeID && key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 				return 0
 			}
@@ -402,7 +403,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 }
 
-func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{
 		TreeID: treeRoot.TreeID,
 		Nodes: []TreePathElem{
@@ -437,7 +438,7 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *diskio
 			firstBad := len(node.Data.BodyInternal)
 			for firstBad > lastGood+1 {
 				midpoint := (lastGood + firstBad) / 2
-				direction := fn(node.Data.BodyInternal[midpoint].Key)
+				direction := fn(node.Data.BodyInternal[midpoint].Key, math.MaxUint32)
 				if direction < 0 {
 					firstBad = midpoint
 				} else {
@@ -469,7 +470,9 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key) int) (TreePath, *diskio
 			end := len(node.Data.BodyLeaf)
 			for beg < end {
 				midpoint := (beg + end) / 2
-				direction := fn(node.Data.BodyLeaf[midpoint].Key)
+				direction := fn(
+					node.Data.BodyLeaf[midpoint].Key,
+					node.Data.BodyLeaf[midpoint].BodySize)
 				switch {
 				case direction < 0:
 					end = midpoint
@@ -606,7 +609,7 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	return path, node, nil
 }
 
-func (fs *FS) TreeSearch(treeID ObjID, fn func(Key) int) (Item, error) {
+func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
 	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
 		return Item{}, err
@@ -618,15 +621,21 @@ func (fs *FS) TreeSearch(treeID ObjID, fn func(Key) int) (Item, error) {
 	return node.Data.BodyLeaf[path.Node(-1).ItemIdx], nil
 }
 
+func KeySearch(fn func(Key) int) func(Key, uint32) int {
+	return func(key Key, _ uint32) int {
+		return fn(key)
+	}
+}
+
 func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
-	item, err := fs.TreeSearch(treeID, key.Cmp)
+	item, err := fs.TreeSearch(treeID, KeySearch(key.Cmp))
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
 	}
 	return item, err
 }
 
-func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
+func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, error) {
 	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
 		return nil, err
@@ -649,7 +658,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			break
 		}
 		prevItem := prevNode.Data.BodyLeaf[prevPath.Node(-1).ItemIdx]
-		if fn(prevItem.Key) != 0 {
+		if fn(prevItem.Key, prevItem.BodySize) != 0 {
 			break
 		}
 		ret = append(ret, prevItem)
@@ -665,7 +674,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key) int) ([]Item, error) {
 			break
 		}
 		nextItem := nextNode.Data.BodyLeaf[nextPath.Node(-1).ItemIdx]
-		if fn(nextItem.Key) != 0 {
+		if fn(nextItem.Key, nextItem.BodySize) != 0 {
 			break
 		}
 		ret = append(ret, nextItem)

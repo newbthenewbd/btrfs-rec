@@ -247,8 +247,9 @@ func (node *Node) marshalInternalTo(bodyBuf []byte) error {
 // Node: "leaf" ////////////////////////////////////////////////////////////////////////////////////
 
 type Item struct {
-	Key  Key
-	Body btrfsitem.Item
+	Key      Key
+	BodySize uint32 // [ignored-when-writing]
+	Body     btrfsitem.Item
 }
 
 type ItemHeader struct {
@@ -287,8 +288,9 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 		dataBuf := bodyBuf[dataOff : dataOff+dataSize]
 
 		node.BodyLeaf = append(node.BodyLeaf, Item{
-			Key:  itemHead.Key,
-			Body: btrfsitem.UnmarshalItem(itemHead.Key, node.ChecksumType, dataBuf),
+			Key:      itemHead.Key,
+			BodySize: itemHead.DataSize,
+			Body:     btrfsitem.UnmarshalItem(itemHead.Key, node.ChecksumType, dataBuf),
 		})
 	}
 
