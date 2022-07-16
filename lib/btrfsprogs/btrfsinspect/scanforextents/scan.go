@@ -24,11 +24,27 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 	}
 
 	dlog.Info(ctx, "Reverse-indexing and validating logical sums...")
+	var totalSums int
+	_ = sums.WalkLogical(func(btrfsvol.LogicalAddr, ShortSum) error {
+		totalSums++
+		return nil
+	})
 	sum2laddrs := make(map[ShortSum][]btrfsvol.LogicalAddr)
+	var curSum int
+	lastPct := -1
+	progress := func(curSum int) {
+		pct := int(100 * float64(curSum) / float64(totalSums))
+		if pct != lastPct || curSum == totalSums {
+			dlog.Infof(ctx, "... reversed+validated %v%%", pct)
+			lastPct = pct
+		}
+	}
 	if err := sums.WalkLogical(func(laddr btrfsvol.LogicalAddr, expShortSum ShortSum) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		progress(curSum)
+		curSum++
 		readSum, err := ChecksumLogical(fs, sb.ChecksumType, laddr)
 		if err != nil {
 			if errors.Is(err, btrfsvol.ErrCouldNotMap) {
@@ -46,6 +62,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 	}); err != nil {
 		return err
 	}
+	progress(totalSums)
 	dlog.Info(ctx, "... done reverse-indexing and validating")
 
 	dlog.Info(ctx, "Cross-referencing sums (and blockgroups) to re-construct mappings...")
@@ -162,16 +179,34 @@ func (em *ExtentMappings) ScanOneDev(
 
 	dlog.Infof(ctx, "... dev[%q] Scanning for extents...", devName)
 
-	lastProgress := -1
-	potentialMappings := 0
-	return WalkGaps(ctx, gaps, csumBlockSize,
-		func(curBlock, totalBlocks int64) {
-			pct := int(100 * float64(curBlock) / float64(totalBlocks))
-			if pct != lastProgress || curBlock == totalBlocks {
-				dlog.Infof(ctx, "... dev[%q] scanned %v%% (constructed %v potential mappings)",
-					devName, pct, potentialMappings)
-				lastProgress = pct
+	var totalMappings int
+	_ = WalkGaps(ctx, gaps, csumBlockSize,
+		func(_, _ int64) {},
+		func(paddr btrfsvol.PhysicalAddr) error {
+			qpaddr := btrfsvol.QualifiedPhysicalAddr{
+				Dev:  devID,
+				Addr: paddr,
 			}
+			sum, _ := em.InSums.SumForPAddr(qpaddr)
+			totalMappings += len(em.InReverseSums[sum])
+			return nil
+		},
+	)
+
+	lastProgress := -1
+	considered := 0
+	accepted := 0
+	progress := func() {
+		pct := int(100 * 10000 * float64(considered) / float64(totalMappings))
+		if pct != lastProgress || considered == totalMappings {
+			dlog.Infof(ctx, "... dev[%q] scanned %v%% (considered %v/%v pairings, accepted %v)",
+				devName, float64(pct)/10000.0, considered, totalMappings, accepted)
+			lastProgress = pct
+		}
+	}
+	return WalkGaps(ctx, gaps, csumBlockSize,
+		func(_, _ int64) {
+			progress()
 		},
 		func(paddr btrfsvol.PhysicalAddr) error {
 			qpaddr := btrfsvol.QualifiedPhysicalAddr{
@@ -179,13 +214,20 @@ func (em *ExtentMappings) ScanOneDev(
 				Addr: paddr,
 			}
 			sum, _ := em.InSums.SumForPAddr(qpaddr)
-			for _, laddr := range em.InReverseSums[sum] {
+			for i, laddr := range em.InReverseSums[sum] {
+				if i%100 == 0 {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+				}
 				mapping, ok := em.considerMapping(ctx, laddr, qpaddr)
+				considered++
 				if !ok {
 					continue
 				}
 				em.addMapping(sum, mapping)
-				potentialMappings++
+				accepted++
+				progress()
 			}
 
 			return nil
