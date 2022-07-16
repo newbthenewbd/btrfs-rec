@@ -25,11 +25,13 @@ func init() {
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
+			dlog.Infof(ctx, "Reading %q...", args[0])
 			bgs, err := scanforextents.ReadNodeScanResults(fs, args[0])
 			if err != nil {
 				return err
 			}
 			runtime.GC()
+			dlog.Infof(ctx, "... done reading %q", args[0])
 
 			if err := scanforextents.ScanForExtents(ctx, fs, bgs); err != nil {
 				return err

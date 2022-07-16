@@ -6,6 +6,7 @@ package scanforextents
 
 import (
 	"context"
+	"runtime"
 	"sync"
 
 	"github.com/datawire/dlib/dgroup"
@@ -27,6 +28,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockGroups *BlockGroupTr
 		dlog.Info(ctx, "No unmapped checksums")
 		return nil
 	}
+	runtime.GC()
 
 	devs := fs.LV.PhysicalVolumes()
 	gaps := ListPhysicalGaps(fs)
@@ -38,6 +40,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockGroups *BlockGroupTr
 		InBlockGroups: blockGroups,
 	}
 
+	dlog.Info(ctx, "Scanning devices...")
 	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 	for devID := range gaps {
 		dev := devs[devID]
@@ -103,7 +106,7 @@ func (em *ExtentMappings) init() error {
 	return em.initErr
 }
 
-func (em *ExtentMappings) considerMapping(dev *btrfs.Device, laddr btrfsvol.LogicalAddr, paddr btrfsvol.QualifiedPhysicalAddr) (btrfsvol.Mapping, bool) {
+func (em *ExtentMappings) considerMapping(ctx context.Context, dev *btrfs.Device, laddr btrfsvol.LogicalAddr, paddr btrfsvol.QualifiedPhysicalAddr) (btrfsvol.Mapping, bool) {
 	blockgroup := LookupBlockGroup(em.InBlockGroups, laddr, csumBlockSize)
 	if blockgroup == nil {
 		return btrfsvol.Mapping{
@@ -130,9 +133,15 @@ func (em *ExtentMappings) considerMapping(dev *btrfs.Device, laddr btrfsvol.Logi
 	}
 
 	for offset := btrfsvol.AddrDelta(0); offset <= mapping.Size; offset += csumBlockSize {
+		if err := ctx.Err(); err != nil {
+			return btrfsvol.Mapping{}, false
+		}
 		expCSum, err := LookupCSum(em.InFS, em.alg, mapping.LAddr.Add(offset))
 		if err != nil {
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return btrfsvol.Mapping{}, false
 		}
 		actCSum, err := ChecksumPhysical(dev, em.alg, mapping.PAddr.Addr.Add(offset))
 		if err != nil {
@@ -173,12 +182,13 @@ func (em *ExtentMappings) ScanOneDev(ctx context.Context, dev *btrfs.Device, gap
 	sumSize := em.alg.Size()
 
 	lastProgress := -1
+	potentialMappings := 0
 	return WalkGapsOneDev(ctx, dev, gaps, csumBlockSize,
 		func(curBlock, totalBlocks int64) {
 			pct := int(100 * float64(curBlock) / float64(totalBlocks))
 			if pct != lastProgress || curBlock == totalBlocks {
-				dlog.Infof(ctx, "... dev[%q] scanned %v%%",
-					dev.Name(), pct)
+				dlog.Infof(ctx, "... dev[%q] scanned %v%% (constructed %v potential mappings)",
+					dev.Name(), pct, potentialMappings)
 				lastProgress = pct
 			}
 		},
@@ -198,14 +208,18 @@ func (em *ExtentMappings) ScanOneDev(ctx context.Context, dev *btrfs.Device, gap
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				mapping, ok := em.considerMapping(dev, laddr, btrfsvol.QualifiedPhysicalAddr{
+				mapping, ok := em.considerMapping(ctx, dev, laddr, btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
 					Addr: paddr,
 				})
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if !ok {
 					continue
 				}
 				em.addMapping(shortSum, mapping)
+				potentialMappings++
 			}
 
 			return nil
