@@ -20,7 +20,7 @@ import (
 
 func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.LogicalAddr]BlockGroup, sums AllSums) error {
 	dlog.Info(ctx, "Pairing up blockgroups and sums...")
-	bgSums := make(map[btrfsvol.LogicalAddr][]SumRun[btrfsvol.LogicalAddr])
+	bgSums := make(map[btrfsvol.LogicalAddr]SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
 		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
@@ -51,10 +51,9 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		bgRuns := bgSums[bgLAddr]
-		if len(bgRuns) != 1 {
-			// TODO(lukeshu): We aught to handle this rather than erroring and skipping
-			// it.
-			dlog.Errorf(ctx, "blockgroup laddr=%v has holes (%v runs)", bgLAddr, len(bgRuns))
+		if len(bgRuns) == 0 {
+			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
+				i+1, len(bgSums), bgLAddr)
 			continue
 		}
 		bgRun := bgRuns[0]

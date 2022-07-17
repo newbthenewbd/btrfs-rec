@@ -22,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 const CSumBlockSize = 4 * 1024
@@ -79,6 +80,54 @@ func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error)
 		}
 	}
 	return nil
+}
+
+// SumRunWithGaps ////////////////////////////////////////////////////
+
+type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] []SumRun[Addr]
+
+func (sg SumRunWithGaps[Addr]) end() Addr {
+	return sg[len(sg)-1].Addr.Add(sg[len(sg)-1].Size())
+}
+
+func (sg SumRunWithGaps[Addr]) Size() btrfsvol.AddrDelta {
+	if len(sg) == 0 {
+		return 0
+	}
+	return sg.end().Sub(sg[0].Addr)
+}
+
+func (sg SumRunWithGaps[Addr]) NumSums() int {
+	return int(sg.Size() / CSumBlockSize)
+}
+
+func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
+	if len(sg) == 0 {
+		return "", io.EOF
+	}
+	if addr < sg[0].Addr || addr >= sg.end() {
+		return "", io.EOF
+	}
+	for _, run := range sg {
+		if run.Addr > addr {
+			return "", diskio.ErrWildcard
+		}
+		if run.Addr.Add(run.Size()) <= addr {
+			continue
+		}
+		off := int((addr-run.Addr)/CSumBlockSize) * run.ChecksumSize
+		return ShortSum(run.Sums[off : off+run.ChecksumSize]), nil
+	}
+	return "", diskio.ErrWildcard
+}
+
+// Get implements diskio.Sequence[int, ShortSum]
+func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (ShortSum, error) {
+	if len(sg) == 0 {
+		return "", io.EOF
+	}
+	addr := sg[0].Addr.Add(btrfsvol.AddrDelta(sumIdx) * CSumBlockSize)
+	return sg.SumForAddr(addr)
 }
 
 // AllSums ///////////////////////////////////////////////////////////
