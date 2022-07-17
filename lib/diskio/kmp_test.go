@@ -6,6 +6,7 @@ package diskio
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,57 @@ func FuzzIndexAll(f *testing.F) {
 		assert.NoError(t, err)
 		assert.Equal(t, exp, act)
 	})
+}
+
+type RESeq string
+
+func (re RESeq) Get(i int64) (byte, error) {
+	if i < 0 || i >= int64(len(re)) {
+		return 0, io.EOF
+	}
+	chr := re[int(i)]
+	if chr == '.' {
+		return 0, ErrWildcard
+	}
+	return chr, nil
+}
+
+func TestKMPWildcard(t *testing.T) {
+	type testcase struct {
+		InStr      string
+		InSubstr   string
+		ExpMatches []int64
+	}
+	testcases := map[string]testcase{
+		"trivial-bar": {
+			InStr:      "foo_bar",
+			InSubstr:   "foo.ba.",
+			ExpMatches: []int64{0},
+		},
+		"trival-baz": {
+			InStr:      "foo-baz",
+			InSubstr:   "foo.ba.",
+			ExpMatches: []int64{0},
+		},
+		"suffix": {
+			InStr:      "foobarbaz",
+			InSubstr:   "...baz",
+			ExpMatches: []int64{3},
+		},
+		"overlap": {
+			InStr:      "foobarbar",
+			InSubstr:   "...bar",
+			ExpMatches: []int64{0, 3},
+		},
+	}
+	for tcName, tc := range testcases {
+		tc := tc
+		t.Run(tcName, func(t *testing.T) {
+			matches, err := IndexAll[int64, byte](
+				StringSequence[int64](tc.InStr),
+				RESeq(tc.InSubstr))
+			assert.NoError(t, err)
+			assert.Equal(t, tc.ExpMatches, matches)
+		})
+	}
 }
