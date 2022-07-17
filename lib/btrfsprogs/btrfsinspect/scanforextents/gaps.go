@@ -12,6 +12,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type PhysicalGap struct {
@@ -53,30 +54,25 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 }
 
 func WalkGaps(ctx context.Context,
-	gaps []PhysicalGap, blockSize btrfsvol.PhysicalAddr,
-	progress func(cur, total int64),
-	main func(btrfsvol.PhysicalAddr) error,
+	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
+	fn func(btrfsvol.DeviceID, SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
-	var totalBlocks int64
-	for _, gap := range gaps {
-		for paddr := roundUp(gap.Beg, blockSize); paddr+blockSize <= gap.End; paddr += blockSize {
-			totalBlocks++
-		}
-	}
-
-	var curBlock int64
-	for _, gap := range gaps {
-		for paddr := roundUp(gap.Beg, blockSize); paddr+blockSize <= gap.End; paddr += blockSize {
+	for _, devID := range maps.SortedKeys(gaps) {
+		for _, gap := range gaps[devID] {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			progress(curBlock, totalBlocks)
-			curBlock++
-			if err := main(paddr); err != nil {
+			begAddr := roundUp(gap.Beg, csumBlockSize)
+			begOff := int(begAddr/csumBlockSize) * sums.Physical[devID].ChecksumSize
+			endOff := int(gap.End/csumBlockSize) * sums.Physical[devID].ChecksumSize
+			if err := fn(devID, SumRun[btrfsvol.PhysicalAddr]{
+				ChecksumSize: sums.Physical[devID].ChecksumSize,
+				Addr:         begAddr,
+				Sums:         sums.Physical[devID].Sums[begOff:endOff],
+			}); err != nil {
 				return err
 			}
 		}
 	}
-	progress(curBlock, totalBlocks)
 	return nil
 }

@@ -8,16 +8,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
 
-func ReadNodeScanResults(fs *btrfs.FS, filename string) (*BlockGroupTree, error) {
+type BlockGroup struct {
+	LAddr btrfsvol.LogicalAddr
+	Size  btrfsvol.AddrDelta
+	Flags btrfsvol.BlockGroupFlags
+}
+
+func ReadNodeScanResults(fs *btrfs.FS, filename string) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	scanResultsBytes, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -36,43 +43,8 @@ func ReadNodeScanResults(fs *btrfs.FS, filename string) (*BlockGroupTree, error)
 	return bgTree, nil
 }
 
-type BlockGroup struct {
-	LAddr btrfsvol.LogicalAddr
-	Size  btrfsvol.AddrDelta
-	Flags btrfsvol.BlockGroupFlags
-}
-
-type BlockGroupTree = containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], BlockGroup]
-
-func LookupBlockGroup(tree *BlockGroupTree, laddr btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) *BlockGroup {
-	a := struct {
-		LAddr btrfsvol.LogicalAddr
-		Size  btrfsvol.AddrDelta
-	}{
-		LAddr: laddr,
-		Size:  size,
-	}
-	node := tree.Search(func(b BlockGroup) int {
-		switch {
-		case a.LAddr.Add(a.Size) <= b.LAddr:
-			// 'a' is wholly to the left of 'b'.
-			return -1
-		case b.LAddr.Add(b.Size) <= a.LAddr:
-			// 'a' is wholly to the right of 'b'.
-			return 1
-		default:
-			// There is some overlap.
-			return 0
-		}
-	})
-	if node == nil {
-		return nil
-	}
-	bg := node.Value
-	return &bg
-}
-
-func ReduceScanResults(fs *btrfs.FS, scanResults NodeScanResults) (*BlockGroupTree, error) {
+func ReduceScanResults(fs *btrfs.FS, scanResults NodeScanResults) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
+	// Reduce
 	bgSet := make(map[BlockGroup]struct{})
 	for _, found := range scanResults {
 		for _, bg := range found.FoundBlockGroups {
@@ -83,19 +55,24 @@ func ReduceScanResults(fs *btrfs.FS, scanResults NodeScanResults) (*BlockGroupTr
 			}] = struct{}{}
 		}
 	}
-	bgTree := &BlockGroupTree{
-		KeyFn: func(bg BlockGroup) containers.NativeOrdered[btrfsvol.LogicalAddr] {
-			return containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: bg.LAddr}
-		},
-	}
-	for bg := range bgSet {
-		if laddr, _ := fs.LV.ResolveAny(bg.LAddr, bg.Size); laddr >= 0 {
-			continue
-		}
-		if LookupBlockGroup(bgTree, bg.LAddr, bg.Size) != nil {
+
+	// Sanity check
+	bgList := maps.Keys(bgSet)
+	sort.Slice(bgList, func(i, j int) bool {
+		return bgList[i].LAddr < bgList[j].LAddr
+	})
+	var pos btrfsvol.LogicalAddr
+	for _, bg := range bgList {
+		if bg.LAddr < pos || bg.Size < 0 {
 			return nil, fmt.Errorf("found block groups are inconsistent")
 		}
-		bgTree.Insert(bg)
+		pos = bg.LAddr.Add(bg.Size)
 	}
-	return bgTree, nil
+
+	// Return
+	bgMap := make(map[btrfsvol.LogicalAddr]BlockGroup, len(bgSet))
+	for bg := range bgSet {
+		bgMap[bg.LAddr] = bg
+	}
+	return bgMap, nil
 }

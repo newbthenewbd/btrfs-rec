@@ -7,71 +7,128 @@ package scanforextents
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTree, sums AllSums) error {
-	sb, err := fs.Superblock()
-	if err != nil {
-		return err
-	}
-
-	dlog.Info(ctx, "Reverse-indexing and validating logical sums...")
-	var totalSums int
-	if err := sums.WalkLogical(ctx, func(btrfsvol.LogicalAddr, ShortSum) error {
-		totalSums++
+func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.LogicalAddr]BlockGroup, sums AllSums) error {
+	dlog.Info(ctx, "Pairing up blockgroups and sums...")
+	bgSums := make(map[btrfsvol.LogicalAddr][]SumRun[btrfsvol.LogicalAddr])
+	for _, blockgroup := range blockgroups {
+		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
+			run, ok := sums.RunForLAddr(laddr)
+			if !ok {
+				laddr += csumBlockSize
+				continue
+			}
+			off := int((laddr-run.Addr)/csumBlockSize) * run.ChecksumSize
+			deltaAddr := slices.Min[btrfsvol.AddrDelta](
+				blockgroup.Size-laddr.Sub(blockgroup.LAddr),
+				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*csumBlockSize)
+			deltaOff := int(deltaAddr/csumBlockSize) * run.ChecksumSize
+			bgSums[blockgroup.LAddr] = append(bgSums[blockgroup.LAddr], SumRun[btrfsvol.LogicalAddr]{
+				ChecksumSize: run.ChecksumSize,
+				Addr:         laddr,
+				Sums:         run.Sums[off : off+deltaOff],
+			})
+			laddr = laddr.Add(deltaAddr)
+		}
 		return nil
-	}); err != nil {
-		return err
 	}
-	sum2laddrs := make(map[ShortSum][]btrfsvol.LogicalAddr)
-	var curSum int
-	lastPct := -1
-	progress := func(curSum int) {
-		pct := int(100 * float64(curSum) / float64(totalSums))
-		if pct != lastPct || curSum == totalSums {
-			dlog.Infof(ctx, "... reversed+validated %v%%", pct)
-			lastPct = pct
+	dlog.Info(ctx, "... done pairing")
+
+	dlog.Info(ctx, "Searching for unmapped blockgroups in unmapped regions...")
+	gaps := ListPhysicalGaps(fs)
+	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
+	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
+		bgRuns := bgSums[bgLAddr]
+		if len(bgRuns) != 1 {
+			// TODO(lukeshu): We aught to handle this rather than erroring and skipping
+			// it.
+			dlog.Errorf(ctx, "blockgroup laddr=%v has holes (%v runs)", bgLAddr, len(bgRuns))
+			continue
+		}
+		bgRun := bgRuns[0]
+
+		if err := WalkGaps(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap SumRun[btrfsvol.PhysicalAddr]) error {
+			matches, err := diskio.IndexAll[int64, ShortSum](gap, bgRun)
+			if err != nil {
+				return err
+			}
+			for _, match := range matches {
+				bgMatches[bgLAddr] = append(bgMatches[bgLAddr], btrfsvol.QualifiedPhysicalAddr{
+					Dev:  devID,
+					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * csumBlockSize),
+				})
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v matches",
+			i+1, len(bgSums), bgLAddr, len(bgMatches[bgLAddr]))
+	}
+	dlog.Info(ctx, "... done searching")
+
+	dlog.Info(ctx, "Applying those mappings...")
+	for _, bgLAddr := range maps.SortedKeys(bgMatches) {
+		matches := bgMatches[bgLAddr]
+		if len(matches) != 1 {
+			continue
+		}
+		blockgroup := blockgroups[bgLAddr]
+		mapping := btrfsvol.Mapping{
+			LAddr:      blockgroup.LAddr,
+			PAddr:      matches[0],
+			Size:       blockgroup.Size,
+			SizeLocked: true,
+			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
+				OK:  true,
+				Val: blockgroup.Flags,
+			},
+		}
+		if err := fs.LV.AddMapping(mapping); err != nil {
+			dlog.Error(ctx, err)
 		}
 	}
-	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, expShortSum ShortSum) error {
-		progress(curSum)
-		curSum++
-		readSum, err := ChecksumLogical(fs, sb.ChecksumType, laddr)
-		if err != nil {
+	dlog.Info(ctx, "... done applying")
+
+	dlog.Info(ctx, "Reverse-indexing remaining unmapped logical sums...")
+	sum2laddrs := make(map[ShortSum][]btrfsvol.LogicalAddr)
+	var numUnmappedBlocks int64
+	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, sum ShortSum) error {
+		var dat [csumBlockSize]byte
+		if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 			if errors.Is(err, btrfsvol.ErrCouldNotMap) {
-				sum2laddrs[expShortSum] = append(sum2laddrs[expShortSum], laddr)
+				sum2laddrs[sum] = append(sum2laddrs[sum], laddr)
+				numUnmappedBlocks++
 				return nil
 			}
 			return err
 		}
-		readShortSum := ShortSum(readSum[:len(expShortSum)])
-		if readShortSum != expShortSum {
-			return fmt.Errorf("checksum mismatch at laddr=%v: CSUM_TREE=%x != read=%x",
-				laddr, []byte(expShortSum), []byte(readShortSum))
-		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	progress(totalSums)
-	dlog.Info(ctx, "... done reverse-indexing and validating")
+	dlog.Infof(ctx, "... done reverse-indexing; %v still unmapped logical sums",
+		numUnmappedBlocks)
 
-	dlog.Info(ctx, "Cross-referencing sums (and blockgroups) to re-construct mappings...")
+	/* TODO
+
+	dlog.Info(ctx, "Cross-referencing sums to re-construct mappings...")
 	newMappings := &ExtentMappings{
 		InLV:          &fs.LV,
 		InBlockGroups: blockgroups,
 		InSums:        sums,
 		InReverseSums: sum2laddrs,
 	}
-	devs := fs.LV.PhysicalVolumes()
 	gaps := ListPhysicalGaps(fs)
 	for _, devID := range maps.SortedKeys(gaps) {
 		if err := newMappings.ScanOneDev(ctx,
@@ -98,8 +155,12 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups *BlockGroupTr
 	}
 	dlog.Info(ctx, "... done applying")
 
+	*/
+
 	return nil
 }
+
+/*
 
 type ExtentMappings struct {
 	// input
@@ -233,3 +294,5 @@ func (em *ExtentMappings) ScanOneDev(
 		},
 	)
 }
+
+*/
