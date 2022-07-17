@@ -62,9 +62,9 @@ func WalkGaps(ctx context.Context,
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			begAddr := roundUp(gap.Beg, csumBlockSize)
-			begOff := int(begAddr/csumBlockSize) * sums.Physical[devID].ChecksumSize
-			endOff := int(gap.End/csumBlockSize) * sums.Physical[devID].ChecksumSize
+			begAddr := roundUp(gap.Beg, CSumBlockSize)
+			begOff := int(begAddr/CSumBlockSize) * sums.Physical[devID].ChecksumSize
+			endOff := int(gap.End/CSumBlockSize) * sums.Physical[devID].ChecksumSize
 			if err := fn(devID, SumRun[btrfsvol.PhysicalAddr]{
 				ChecksumSize: sums.Physical[devID].ChecksumSize,
 				Addr:         begAddr,

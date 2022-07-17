@@ -14,7 +14,7 @@ import (
 )
 
 func ChecksumLogical(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.CSum, error) {
-	var dat [csumBlockSize]byte
+	var dat [CSumBlockSize]byte
 	if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 		return btrfssum.CSum{}, err
 	}
@@ -22,7 +22,7 @@ func ChecksumLogical(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.Logic
 }
 
 func ChecksumPhysical(dev *btrfs.Device, alg btrfssum.CSumType, paddr btrfsvol.PhysicalAddr) (btrfssum.CSum, error) {
-	var dat [csumBlockSize]byte
+	var dat [CSumBlockSize]byte
 	if _, err := dev.ReadAt(dat[:], paddr); err != nil {
 		return btrfssum.CSum{}, err
 	}
@@ -41,7 +41,7 @@ func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAdd
 	item, err := fs.TreeSearch(btrfs.CSUM_TREE_OBJECTID, func(key btrfs.Key, size uint32) int {
 		itemBeg := btrfsvol.LogicalAddr(key.ObjectID)
 		numSums := int64(size) / int64(alg.Size())
-		itemEnd := itemBeg + btrfsvol.LogicalAddr(numSums*csumBlockSize)
+		itemEnd := itemBeg + btrfsvol.LogicalAddr(numSums*CSumBlockSize)
 		switch {
 		case itemEnd <= laddr:
 			return 1
@@ -60,7 +60,7 @@ func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAdd
 	}
 	ret := make(map[btrfsvol.LogicalAddr]btrfssum.CSum, len(body.Sums))
 	for i, sum := range body.Sums {
-		ret[btrfsvol.LogicalAddr(item.Key.ObjectID)+(btrfsvol.LogicalAddr(i)*csumBlockSize)] = sum
+		ret[btrfsvol.LogicalAddr(item.Key.ObjectID)+(btrfsvol.LogicalAddr(i)*CSumBlockSize)] = sum
 	}
 	return ret, nil
 }
