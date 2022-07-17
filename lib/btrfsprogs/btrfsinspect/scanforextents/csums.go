@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/gob"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"strings"
@@ -53,7 +54,7 @@ func (run SumRun[Addr]) Size() btrfsvol.AddrDelta {
 
 // Get implements diskio.Sequence[int, ShortSum]
 func (run SumRun[Addr]) Get(sumIdx int64) (ShortSum, error) {
-	if sumIdx < 0 || int(sumIdx) > run.NumSums() {
+	if sumIdx < 0 || int(sumIdx) >= run.NumSums() {
 		return "", io.EOF
 	}
 	off := int(sumIdx) * run.ChecksumSize
@@ -95,21 +96,21 @@ func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (ShortSum, b
 	return run.SumForAddr(paddr.Addr)
 }
 
-func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (SumRun[btrfsvol.LogicalAddr], bool) {
+func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (SumRun[btrfsvol.LogicalAddr], btrfsvol.LogicalAddr, bool) {
 	for _, run := range as.Logical {
 		if run.Addr > laddr {
-			return SumRun[btrfsvol.LogicalAddr]{}, false
+			return SumRun[btrfsvol.LogicalAddr]{}, run.Addr, false
 		}
 		if run.Addr.Add(run.Size()) <= laddr {
 			continue
 		}
-		return run, true
+		return run, 0, true
 	}
-	return SumRun[btrfsvol.LogicalAddr]{}, false
+	return SumRun[btrfsvol.LogicalAddr]{}, math.MaxInt64, false
 }
 
 func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (ShortSum, bool) {
-	run, ok := as.RunForLAddr(laddr)
+	run, _, ok := as.RunForLAddr(laddr)
 	if !ok {
 		return "", false
 	}
@@ -180,7 +181,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 
 					for i, sum := range body.Sums {
 						laddr := btrfsvol.LogicalAddr(item.Key.Offset) + (btrfsvol.LogicalAddr(i) * csumBlockSize)
-						if laddr != curAddr {
+						if laddr != curAddr+(btrfsvol.LogicalAddr(curSums.Len()/csumSize)*csumBlockSize) {
 							if curSums.Len() > 0 {
 								ret.Logical = append(ret.Logical, SumRun[btrfsvol.LogicalAddr]{
 									ChecksumSize: csumSize,

@@ -21,11 +21,12 @@ import (
 func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.LogicalAddr]BlockGroup, sums AllSums) error {
 	dlog.Info(ctx, "Pairing up blockgroups and sums...")
 	bgSums := make(map[btrfsvol.LogicalAddr][]SumRun[btrfsvol.LogicalAddr])
-	for _, blockgroup := range blockgroups {
+	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
+		blockgroup := blockgroups[bgLAddr]
 		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
-			run, ok := sums.RunForLAddr(laddr)
+			run, next, ok := sums.RunForLAddr(laddr)
 			if !ok {
-				laddr += csumBlockSize
+				laddr = next
 				continue
 			}
 			off := int((laddr-run.Addr)/csumBlockSize) * run.ChecksumSize
@@ -40,7 +41,8 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			})
 			laddr = laddr.Add(deltaAddr)
 		}
-		return nil
+		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs",
+			i+1, len(blockgroups), bgLAddr, len(bgSums[blockgroup.LAddr]))
 	}
 	dlog.Info(ctx, "... done pairing")
 
