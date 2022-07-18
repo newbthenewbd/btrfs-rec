@@ -84,31 +84,30 @@ func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error)
 
 // SumRunWithGaps ////////////////////////////////////////////////////
 
-type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] []SumRun[Addr]
-
-func (sg SumRunWithGaps[Addr]) end() Addr {
-	return sg[len(sg)-1].Addr.Add(sg[len(sg)-1].Size())
-}
-
-func (sg SumRunWithGaps[Addr]) Size() btrfsvol.AddrDelta {
-	if len(sg) == 0 {
-		return 0
-	}
-	return sg.end().Sub(sg[0].Addr)
+type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
+	Addr Addr
+	Size btrfsvol.AddrDelta
+	Runs []SumRun[Addr]
 }
 
 func (sg SumRunWithGaps[Addr]) NumSums() int {
-	return int(sg.Size() / CSumBlockSize)
+	return int(sg.Size / CSumBlockSize)
+}
+
+func (sg SumRunWithGaps[Addr]) PctFull() float64 {
+	total := sg.NumSums()
+	var full int
+	for _, run := range sg.Runs {
+		full += run.NumSums()
+	}
+	return float64(full) / float64(total)
 }
 
 func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
-	if len(sg) == 0 {
+	if addr < sg.Addr || addr >= sg.Addr.Add(sg.Size) {
 		return "", io.EOF
 	}
-	if addr < sg[0].Addr || addr >= sg.end() {
-		return "", io.EOF
-	}
-	for _, run := range sg {
+	for _, run := range sg.Runs {
 		if run.Addr > addr {
 			return "", diskio.ErrWildcard
 		}
@@ -123,10 +122,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 
 // Get implements diskio.Sequence[int, ShortSum]
 func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (ShortSum, error) {
-	if len(sg) == 0 {
-		return "", io.EOF
-	}
-	addr := sg[0].Addr.Add(btrfsvol.AddrDelta(sumIdx) * CSumBlockSize)
+	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * CSumBlockSize)
 	return sg.SumForAddr(addr)
 }
 

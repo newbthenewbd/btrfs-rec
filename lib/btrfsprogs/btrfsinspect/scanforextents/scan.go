@@ -23,6 +23,10 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	bgSums := make(map[btrfsvol.LogicalAddr]SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
+		runs := SumRunWithGaps[btrfsvol.LogicalAddr]{
+			Addr: blockgroup.LAddr,
+			Size: blockgroup.Size,
+		}
 		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
 			run, next, ok := sums.RunForLAddr(laddr)
 			if !ok {
@@ -34,15 +38,16 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 				blockgroup.Size-laddr.Sub(blockgroup.LAddr),
 				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*CSumBlockSize)
 			deltaOff := int(deltaAddr/CSumBlockSize) * run.ChecksumSize
-			bgSums[blockgroup.LAddr] = append(bgSums[blockgroup.LAddr], SumRun[btrfsvol.LogicalAddr]{
+			runs.Runs = append(runs.Runs, SumRun[btrfsvol.LogicalAddr]{
 				ChecksumSize: run.ChecksumSize,
 				Addr:         laddr,
 				Sums:         run.Sums[off : off+deltaOff],
 			})
 			laddr = laddr.Add(deltaAddr)
 		}
-		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs",
-			i+1, len(blockgroups), bgLAddr, len(bgSums[blockgroup.LAddr]))
+		bgSums[blockgroup.LAddr] = runs
+		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
+			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(runs.PctFull()))
 	}
 	dlog.Info(ctx, "... done pairing")
 
@@ -50,13 +55,12 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	gaps := ListPhysicalGaps(fs)
 	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
-		bgRuns := bgSums[bgLAddr]
-		if len(bgRuns) == 0 {
+		bgRun := bgSums[bgLAddr]
+		if len(bgRun.Runs) == 0 {
 			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
 				i+1, len(bgSums), bgLAddr)
 			continue
 		}
-		bgRun := bgRuns[0]
 
 		if err := WalkGaps(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap SumRun[btrfsvol.PhysicalAddr]) error {
 			matches, err := diskio.IndexAll[int64, ShortSum](gap, bgRun)
