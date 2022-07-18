@@ -78,15 +78,27 @@ func printText(out io.Writer, prefix string, isLast bool, name, text string) {
 func printSubvol(out io.Writer, prefix string, isLast bool, name string, subvol *btrfs.Subvolume) {
 	rootInode, err := subvol.GetRootInode()
 	if err != nil {
-		printText(out, prefix, isLast, name, "err="+err.Error())
+		printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v err=%v",
+			subvol.TreeID, err))
 		return
 	}
 	dir, err := subvol.LoadDir(rootInode)
 	if err != nil {
-		printText(out, prefix, isLast, name, "err="+err.Error())
+		printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v err=%v",
+			subvol.TreeID, err))
 		return
 	}
-	printDir(out, prefix, isLast, name, dir)
+	if name == "/" {
+		printDir(out, prefix, isLast, name, dir)
+		return
+	}
+	printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v", subvol.TreeID))
+	if isLast {
+		prefix += tS
+	} else {
+		prefix += tl
+	}
+	printDir(out, prefix, true, name, dir)
 }
 
 func fmtInode(inode btrfs.BareInode) string {
@@ -109,7 +121,7 @@ func fmtInode(inode btrfs.BareInode) string {
 }
 
 func printDir(out io.Writer, prefix string, isLast bool, name string, dir *btrfs.Dir) {
-	printText(out, prefix, isLast, name, fmtInode(dir.BareInode))
+	printText(out, prefix, isLast, name+"/", fmtInode(dir.BareInode))
 	if isLast {
 		prefix += tS
 	} else {
@@ -136,7 +148,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		case btrfsitem.INODE_ITEM_KEY:
 			dir, err := subvol.LoadDir(entry.Location.ObjectID)
 			if err != nil {
-				printText(out, prefix, isLast, name, "err="+err.Error())
+				printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, err))
 				return
 			}
 			printDir(out, prefix, isLast, name, dir)
@@ -156,7 +168,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, "err="+err.Error())
+			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, err))
 			return
 		}
 		printSymlink(out, prefix, isLast, name, file)
@@ -167,7 +179,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, "err="+err.Error())
+			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, err))
 			return
 		}
 		printFile(out, prefix, isLast, name, file)
@@ -178,7 +190,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, "err="+err.Error())
+			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, err))
 			return
 		}
 		printSocket(out, prefix, isLast, name, file)
@@ -189,7 +201,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, "err="+err.Error())
+			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, err))
 			return
 		}
 		printPipe(out, prefix, isLast, name, file)

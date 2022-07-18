@@ -7,8 +7,7 @@ gen() (
 	if test -s "$tgt"; then
 		return
 	fi
-	set -x
-	time "$@" \
+	{ set -x; time "$@"; } \
 	     >"$tgt" \
 	     2> >(tee >&2 "$log")
 )
@@ -33,6 +32,6 @@ gen $b.gen/2.csums.gob \
 gen $b.gen/3.mappings.json \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/1.mappings.json \
     inspect scan-for-extents $b.gen/0.scan-for-nodes.json $b.gen/2.csums.gob
-
-#time ./btrfs-rec --pv=$b.img --mappings=$b.mappings.0.json inspect ls-files \
-#     &> $b.ls-files.txt
+gen $b.gen/4.ls-files.txt \
+    ./btrfs-rec --pv=$b.img --mappings=$b.gen/3.mappings.json \
+    inspect ls-files
