@@ -29,6 +29,7 @@ type BareInode struct {
 
 type FullInode struct {
 	BareInode
+	XAttrs     map[string]string
 	OtherItems []Item
 }
 
@@ -133,6 +134,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 			BareInode: BareInode{
 				Inode: inode,
 			},
+			XAttrs: make(map[string]string),
 		}
 		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key Key, _ uint32) int {
 			return containers.NativeCmp(inode, key.ObjectID)
@@ -154,6 +156,9 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 					continue
 				}
 				val.InodeItem = &itemBody
+			case btrfsitem.XATTR_ITEM_KEY:
+				itemBody := item.Body.(btrfsitem.DirEntry)
+				val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
 			default:
 				val.OtherItems = append(val.OtherItems, item)
 			}
@@ -233,7 +238,6 @@ func (ret *Dir) populate() {
 				continue
 			}
 			ret.ChildrenByIndex[index] = entry
-		//case btrfsitem.XATTR_ITEM_KEY:
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}

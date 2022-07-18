@@ -411,9 +411,64 @@ func (sv *subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) e
 	return nil
 }
 
-func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error { return syscall.ENOSYS }
 func (sv *subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error {
-	return syscall.ENOSYS
+	if op.Inode == fuseops.RootInodeID {
+		inode, err := sv.GetRootInode()
+		if err != nil {
+			return err
+		}
+		op.Inode = fuseops.InodeID(inode)
+	}
+
+	fullInode, err := sv.LoadFullInode(btrfs.ObjID(op.Inode))
+	if err != nil {
+		return err
+	}
+
+	size := 0
+	for name := range fullInode.XAttrs {
+		size += len(name) + 1
+	}
+	if len(op.Dst) < size {
+		return syscall.ERANGE
+	}
+
+	op.BytesRead = size
+	n := 0
+	for _, name := range maps.SortedKeys(fullInode.XAttrs) {
+		n += copy(op.Dst[n:], name)
+		op.Dst[n] = 0
+		n++
+	}
+	return nil
+}
+
+func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error {
+	if op.Inode == fuseops.RootInodeID {
+		inode, err := sv.GetRootInode()
+		if err != nil {
+			return err
+		}
+		op.Inode = fuseops.InodeID(inode)
+	}
+
+	fullInode, err := sv.LoadFullInode(btrfs.ObjID(op.Inode))
+	if err != nil {
+		return err
+	}
+
+	val, ok := fullInode.XAttrs[op.Name]
+	if !ok {
+		return syscall.ENODATA
+	}
+
+	if len(op.Dst) < len(val) {
+		return syscall.ERANGE
+	}
+
+	op.BytesRead = len(val)
+	copy(op.Dst, val)
+	return nil
 }
 
 func (sv *subvolume) Destroy() {}
