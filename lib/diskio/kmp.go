@@ -15,7 +15,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 	aV, aErr := aS.Get(aI)
 	bV, bErr := bS.Get(bI)
 	if aErr != nil {
-		if errors.Is(aErr, ErrWildcard) {
+		if aErr == ErrWildcard || errors.Is(aErr, ErrWildcard) {
 			aV = bV
 			aErr = nil
 		} else {
@@ -23,7 +23,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 		}
 	}
 	if bErr != nil {
-		if errors.Is(bErr, ErrWildcard) {
+		if bErr == ErrWildcard || errors.Is(bErr, ErrWildcard) {
 			bV = aV
 			bErr = nil
 		} else {
@@ -39,7 +39,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
 	bV, bErr := bS.Get(bI)
 	if bErr != nil {
-		if errors.Is(bErr, ErrWildcard) {
+		if bErr == ErrWildcard || errors.Is(bErr, ErrWildcard) {
 			return true
 		}
 		panic(bErr)
@@ -53,7 +53,7 @@ func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
 func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
 	var substrLen K
 	for {
-		if _, err := substr.Get(substrLen); err != nil && !errors.Is(err, ErrWildcard) {
+		if _, err := substr.Get(substrLen); err != nil && !(err == ErrWildcard || errors.Is(err, ErrWildcard)) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
