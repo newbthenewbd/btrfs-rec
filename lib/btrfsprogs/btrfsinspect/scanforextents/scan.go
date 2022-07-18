@@ -77,8 +77,13 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 		}); err != nil {
 			return err
 		}
-		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v matches",
-			i+1, len(bgSums), bgLAddr, len(bgMatches[bgLAddr]))
+
+		lvl := dlog.LogLevelInfo
+		if len(bgMatches[bgLAddr]) == 0 {
+			lvl = dlog.LogLevelError
+		}
+		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage",
+			i+1, len(bgSums), bgLAddr, len(bgMatches[bgLAddr]), int(100*bgRun.PctFull()))
 	}
 	dlog.Info(ctx, "... done searching")
 
