@@ -47,7 +47,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 		}
 		bgSums[blockgroup.LAddr] = runs
 		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
-			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(runs.PctFull()))
+			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(100*runs.PctFull()))
 	}
 	dlog.Info(ctx, "... done pairing")
 
