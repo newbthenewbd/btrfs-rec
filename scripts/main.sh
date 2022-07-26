@@ -35,3 +35,6 @@ gen $b.gen/3.mappings.json \
 gen $b.gen/4.ls-files.txt \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/3.mappings.json \
     inspect ls-files
+gen $b.gen/4.ls-trees.txt \
+    ./btrfs-rec --pv=$b.img --mappings=$b.gen/3.mappings.json \
+    inspect ls-trees --nodescan=$b.gen/0.scan-for-nodes.json
