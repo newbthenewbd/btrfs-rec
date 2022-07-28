@@ -103,6 +103,34 @@ func (node Node) MaxItems() uint32 {
 	}
 }
 
+func (node Node) MinItem() (Key, bool) {
+	if node.Head.Level > 0 {
+		if len(node.BodyInternal) == 0 {
+			return Key{}, false
+		}
+		return node.BodyInternal[0].Key, true
+	} else {
+		if len(node.BodyLeaf) == 0 {
+			return Key{}, false
+		}
+		return node.BodyLeaf[0].Key, true
+	}
+}
+
+func (node Node) MaxItem() (Key, bool) {
+	if node.Head.Level > 0 {
+		if len(node.BodyInternal) == 0 {
+			return Key{}, false
+		}
+		return node.BodyInternal[len(node.BodyInternal)-1].Key, true
+	} else {
+		if len(node.BodyLeaf) == 0 {
+			return Key{}, false
+		}
+		return node.BodyLeaf[len(node.BodyLeaf)-1].Key, true
+	}
+}
+
 func (node Node) CalculateChecksum() (btrfssum.CSum, error) {
 	data, err := binstruct.Marshal(node)
 	if err != nil {
