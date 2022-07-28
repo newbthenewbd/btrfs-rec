@@ -50,7 +50,7 @@ func init() {
 			dlog.Infof(ctx, "... identified %d lost+found nodes", len(foundRoots))
 
 			dlog.Info(ctx, "Initializing nodes to re-build...")
-			rebuiltNodes, err := reInitBrokenNodes(ctx, fs, foundRoots)
+			rebuiltNodes, err := reInitBrokenNodes(ctx, fs, nodeScanResults, foundRoots)
 			if err != nil {
 				return err
 			}
@@ -156,12 +156,34 @@ func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAd
 	fs.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
 }
 
+func countNodes(nodeScanResults NodeScanResults) int {
+	var cnt int
+	for _, devResults := range nodeScanResults {
+		cnt += len(devResults.FoundNodes)
+	}
+	return cnt
+}
+
 func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeScanResults) (map[btrfsvol.LogicalAddr]struct{}, error) {
+	lastPct := -1
+	total := countNodes(nodeScanResults)
+	progress := func(done int) {
+		pct := int(100 * float64(done) / float64(total))
+		if pct != lastPct || done == total {
+			dlog.Infof(ctx, "... %v%% (%v/%v)",
+				pct, done, total)
+			lastPct = pct
+		}
+	}
+	var done int
+
 	attachedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
-				attachedNodes[node.Addr] = struct{}{}
+			Node: func(path btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+				attachedNodes[path.Node(-1).NodeAddr] = struct{}{}
+				done++
+				progress(done)
 				return nil
 			},
 		},
@@ -178,6 +200,9 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeSc
 			}
 		}
 	}
+	dlog.Infof(ctx,
+		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
+		done, len(orphanedNodes), done+len(orphanedNodes))
 
 	// 'orphanedRoots' is a subset of 'orphanedNodes'; start with
 	// it as the complete orphanedNodes, and then remove entries.
@@ -186,6 +211,8 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeSc
 		orphanedRoots[node] = struct{}{}
 	}
 	for potentialRoot := range orphanedRoots {
+		done++
+		progress(done)
 		if orphanedNodes[potentialRoot] > 1 {
 			continue
 		}
@@ -195,7 +222,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeSc
 				// do nothing
 			},
 			btrfs.TreeWalkHandler{
-				Node: func(path btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+				PreNode: func(path btrfs.TreePath) error {
 					nodeAddr := path.Node(-1).NodeAddr
 					if nodeAddr != potentialRoot {
 						delete(orphanedRoots, nodeAddr)
@@ -240,7 +267,7 @@ type rebuiltNode struct {
 	btrfs.Node
 }
 
-func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*rebuiltNode, error) {
+func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeScanResults, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*rebuiltNode, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
@@ -251,8 +278,25 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvo
 		return nil, fmt.Errorf("could not look up chunk tree UUID")
 	}
 
+	lastPct := -1
+	total := countNodes(nodeScanResults)
+	progress := func(done int) {
+		pct := int(100 * float64(done) / float64(total))
+		if pct != lastPct || done == total {
+			dlog.Infof(ctx, "... %v%% (%v/%v)",
+				pct, done, total)
+			lastPct = pct
+		}
+	}
+	var done int
+
 	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*rebuiltNode)
 	walkHandler := btrfs.TreeWalkHandler{
+		Node: func(_ btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+			done++
+			progress(done)
+			return nil
+		},
 		BadNode: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			min, max := spanOfTreePath(fs, path)
 			rebuiltNodes[path.Node(-1).NodeAddr] = &rebuiltNode{
