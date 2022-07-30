@@ -5,6 +5,7 @@
 package btrfssum
 
 import (
+	"encoding"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -15,8 +16,27 @@ import (
 
 type CSum [0x20]byte
 
+var (
+	_ fmt.Stringer             = CSum{}
+	_ fmt.Formatter            = CSum{}
+	_ encoding.TextMarshaler   = CSum{}
+	_ encoding.TextUnmarshaler = (*CSum)(nil)
+)
+
 func (csum CSum) String() string {
 	return hex.EncodeToString(csum[:])
+}
+
+func (csum CSum) MarshalText() ([]byte, error) {
+	var ret [len(csum) * 2]byte
+	hex.Encode(ret[:], csum[:])
+	return ret[:], nil
+}
+
+func (csum *CSum) UnmarshalText(text []byte) error {
+	*csum = CSum{}
+	_, err := hex.Decode(csum[:], text)
+	return err
 }
 
 func (csum CSum) Fmt(typ CSumType) string {

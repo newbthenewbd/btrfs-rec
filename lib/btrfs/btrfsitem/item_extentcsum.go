@@ -5,7 +5,11 @@
 package btrfsitem
 
 import (
+	"encoding/hex"
 	"fmt"
+	"io"
+
+	"git.lukeshu.com/go/lowmemjson"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 )
@@ -42,4 +46,34 @@ func (o ExtentCSum) MarshalBinary() ([]byte, error) {
 		dat = append(dat, csum[:o.ChecksumSize]...)
 	}
 	return dat, nil
+}
+
+var (
+	_ lowmemjson.Encodable = ExtentCSum{}
+)
+
+func (o ExtentCSum) EncodeJSON(w io.Writer) error {
+	if _, err := fmt.Fprintf(w, `{"ChecksumSize":%d,"Sums":[`, o.ChecksumSize); err != nil {
+		return err
+	}
+	for i, sum := range o.Sums {
+		if i > 0 {
+			if _, err := w.Write([]byte(",")); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write([]byte(`"`)); err != nil {
+			return err
+		}
+		if _, err := hex.NewEncoder(w).Write(sum[:o.ChecksumSize]); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte(`"`)); err != nil {
+			return err
+		}
+	}
+	if _, err := w.Write([]byte(`]}`)); err != nil {
+		return err
+	}
+	return nil
 }
