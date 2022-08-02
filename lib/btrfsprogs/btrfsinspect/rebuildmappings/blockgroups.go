@@ -16,8 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
-
 type BlockGroup struct {
 	LAddr btrfsvol.LogicalAddr
 	Size  btrfsvol.AddrDelta
@@ -30,7 +28,7 @@ func ReadNodeScanResults(fs *btrfs.FS, filename string) (map[btrfsvol.LogicalAdd
 		return nil, err
 	}
 
-	var scanResults NodeScanResults
+	var scanResults btrfsinspect.ScanDevicesResult
 	if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
 		return nil, err
 	}
@@ -43,7 +41,7 @@ func ReadNodeScanResults(fs *btrfs.FS, filename string) (map[btrfsvol.LogicalAdd
 	return bgTree, nil
 }
 
-func ReduceScanResults(fs *btrfs.FS, scanResults NodeScanResults) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
+func ReduceScanResults(fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	// Reduce
 	bgSet := make(map[BlockGroup]struct{})
 	for _, found := range scanResults {

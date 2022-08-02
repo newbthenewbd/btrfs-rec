@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
+	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
@@ -17,6 +19,32 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
+
+type ScanDevicesResult map[btrfsvol.DeviceID]ScanOneDeviceResult
+
+func ScanDevices(ctx context.Context, fs *btrfs.FS, sb btrfs.Superblock) (ScanDevicesResult, error) {
+	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
+	var mu sync.Mutex
+	result := make(map[btrfsvol.DeviceID]ScanOneDeviceResult)
+	for id, dev := range fs.LV.PhysicalVolumes() {
+		id := id
+		dev := dev
+		grp.Go(dev.Name(), func(ctx context.Context) error {
+			devResult, err := ScanOneDevice(ctx, dev, sb)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			result[id] = devResult
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
 type ScanOneDeviceResult struct {
 	Checksums        SumRun[btrfsvol.PhysicalAddr]
