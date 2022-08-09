@@ -5,11 +5,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
 	"os"
 	"sync"
 
+	"git.lukeshu.com/go/lowmemjson"
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
@@ -23,23 +24,15 @@ import (
 func init() {
 	inspectors = append(inspectors, subcommand{
 		Command: cobra.Command{
-			Use:   "scan-for-nodes",
-			Short: "Scan devices for (potentially lost) nodes",
-			Long: "" +
-				"The found information is printed as JSON on stdout, and can\n" +
-				"be read by `btrfs-rec inspect rebuild-mappings`.\n" +
-				"\n" +
-				"This information is mostly useful for rebuilding a broken\n" +
-				"chunk/dev-extent/blockgroup trees, but can also have some\n" +
-				"minimal utility in repairing other trees.\n" +
-				"\n" +
-				"This is very similar the initial scan done by\n" +
-				"`btrfs rescue chunk-recover`.  Like `btrfs rescue chunk-recover`,\n" +
-				"this is likely probably slow because it reads the entirety of\n" +
-				"each device.",
+			Use:  "scandevices",
 			Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+			maybeSetErr := func(_err error) {
+				if err == nil && _err != nil {
+					err = _err
+				}
+			}
 			ctx := cmd.Context()
 
 			var resultsMu sync.Mutex
@@ -66,7 +59,14 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
-			return json.NewEncoder(os.Stdout).Encode(results)
+			buffer := bufio.NewWriter(os.Stdout)
+			defer func() {
+				maybeSetErr(buffer.Flush())
+			}()
+			return lowmemjson.Encode(&lowmemjson.ReEncoder{
+				Out:    buffer,
+				Indent: "\t",
+			}, results)
 		},
 	})
 }

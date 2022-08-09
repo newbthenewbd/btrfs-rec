@@ -5,9 +5,7 @@
 package rebuildmappings
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
@@ -20,25 +18,6 @@ type BlockGroup struct {
 	LAddr btrfsvol.LogicalAddr
 	Size  btrfsvol.AddrDelta
 	Flags btrfsvol.BlockGroupFlags
-}
-
-func ReadNodeScanResults(fs *btrfs.FS, filename string) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
-	scanResultsBytes, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var scanResults btrfsinspect.ScanDevicesResult
-	if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
-		return nil, err
-	}
-
-	bgTree, err := ReduceScanResults(fs, scanResults)
-	if err != nil {
-		return nil, err
-	}
-
-	return bgTree, nil
 }
 
 func ReduceScanResults(fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
