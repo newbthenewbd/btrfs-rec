@@ -66,8 +66,9 @@ type SysDevExtent struct {
 }
 
 type SysExtentCSum struct {
-	Key  btrfs.Key
-	Sums btrfsitem.ExtentCSum
+	Key        btrfs.Key
+	Generation btrfs.Generation
+	Sums       btrfsitem.ExtentCSum
 }
 
 // ScanOneDevice mostly mimics btrfs-progs
@@ -192,8 +193,9 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found csums",
 						//	dev.Name(), nodeRef.Addr, i)
 						result.FoundExtentCSums = append(result.FoundExtentCSums, SysExtentCSum{
-							Key:  item.Key,
-							Sums: sums,
+							Key:        item.Key,
+							Generation: nodeRef.Data.Head.Generation,
+							Sums:       sums,
 						})
 					}
 				}
