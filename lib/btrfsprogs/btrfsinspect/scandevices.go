@@ -13,11 +13,11 @@ import (
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 type ScanDevicesResult map[btrfsvol.DeviceID]ScanOneDeviceResult
@@ -77,6 +77,8 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
 
+	sbSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfs.Superblock{}))
+
 	devSize := dev.Size()
 	if sb.NodeSize < sb.SectorSize {
 		return result, fmt.Errorf("node_size(%v) < sector_size(%v)",
@@ -107,6 +109,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		}
 	}
 
+	var minNextNode btrfsvol.PhysicalAddr
 	for i := 0; i < numSums; i++ {
 		if ctx.Err() != nil {
 			return result, ctx.Err()
@@ -120,7 +123,17 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		}
 		copy(sums[i*csumSize:], sum[:csumSize])
 
-		if !slices.Contains(pos, btrfs.SuperblockAddrs) {
+		checkForNode := pos >= minNextNode
+		if checkForNode {
+			for _, sbAddr := range btrfs.SuperblockAddrs {
+				if sbAddr <= pos && pos < sbAddr+sbSize {
+					checkForNode = false
+					break
+				}
+			}
+		}
+
+		if checkForNode {
 			nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, nil)
 			if err != nil {
 				if !errors.Is(err, btrfs.ErrNotANode) {
@@ -184,6 +197,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 						})
 					}
 				}
+				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)
 			}
 		}
 	}
