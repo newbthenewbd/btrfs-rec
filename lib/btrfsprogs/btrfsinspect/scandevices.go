@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
@@ -52,7 +53,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS) (ScanDevicesResult, error) {
 }
 
 type ScanOneDeviceResult struct {
-	Checksums        SumRun[btrfsvol.PhysicalAddr]
+	Checksums        btrfssum.SumRun[btrfsvol.PhysicalAddr]
 	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
 	FoundChunks      []btrfs.SysChunk
 	FoundBlockGroups []SysBlockGroup
@@ -90,14 +91,14 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		return result, fmt.Errorf("node_size(%v) < sector_size(%v)",
 			sb.NodeSize, sb.SectorSize)
 	}
-	if sb.SectorSize != btrfsitem.CSumBlockSize {
+	if sb.SectorSize != btrfssum.BlockSize {
 		// TODO: probably handle this?
-		return result, fmt.Errorf("sector_size(%v) != btrfsitem.CSumBlockSize",
+		return result, fmt.Errorf("sector_size(%v) != btrfssum.BlockSize",
 			sb.SectorSize)
 	}
 	alg := sb.ChecksumType
 	csumSize := alg.Size()
-	numSums := int(devSize / btrfsitem.CSumBlockSize)
+	numSums := int(devSize / btrfssum.BlockSize)
 	var sums strings.Builder
 	sums.Grow(numSums * csumSize)
 
@@ -121,7 +122,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
-		pos := btrfsvol.PhysicalAddr(i * btrfsitem.CSumBlockSize)
+		pos := btrfsvol.PhysicalAddr(i * btrfssum.BlockSize)
 		progress(pos)
 
 		sum, err := btrfsutil.ChecksumPhysical(dev, alg, pos)
@@ -211,9 +212,9 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 	}
 	progress(devSize)
 
-	result.Checksums = SumRun[btrfsvol.PhysicalAddr]{
+	result.Checksums = btrfssum.SumRun[btrfsvol.PhysicalAddr]{
 		ChecksumSize: csumSize,
-		Sums:         ShortSum(sums.String()),
+		Sums:         btrfssum.ShortSum(sums.String()),
 	}
 
 	return result, nil

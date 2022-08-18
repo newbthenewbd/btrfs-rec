@@ -11,9 +11,8 @@ import (
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -22,10 +21,10 @@ import (
 
 func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.LogicalAddr]BlockGroup, sums AllSums) error {
 	dlog.Info(ctx, "Pairing up blockgroups and sums...")
-	bgSums := make(map[btrfsvol.LogicalAddr]btrfsinspect.SumRunWithGaps[btrfsvol.LogicalAddr])
+	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		runs := btrfsinspect.SumRunWithGaps[btrfsvol.LogicalAddr]{
+		runs := btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{
 			Addr: blockgroup.LAddr,
 			Size: blockgroup.Size,
 		}
@@ -35,12 +34,12 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 				laddr = next
 				continue
 			}
-			off := int((laddr-run.Addr)/btrfsitem.CSumBlockSize) * run.ChecksumSize
+			off := int((laddr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
 			deltaAddr := slices.Min[btrfsvol.AddrDelta](
 				blockgroup.Size-laddr.Sub(blockgroup.LAddr),
-				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*btrfsitem.CSumBlockSize)
-			deltaOff := int(deltaAddr/btrfsitem.CSumBlockSize) * run.ChecksumSize
-			runs.Runs = append(runs.Runs, btrfsinspect.SumRun[btrfsvol.LogicalAddr]{
+				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*btrfssum.BlockSize)
+			deltaOff := int(deltaAddr/btrfssum.BlockSize) * run.ChecksumSize
+			runs.Runs = append(runs.Runs, btrfssum.SumRun[btrfsvol.LogicalAddr]{
 				ChecksumSize: run.ChecksumSize,
 				Addr:         laddr,
 				Sums:         run.Sums[off : off+deltaOff],
@@ -64,15 +63,15 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			continue
 		}
 
-		if err := WalkGaps(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap btrfsinspect.SumRun[btrfsvol.PhysicalAddr]) error {
-			matches, err := diskio.IndexAll[int64, btrfsinspect.ShortSum](gap, bgRun)
+		if err := WalkGaps(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](gap, bgRun)
 			if err != nil {
 				return err
 			}
 			for _, match := range matches {
 				bgMatches[bgLAddr] = append(bgMatches[bgLAddr], btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
-					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * btrfsitem.CSumBlockSize),
+					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * btrfssum.BlockSize),
 				})
 			}
 			return nil
@@ -113,10 +112,10 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	dlog.Info(ctx, "... done applying")
 
 	dlog.Info(ctx, "Reverse-indexing remaining unmapped logical sums...")
-	sum2laddrs := make(map[btrfsinspect.ShortSum][]btrfsvol.LogicalAddr)
+	sum2laddrs := make(map[btrfssum.ShortSum][]btrfsvol.LogicalAddr)
 	var numUnmappedBlocks int64
-	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfsinspect.ShortSum) error {
-		var dat [btrfsitem.CSumBlockSize]byte
+	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error {
+		var dat [btrfssum.BlockSize]byte
 		if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 			if errors.Is(err, btrfsvol.ErrCouldNotMap) {
 				sum2laddrs[sum] = append(sum2laddrs[sum], laddr)
@@ -189,12 +188,12 @@ type ExtentMappings struct {
 }
 
 func (em *ExtentMappings) considerMapping(ctx context.Context, laddr btrfsvol.LogicalAddr, paddr btrfsvol.QualifiedPhysicalAddr) (btrfsvol.Mapping, bool) {
-	blockgroup := LookupBlockGroup(em.InBlockGroups, laddr, btrfsitem.CSumBlockSize)
+	blockgroup := LookupBlockGroup(em.InBlockGroups, laddr, btrfssum.BlockSize)
 	if blockgroup == nil {
 		return btrfsvol.Mapping{
 			LAddr: laddr,
 			PAddr: paddr,
-			Size:  btrfsitem.CSumBlockSize,
+			Size:  btrfssum.BlockSize,
 		}, true
 	}
 	mapping := btrfsvol.Mapping{
@@ -214,7 +213,7 @@ func (em *ExtentMappings) considerMapping(ctx context.Context, laddr btrfsvol.Lo
 		return btrfsvol.Mapping{}, false
 	}
 
-	for offset := btrfsvol.AddrDelta(0); offset <= mapping.Size; offset += btrfsitem.CSumBlockSize {
+	for offset := btrfsvol.AddrDelta(0); offset <= mapping.Size; offset += btrfssum.BlockSize {
 		expCSum, ok := em.InSums.SumForLAddr(mapping.LAddr.Add(offset))
 		if !ok {
 			continue
@@ -252,7 +251,7 @@ func (em *ExtentMappings) ScanOneDevice(
 	dlog.Infof(ctx, "... dev[%q] Scanning for extents...", devName)
 
 	var totalMappings int
-	_ = WalkGaps(ctx, gaps, btrfsitem.CSumBlockSize,
+	_ = WalkGaps(ctx, gaps, btrfssum.BlockSize,
 		func(_, _ int64) {},
 		func(paddr btrfsvol.PhysicalAddr) error {
 			qpaddr := btrfsvol.QualifiedPhysicalAddr{
@@ -276,7 +275,7 @@ func (em *ExtentMappings) ScanOneDevice(
 			lastProgress = pct
 		}
 	}
-	return WalkGaps(ctx, gaps, btrfsitem.CSumBlockSize,
+	return WalkGaps(ctx, gaps, btrfssum.BlockSize,
 		func(_, _ int64) {
 			progress()
 		},

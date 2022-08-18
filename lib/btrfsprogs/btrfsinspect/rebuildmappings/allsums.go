@@ -8,16 +8,16 @@ import (
 	"context"
 	"math"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
 type AllSums struct {
-	Logical  []btrfsinspect.SumRun[btrfsvol.LogicalAddr]
-	Physical map[btrfsvol.DeviceID]btrfsinspect.SumRun[btrfsvol.PhysicalAddr]
+	Logical  []btrfssum.SumRun[btrfsvol.LogicalAddr]
+	Physical map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr]
 }
 
-func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (btrfsinspect.ShortSum, bool) {
+func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (btrfssum.ShortSum, bool) {
 	run, ok := as.Physical[paddr.Dev]
 	if !ok {
 		return "", false
@@ -25,20 +25,20 @@ func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (btrfsinspec
 	return run.SumForAddr(paddr.Addr)
 }
 
-func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (btrfsinspect.SumRun[btrfsvol.LogicalAddr], btrfsvol.LogicalAddr, bool) {
+func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], btrfsvol.LogicalAddr, bool) {
 	for _, run := range as.Logical {
 		if run.Addr > laddr {
-			return btrfsinspect.SumRun[btrfsvol.LogicalAddr]{}, run.Addr, false
+			return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, run.Addr, false
 		}
 		if run.Addr.Add(run.Size()) <= laddr {
 			continue
 		}
 		return run, 0, true
 	}
-	return btrfsinspect.SumRun[btrfsvol.LogicalAddr]{}, math.MaxInt64, false
+	return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, math.MaxInt64, false
 }
 
-func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (btrfsinspect.ShortSum, bool) {
+func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (btrfssum.ShortSum, bool) {
 	run, _, ok := as.RunForLAddr(laddr)
 	if !ok {
 		return "", false
@@ -46,7 +46,7 @@ func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (btrfsinspect.ShortSum
 	return run.SumForAddr(laddr)
 }
 
-func (as AllSums) WalkLogical(ctx context.Context, fn func(btrfsvol.LogicalAddr, btrfsinspect.ShortSum) error) error {
+func (as AllSums) WalkLogical(ctx context.Context, fn func(btrfsvol.LogicalAddr, btrfssum.ShortSum) error) error {
 	for _, run := range as.Logical {
 		if err := run.Walk(ctx, fn); err != nil {
 			return err

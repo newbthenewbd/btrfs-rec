@@ -11,9 +11,8 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
@@ -57,17 +56,17 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 
 func WalkGaps(ctx context.Context,
 	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
-	fn func(btrfsvol.DeviceID, btrfsinspect.SumRun[btrfsvol.PhysicalAddr]) error,
+	fn func(btrfsvol.DeviceID, btrfssum.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {
 		for _, gap := range gaps[devID] {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			begAddr := roundUp(gap.Beg, btrfsitem.CSumBlockSize)
-			begOff := int(begAddr/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
-			endOff := int(gap.End/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
-			if err := fn(devID, btrfsinspect.SumRun[btrfsvol.PhysicalAddr]{
+			begAddr := roundUp(gap.Beg, btrfssum.BlockSize)
+			begOff := int(begAddr/btrfssum.BlockSize) * sums.Physical[devID].ChecksumSize
+			endOff := int(gap.End/btrfssum.BlockSize) * sums.Physical[devID].ChecksumSize
+			if err := fn(devID, btrfssum.SumRun[btrfsvol.PhysicalAddr]{
 				ChecksumSize: sums.Physical[devID].ChecksumSize,
 				Addr:         begAddr,
 				Sums:         sums.Physical[devID].Sums[begOff:endOff],
