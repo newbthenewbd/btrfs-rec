@@ -11,6 +11,7 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
@@ -62,9 +63,9 @@ func WalkGaps(ctx context.Context,
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			begAddr := roundUp(gap.Beg, CSumBlockSize)
-			begOff := int(begAddr/CSumBlockSize) * sums.Physical[devID].ChecksumSize
-			endOff := int(gap.End/CSumBlockSize) * sums.Physical[devID].ChecksumSize
+			begAddr := roundUp(gap.Beg, btrfsitem.CSumBlockSize)
+			begOff := int(begAddr/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
+			endOff := int(gap.End/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
 			if err := fn(devID, SumRun[btrfsvol.PhysicalAddr]{
 				ChecksumSize: sums.Physical[devID].ChecksumSize,
 				Addr:         begAddr,

@@ -11,6 +11,7 @@ import (
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
@@ -33,11 +34,11 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 				laddr = next
 				continue
 			}
-			off := int((laddr-run.Addr)/CSumBlockSize) * run.ChecksumSize
+			off := int((laddr-run.Addr)/btrfsitem.CSumBlockSize) * run.ChecksumSize
 			deltaAddr := slices.Min[btrfsvol.AddrDelta](
 				blockgroup.Size-laddr.Sub(blockgroup.LAddr),
-				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*CSumBlockSize)
-			deltaOff := int(deltaAddr/CSumBlockSize) * run.ChecksumSize
+				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*btrfsitem.CSumBlockSize)
+			deltaOff := int(deltaAddr/btrfsitem.CSumBlockSize) * run.ChecksumSize
 			runs.Runs = append(runs.Runs, SumRun[btrfsvol.LogicalAddr]{
 				ChecksumSize: run.ChecksumSize,
 				Addr:         laddr,
@@ -70,7 +71,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			for _, match := range matches {
 				bgMatches[bgLAddr] = append(bgMatches[bgLAddr], btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
-					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * CSumBlockSize),
+					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * btrfsitem.CSumBlockSize),
 				})
 			}
 			return nil
@@ -114,7 +115,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	sum2laddrs := make(map[ShortSum][]btrfsvol.LogicalAddr)
 	var numUnmappedBlocks int64
 	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, sum ShortSum) error {
-		var dat [CSumBlockSize]byte
+		var dat [btrfsitem.CSumBlockSize]byte
 		if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 			if errors.Is(err, btrfsvol.ErrCouldNotMap) {
 				sum2laddrs[sum] = append(sum2laddrs[sum], laddr)
@@ -187,12 +188,12 @@ type ExtentMappings struct {
 }
 
 func (em *ExtentMappings) considerMapping(ctx context.Context, laddr btrfsvol.LogicalAddr, paddr btrfsvol.QualifiedPhysicalAddr) (btrfsvol.Mapping, bool) {
-	blockgroup := LookupBlockGroup(em.InBlockGroups, laddr, CSumBlockSize)
+	blockgroup := LookupBlockGroup(em.InBlockGroups, laddr, btrfsitem.CSumBlockSize)
 	if blockgroup == nil {
 		return btrfsvol.Mapping{
 			LAddr: laddr,
 			PAddr: paddr,
-			Size:  CSumBlockSize,
+			Size:  btrfsitem.CSumBlockSize,
 		}, true
 	}
 	mapping := btrfsvol.Mapping{
@@ -212,7 +213,7 @@ func (em *ExtentMappings) considerMapping(ctx context.Context, laddr btrfsvol.Lo
 		return btrfsvol.Mapping{}, false
 	}
 
-	for offset := btrfsvol.AddrDelta(0); offset <= mapping.Size; offset += CSumBlockSize {
+	for offset := btrfsvol.AddrDelta(0); offset <= mapping.Size; offset += btrfsitem.CSumBlockSize {
 		expCSum, ok := em.InSums.SumForLAddr(mapping.LAddr.Add(offset))
 		if !ok {
 			continue
@@ -250,7 +251,7 @@ func (em *ExtentMappings) ScanOneDevice(
 	dlog.Infof(ctx, "... dev[%q] Scanning for extents...", devName)
 
 	var totalMappings int
-	_ = WalkGaps(ctx, gaps, CSumBlockSize,
+	_ = WalkGaps(ctx, gaps, btrfsitem.CSumBlockSize,
 		func(_, _ int64) {},
 		func(paddr btrfsvol.PhysicalAddr) error {
 			qpaddr := btrfsvol.QualifiedPhysicalAddr{
@@ -274,7 +275,7 @@ func (em *ExtentMappings) ScanOneDevice(
 			lastProgress = pct
 		}
 	}
-	return WalkGaps(ctx, gaps, CSumBlockSize,
+	return WalkGaps(ctx, gaps, btrfsitem.CSumBlockSize,
 		func(_, _ int64) {
 			progress()
 		},

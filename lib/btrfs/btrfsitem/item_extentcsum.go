@@ -10,6 +10,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 )
 
+const CSumBlockSize = 4 * 1024
+
 // key.objectid = BTRFS_EXTENT_CSUM_OBJECTID
 // key.offset = laddr of checksummed region
 type ExtentCSum struct { // EXTENT_CSUM=128

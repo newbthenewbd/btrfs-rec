@@ -25,8 +25,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-const CSumBlockSize = 4 * 1024
-
 // ShortSum //////////////////////////////////////////////////////////
 
 type ShortSum string
@@ -50,7 +48,7 @@ func (run SumRun[Addr]) NumSums() int {
 }
 
 func (run SumRun[Addr]) Size() btrfsvol.AddrDelta {
-	return btrfsvol.AddrDelta(run.NumSums()) * CSumBlockSize
+	return btrfsvol.AddrDelta(run.NumSums()) * btrfsitem.CSumBlockSize
 }
 
 // Get implements diskio.Sequence[int, ShortSum]
@@ -66,12 +64,12 @@ func (run SumRun[Addr]) SumForAddr(addr Addr) (ShortSum, bool) {
 	if addr < run.Addr || addr >= run.Addr.Add(run.Size()) {
 		return "", false
 	}
-	off := int((addr-run.Addr)/CSumBlockSize) * run.ChecksumSize
+	off := int((addr-run.Addr)/btrfsitem.CSumBlockSize) * run.ChecksumSize
 	return ShortSum(run.Sums[off : off+run.ChecksumSize]), true
 }
 
 func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error) error {
-	for addr, off := run.Addr, 0; off < len(run.Sums); addr, off = addr+CSumBlockSize, off+run.ChecksumSize {
+	for addr, off := run.Addr, 0; off < len(run.Sums); addr, off = addr+btrfsitem.CSumBlockSize, off+run.ChecksumSize {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -91,7 +89,7 @@ type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
 }
 
 func (sg SumRunWithGaps[Addr]) NumSums() int {
-	return int(sg.Size / CSumBlockSize)
+	return int(sg.Size / btrfsitem.CSumBlockSize)
 }
 
 func (sg SumRunWithGaps[Addr]) PctFull() float64 {
@@ -114,7 +112,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 		if run.Addr.Add(run.Size()) <= addr {
 			continue
 		}
-		off := int((addr-run.Addr)/CSumBlockSize) * run.ChecksumSize
+		off := int((addr-run.Addr)/btrfsitem.CSumBlockSize) * run.ChecksumSize
 		return ShortSum(run.Sums[off : off+run.ChecksumSize]), nil
 	}
 	return "", diskio.ErrWildcard
@@ -122,7 +120,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 
 // Get implements diskio.Sequence[int, ShortSum]
 func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (ShortSum, error) {
-	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * CSumBlockSize)
+	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * btrfsitem.CSumBlockSize)
 	return sg.SumForAddr(addr)
 }
 
@@ -225,8 +223,8 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 					body := item.Body.(btrfsitem.ExtentCSum)
 
 					for i, sum := range body.Sums {
-						laddr := btrfsvol.LogicalAddr(item.Key.Offset) + (btrfsvol.LogicalAddr(i) * CSumBlockSize)
-						if laddr != curAddr+(btrfsvol.LogicalAddr(curSums.Len()/csumSize)*CSumBlockSize) {
+						laddr := btrfsvol.LogicalAddr(item.Key.Offset) + (btrfsvol.LogicalAddr(i) * btrfsitem.CSumBlockSize)
+						if laddr != curAddr+(btrfsvol.LogicalAddr(curSums.Len()/csumSize)*btrfsitem.CSumBlockSize) {
 							if curSums.Len() > 0 {
 								ret.Logical = append(ret.Logical, SumRun[btrfsvol.LogicalAddr]{
 									ChecksumSize: csumSize,
@@ -271,7 +269,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 			devID, dev := devID, dev
 			grp.Go(dev.Name(), func(ctx context.Context) error {
 				devSize := dev.Size()
-				numSums := int(devSize / CSumBlockSize)
+				numSums := int(devSize / btrfsitem.CSumBlockSize)
 				sums := make([]byte, numSums*csumSize)
 				lastPct := -1
 				progress := func(curSum int) {
@@ -287,7 +285,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 						return err
 					}
 					progress(i)
-					sum, err := ChecksumPhysical(dev, alg, btrfsvol.PhysicalAddr(i*CSumBlockSize))
+					sum, err := ChecksumPhysical(dev, alg, btrfsvol.PhysicalAddr(i*btrfsitem.CSumBlockSize))
 					if err != nil {
 						return err
 					}
