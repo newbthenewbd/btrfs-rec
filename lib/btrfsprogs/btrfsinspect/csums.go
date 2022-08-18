@@ -103,12 +103,9 @@ type SumRun[Addr btrfsvol.IntAddr[Addr]] struct {
 	// How big a ShortSum is in this Run.
 	ChecksumSize int
 	// Base address where this run starts.
-	Addr Addr
+	Addr Addr `json:",omitempty"`
 	// All of the ShortSums in this run, concatenated together.
-	//
-	// This is a 'string' rather than a 'ShortSum' to make it hard
-	// to accidentally use it as a single sum.
-	Sums string
+	Sums ShortSum
 }
 
 func (run SumRun[Addr]) NumSums() int {

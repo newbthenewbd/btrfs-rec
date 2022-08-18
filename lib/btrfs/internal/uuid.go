@@ -5,6 +5,7 @@
 package internal
 
 import (
+	"encoding"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -13,6 +14,13 @@ import (
 )
 
 type UUID [16]byte
+
+var (
+	_ fmt.Stringer             = UUID{}
+	_ fmt.Formatter            = UUID{}
+	_ encoding.TextMarshaler   = UUID{}
+	_ encoding.TextUnmarshaler = (*UUID)(nil)
+)
 
 func (uuid UUID) String() string {
 	str := hex.EncodeToString(uuid[:])
@@ -25,6 +33,20 @@ func (uuid UUID) String() string {
 	}, "-")
 }
 
+func (uuid UUID) MarshalText() ([]byte, error) {
+	return []byte(uuid.String()), nil
+}
+
+func (uuid *UUID) UnmarshalText(text []byte) error {
+	var err error
+	*uuid, err = ParseUUID(string(text))
+	return err
+}
+
+func (uuid UUID) Format(f fmt.State, verb rune) {
+	fmtutil.FormatByteArrayStringer(uuid, uuid[:], f, verb)
+}
+
 func (a UUID) Cmp(b UUID) int {
 	for i := range a {
 		if d := int(a[i]) - int(b[i]); d != 0 {
@@ -32,10 +54,6 @@ func (a UUID) Cmp(b UUID) int {
 		}
 	}
 	return 0
-}
-
-func (uuid UUID) Format(f fmt.State, verb rune) {
-	fmtutil.FormatByteArrayStringer(uuid, uuid[:], f, verb)
 }
 
 func ParseUUID(str string) (UUID, error) {

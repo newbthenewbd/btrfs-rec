@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/datawire/dlib/dgroup"
@@ -97,7 +98,8 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 	alg := sb.ChecksumType
 	csumSize := alg.Size()
 	numSums := int(devSize / btrfsitem.CSumBlockSize)
-	sums := make([]byte, numSums*csumSize)
+	var sums strings.Builder
+	sums.Grow(numSums * csumSize)
 
 	lastProgress := -1
 	progress := func(pos btrfsvol.PhysicalAddr) {
@@ -126,9 +128,9 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		if err != nil {
 			return result, err
 		}
-		copy(sums[i*csumSize:], sum[:csumSize])
+		sums.Write(sum[:csumSize])
 
-		checkForNode := pos >= minNextNode
+		checkForNode := pos >= minNextNode && pos+btrfsvol.PhysicalAddr(sb.NodeSize) <= devSize
 		if checkForNode {
 			for _, sbAddr := range btrfs.SuperblockAddrs {
 				if sbAddr <= pos && pos < sbAddr+sbSize {
@@ -142,7 +144,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 			nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, nil)
 			if err != nil {
 				if !errors.Is(err, btrfs.ErrNotANode) {
-					dlog.Infof(ctx, "... dev[%q] error: %v", dev.Name(), err)
+					dlog.Errorf(ctx, "... dev[%q] error: %v", dev.Name(), err)
 				}
 			} else {
 				result.FoundNodes[nodeRef.Data.Head.Addr] = append(result.FoundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
@@ -208,6 +210,11 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		}
 	}
 	progress(devSize)
+
+	result.Checksums = SumRun[btrfsvol.PhysicalAddr]{
+		ChecksumSize: csumSize,
+		Sums:         ShortSum(sums.String()),
+	}
 
 	return result, nil
 }
