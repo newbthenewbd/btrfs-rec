@@ -56,7 +56,7 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 }
 
 func WalkGaps(ctx context.Context,
-	sums btrfsinspect.AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
+	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
 	fn func(btrfsvol.DeviceID, btrfsinspect.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {

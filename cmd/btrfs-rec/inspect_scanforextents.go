@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 )
 
@@ -35,7 +34,7 @@ func init() {
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
 			dlog.Infof(ctx, "Reading %q...", args[1])
-			sums, err := btrfsinspect.ReadAllSums(args[1])
+			sums, err := rebuildmappings.ReadAllSums(args[1])
 			if err != nil {
 				return err
 			}

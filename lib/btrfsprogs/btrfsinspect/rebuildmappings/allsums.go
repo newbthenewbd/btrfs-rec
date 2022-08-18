@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfsinspect
+package rebuildmappings
 
 import (
 	"context"
@@ -21,15 +21,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
 
 type AllSums struct {
-	Logical  []SumRun[btrfsvol.LogicalAddr]
-	Physical map[btrfsvol.DeviceID]SumRun[btrfsvol.PhysicalAddr]
+	Logical  []btrfsinspect.SumRun[btrfsvol.LogicalAddr]
+	Physical map[btrfsvol.DeviceID]btrfsinspect.SumRun[btrfsvol.PhysicalAddr]
 }
 
-func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (ShortSum, bool) {
+func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (btrfsinspect.ShortSum, bool) {
 	run, ok := as.Physical[paddr.Dev]
 	if !ok {
 		return "", false
@@ -37,20 +38,20 @@ func (as AllSums) SumForPAddr(paddr btrfsvol.QualifiedPhysicalAddr) (ShortSum, b
 	return run.SumForAddr(paddr.Addr)
 }
 
-func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (SumRun[btrfsvol.LogicalAddr], btrfsvol.LogicalAddr, bool) {
+func (as AllSums) RunForLAddr(laddr btrfsvol.LogicalAddr) (btrfsinspect.SumRun[btrfsvol.LogicalAddr], btrfsvol.LogicalAddr, bool) {
 	for _, run := range as.Logical {
 		if run.Addr > laddr {
-			return SumRun[btrfsvol.LogicalAddr]{}, run.Addr, false
+			return btrfsinspect.SumRun[btrfsvol.LogicalAddr]{}, run.Addr, false
 		}
 		if run.Addr.Add(run.Size()) <= laddr {
 			continue
 		}
 		return run, 0, true
 	}
-	return SumRun[btrfsvol.LogicalAddr]{}, math.MaxInt64, false
+	return btrfsinspect.SumRun[btrfsvol.LogicalAddr]{}, math.MaxInt64, false
 }
 
-func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (ShortSum, bool) {
+func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (btrfsinspect.ShortSum, bool) {
 	run, _, ok := as.RunForLAddr(laddr)
 	if !ok {
 		return "", false
@@ -58,7 +59,7 @@ func (as AllSums) SumForLAddr(laddr btrfsvol.LogicalAddr) (ShortSum, bool) {
 	return run.SumForAddr(laddr)
 }
 
-func (as AllSums) WalkLogical(ctx context.Context, fn func(btrfsvol.LogicalAddr, ShortSum) error) error {
+func (as AllSums) WalkLogical(ctx context.Context, fn func(btrfsvol.LogicalAddr, btrfsinspect.ShortSum) error) error {
 	for _, run := range as.Logical {
 		if err := run.Walk(ctx, fn); err != nil {
 			return err
@@ -124,7 +125,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 						laddr := btrfsvol.LogicalAddr(item.Key.Offset) + (btrfsvol.LogicalAddr(i) * btrfsitem.CSumBlockSize)
 						if laddr != curAddr+(btrfsvol.LogicalAddr(curSums.Len()/csumSize)*btrfsitem.CSumBlockSize) {
 							if curSums.Len() > 0 {
-								ret.Logical = append(ret.Logical, SumRun[btrfsvol.LogicalAddr]{
+								ret.Logical = append(ret.Logical, btrfsinspect.SumRun[btrfsvol.LogicalAddr]{
 									ChecksumSize: csumSize,
 									Addr:         curAddr,
 									Sums:         curSums.String(),
@@ -140,7 +141,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 			},
 		)
 		if curSums.Len() > 0 {
-			ret.Logical = append(ret.Logical, SumRun[btrfsvol.LogicalAddr]{
+			ret.Logical = append(ret.Logical, btrfsinspect.SumRun[btrfsvol.LogicalAddr]{
 				ChecksumSize: csumSize,
 				Addr:         curAddr,
 				Sums:         curSums.String(),
@@ -160,7 +161,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 		devs := fs.LV.PhysicalVolumes()
 
 		var mu sync.Mutex
-		ret.Physical = make(map[btrfsvol.DeviceID]SumRun[btrfsvol.PhysicalAddr], len(devs))
+		ret.Physical = make(map[btrfsvol.DeviceID]btrfsinspect.SumRun[btrfsvol.PhysicalAddr], len(devs))
 
 		grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 		for devID, dev := range devs {
@@ -192,7 +193,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 				progress(numSums)
 				sumsStr := string(sums)
 				mu.Lock()
-				ret.Physical[devID] = SumRun[btrfsvol.PhysicalAddr]{
+				ret.Physical[devID] = btrfsinspect.SumRun[btrfsvol.PhysicalAddr]{
 					ChecksumSize: csumSize,
 					Addr:         0,
 					Sums:         sumsStr,

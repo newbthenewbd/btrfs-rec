@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 )
 
 func init() {
@@ -24,12 +24,12 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			sums, err := btrfsinspect.SumEverything(ctx, fs)
+			sums, err := rebuildmappings.SumEverything(ctx, fs)
 			if err != nil {
 				return err
 			}
 			dlog.Info(ctx, "Writing sums as gob to stdout...")
-			return btrfsinspect.WriteAllSums(os.Stdout, sums)
+			return rebuildmappings.WriteAllSums(os.Stdout, sums)
 		},
 	})
 }
