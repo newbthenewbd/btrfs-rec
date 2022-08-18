@@ -63,16 +63,16 @@ func (node *RBNode[V]) walk(fn func(*RBNode[V]) error) error {
 // means to go left on the tree (the value is too high), >0 means to
 // go right on th etree (the value is too low).
 //
-//             +-----+
-//             | v=8 | == 0 : this is it
-//             +-----+
-//            /       \
-//           /         \
-//     <0 : go left   >0 : go right
-//         /             \
-//      +---+          +---+
-//      | 7 |          | 9 |
-//      +---+          +---+
+//	        +-----+
+//	        | v=8 | == 0 : this is it
+//	        +-----+
+//	       /       \
+//	      /         \
+//	<0 : go left   >0 : go right
+//	    /             \
+//	 +---+          +---+
+//	 | 7 |          | 9 |
+//	 +---+          +---+
 //
 // Returns nil if no such value is found.
 //

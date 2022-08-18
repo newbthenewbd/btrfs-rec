@@ -37,15 +37,15 @@ func FmtStateString(st fmt.State, verb rune) string {
 // fmt.Formatter for []byte or [n]byte types that have a custom string
 // representation.  Use it like:
 //
-//     type MyType [16]byte
+//	type MyType [16]byte
 //
-//     func (val MyType) String() string {
-//         …
-//     }
+//	func (val MyType) String() string {
+//	    …
+//	}
 //
-//     func (val MyType) Format(f fmt.State, verb rune) {
-//         util.FormatByteArrayStringer(val, val[:], f, verb)
-//     }
+//	func (val MyType) Format(f fmt.State, verb rune) {
+//	    util.FormatByteArrayStringer(val, val[:], f, verb)
+//	}
 func FormatByteArrayStringer(
 	obj interface {
 		fmt.Stringer

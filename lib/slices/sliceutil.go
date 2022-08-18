@@ -95,15 +95,15 @@ func max(a, b int) int {
 
 // Search the slice for a value for which `fn(slice[i]) = 0`.
 //
-//    + + + 0 0 0 - - -
-//          ^ ^ ^
-//          any of
+//	: + + + 0 0 0 - - -
+//	:       ^ ^ ^
+//	:       any of
 //
 // You can conceptualize `fn` as subtraction:
 //
-//     func(straw T) int {
-//         return needle - straw
-//     }
+//	func(straw T) int {
+//	    return needle - straw
+//	}
 func Search[T any](slice []T, fn func(T) int) (int, bool) {
 	beg, end := 0, len(slice)
 	for beg < end {
@@ -123,14 +123,14 @@ func Search[T any](slice []T, fn func(T) int) (int, bool) {
 
 // Search the slice for the left-most value for which `fn(slice[i]) = 0`.
 //
-//    + + + 0 0 0 - - -
-//          ^
+//	: + + + 0 0 0 - - -
+//	:       ^
 //
 // You can conceptualize `fn` as subtraction:
 //
-//     func(straw T) int {
-//         return needle - straw
-//     }
+//	func(straw T) int {
+//	    return needle - straw
+//	}
 func SearchLowest[T any](slice []T, fn func(T) int) (int, bool) {
 	lastBad, firstGood, firstBad := -1, len(slice), len(slice)
 	for lastBad+1 < min(firstGood, firstBad) {
@@ -153,14 +153,14 @@ func SearchLowest[T any](slice []T, fn func(T) int) (int, bool) {
 
 // Search the slice for the right-most value for which `fn(slice[i]) = 0`.
 //
-//    + + + 0 0 0 - - -
-//              ^
+//	: + + + 0 0 0 - - -
+//	:           ^
 //
 // You can conceptualize `fn` as subtraction:
 //
-//     func(straw T) int {
-//         return needle - straw
-//     }
+//	func(straw T) int {
+//	    return needle - straw
+//	}
 func SearchHighest[T any](slice []T, fn func(T) int) (int, bool) {
 	lastBad, lastGood, firstBad := -1, -1, len(slice)
 	for max(lastBad, lastGood)+1 < firstBad {

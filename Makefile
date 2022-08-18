@@ -46,7 +46,7 @@ tools/bin/%: tools/src/%/pin.go tools/src/%/go.mod
 
 # go mod tidy
 
-goversion = 1.18
+goversion = 1.19
 
 go-mod-tidy:
 .PHONY: go-mod-tidy

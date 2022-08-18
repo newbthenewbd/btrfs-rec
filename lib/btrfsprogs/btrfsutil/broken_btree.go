@@ -108,14 +108,14 @@ var _ btrfs.Trees = (*brokenTrees)(nil)
 //
 // Of the btrfs.FS.Tree{Verb}Trees methods:
 //
-//  - TreeWalk works on broken trees
-//  - TreeLookup relies on the tree being properly ordered (which a
-//    broken tree might not be).
-//  - TreeSearch relies on the tree being properly ordered (which a
-//    broken tree might not be).
-//  - TreeSearchAll relies on the tree being properly ordered (which a
-//    broken tree might not be), and a bad node may cause it to not
-//    return a truncated list of results.
+//   - TreeWalk works on broken trees
+//   - TreeLookup relies on the tree being properly ordered (which a
+//     broken tree might not be).
+//   - TreeSearch relies on the tree being properly ordered (which a
+//     broken tree might not be).
+//   - TreeSearchAll relies on the tree being properly ordered (which a
+//     broken tree might not be), and a bad node may cause it to not
+//     return a truncated list of results.
 //
 // NewBrokenTrees attempts to remedy these deficiencies by using
 // .TreeWalk to build an out-of-FS index of all of the items in the

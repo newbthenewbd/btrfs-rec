@@ -21,8 +21,8 @@ func NameHash(dat []byte) uint64 {
 
 // key.objectid = inode of directory containing this entry
 // key.offset =
-//    for DIR_ITEM and XATTR_ITEM = NameHash(name)
-//    for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
+//   - for DIR_ITEM and XATTR_ITEM = NameHash(name)
+//   - for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
 type DirEntry struct { // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
 	Location      internal.Key `bin:"off=0x0, siz=0x11"`
 	TransID       int64        `bin:"off=0x11, siz=8"`
