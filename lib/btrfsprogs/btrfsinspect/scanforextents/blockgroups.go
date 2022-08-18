@@ -16,7 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
+type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
 
 type BlockGroup struct {
 	LAddr btrfsvol.LogicalAddr

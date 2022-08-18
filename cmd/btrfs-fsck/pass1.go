@@ -37,7 +37,7 @@ func pass1(ctx context.Context, fs *btrfs.FS, superblock *btrfs.Superblock) (map
 	fsFoundNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	for _, dev := range fs.LV.PhysicalVolumes() {
 		fmt.Printf("Pass 1: ... dev[%q] scanning for nodes...\n", dev.Name())
-		devResult, err := btrfsinspect.ScanOneDev(ctx, dev, *superblock)
+		devResult, err := btrfsinspect.ScanOneDevice(ctx, dev, *superblock)
 		if err != nil {
 			return nil, err
 		}

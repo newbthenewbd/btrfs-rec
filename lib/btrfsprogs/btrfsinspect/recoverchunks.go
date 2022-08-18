@@ -19,7 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type ScanOneDevResult struct {
+type ScanOneDeviceResult struct {
 	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
 	FoundChunks      []btrfs.SysChunk
 	FoundBlockGroups []SysBlockGroup
@@ -36,7 +36,7 @@ type SysDevExtent struct {
 	DevExt btrfsitem.DevExtent
 }
 
-func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *btrfs.Device) {
+func (found ScanOneDeviceResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *btrfs.Device) {
 	sb, _ := dev.Superblock()
 
 	total := len(found.FoundChunks) + len(found.FoundDevExtents)
@@ -149,10 +149,10 @@ func (found ScanOneDevResult) AddToLV(ctx context.Context, fs *btrfs.FS, dev *bt
 	}
 }
 
-// ScanOneDev mostly mimics btrfs-progs
+// ScanOneDevice mostly mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device().
-func ScanOneDev(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superblock) (ScanOneDevResult, error) {
-	result := ScanOneDevResult{
+func ScanOneDevice(ctx context.Context, dev *btrfs.Device, superblock btrfs.Superblock) (ScanOneDeviceResult, error) {
+	result := ScanOneDeviceResult{
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
 

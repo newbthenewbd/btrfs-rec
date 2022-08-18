@@ -43,7 +43,7 @@ func init() {
 			ctx := cmd.Context()
 
 			var resultsMu sync.Mutex
-			results := make(map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult)
+			results := make(map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult)
 			grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 			for _, dev := range fs.LV.PhysicalVolumes() {
 				dev := dev
@@ -53,7 +53,7 @@ func init() {
 						return err
 					}
 					dlog.Infof(ctx, "dev[%q] Scanning for unreachable nodes...", dev.Name())
-					devResult, err := btrfsinspect.ScanOneDev(ctx, dev, *superblock)
+					devResult, err := btrfsinspect.ScanOneDevice(ctx, dev, *superblock)
 					dlog.Infof(ctx, "dev[%q] Finished scanning", dev.Name())
 					resultsMu.Lock()
 					results[superblock.DevItem.DevID] = devResult

@@ -141,7 +141,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	}
 	gaps := ListPhysicalGaps(fs)
 	for _, devID := range maps.SortedKeys(gaps) {
-		if err := newMappings.ScanOneDev(ctx,
+		if err := newMappings.ScanOneDevice(ctx,
 			devID, devs[devID].Name(),
 			gaps[devID],
 		); err != nil {
@@ -235,7 +235,7 @@ func (em *ExtentMappings) addMapping(sum ShortSum, mapping btrfsvol.Mapping) {
 	em.OutSum2mappings[sum] = append(em.OutSum2mappings[sum], interned)
 }
 
-func (em *ExtentMappings) ScanOneDev(
+func (em *ExtentMappings) ScanOneDevice(
 	ctx context.Context,
 	devID btrfsvol.DeviceID, devName string,
 	gaps []PhysicalGap,

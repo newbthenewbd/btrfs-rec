@@ -75,7 +75,7 @@ func init() {
 	})
 }
 
-type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
+type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
 
 func readNodeScanResults(filename string) (NodeScanResults, error) {
 	scanResultsBytes, err := os.ReadFile(filename)

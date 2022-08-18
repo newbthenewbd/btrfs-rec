@@ -42,7 +42,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
+			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
 			if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
 				return err
 			}

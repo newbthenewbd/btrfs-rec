@@ -33,7 +33,7 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
-			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDevResult
+			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
 			if nodescanFilename != "" {
 				scanResultsBytes, err := os.ReadFile(nodescanFilename)
 				if err != nil {
