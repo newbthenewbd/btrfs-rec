@@ -203,25 +203,22 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfs.Ob
 			//case btrfsitem.SHARED_DATA_REF_KEY:
 			//	// TODO
 			case btrfsitem.ExtentCSum:
-				sb, _ := fs.Superblock()
-				sectorSize := btrfsvol.AddrDelta(sb.SectorSize)
-
 				start := btrfsvol.LogicalAddr(item.Key.Offset)
-				itemSize := btrfsvol.AddrDelta(len(body.Sums)) * sectorSize
 				fmt.Fprintf(out, "\t\trange start %d end %d length %d",
-					start, start.Add(itemSize), itemSize)
+					start, start.Add(body.Size()), body.Size())
 				sumsPerLine := slices.Max(1, len(btrfssum.CSum{})/body.ChecksumSize/2)
 
-				pos := start
-				for i, sum := range body.Sums {
+				i := 0
+				_ = body.Walk(ctx, func(pos btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error {
 					if i%sumsPerLine == 0 {
 						fmt.Fprintf(out, "\n\t\t")
 					} else {
 						fmt.Fprintf(out, " ")
 					}
-					fmt.Fprintf(out, "[%d] 0x%s", pos, sum.Fmt(sb.ChecksumType))
-					pos = pos.Add(sectorSize)
-				}
+					fmt.Fprintf(out, "[%d] 0x%x", pos, sum)
+					i++
+					return nil
+				})
 				fmt.Fprintf(out, "\n")
 			case btrfsitem.FileExtent:
 				fmt.Fprintf(out, "\t\tgeneration %v type %v\n",

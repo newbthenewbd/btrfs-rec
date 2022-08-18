@@ -37,7 +37,7 @@ func ChecksumQualifiedPhysical(fs *btrfs.FS, alg btrfssum.CSumType, paddr btrfsv
 	return ChecksumPhysical(dev, alg, paddr.Addr)
 }
 
-func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (map[btrfsvol.LogicalAddr]btrfssum.CSum, error) {
+func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
 	item, err := fs.TreeSearch(btrfs.CSUM_TREE_OBJECTID, func(key btrfs.Key, size uint32) int {
 		itemBeg := btrfsvol.LogicalAddr(key.ObjectID)
 		numSums := int64(size) / int64(alg.Size())
@@ -52,15 +52,11 @@ func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAdd
 		}
 	})
 	if err != nil {
-		return nil, err
+		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, err
 	}
 	body, ok := item.Body.(btrfsitem.ExtentCSum)
 	if !ok {
-		return nil, fmt.Errorf("item body is %T not ExtentCSum", item.Body)
+		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, fmt.Errorf("item body is %T not ExtentCSum", item.Body)
 	}
-	ret := make(map[btrfsvol.LogicalAddr]btrfssum.CSum, len(body.Sums))
-	for i, sum := range body.Sums {
-		ret[btrfsvol.LogicalAddr(item.Key.ObjectID)+(btrfsvol.LogicalAddr(i)*btrfssum.BlockSize)] = sum
-	}
-	return ret, nil
+	return body.SumRun, nil
 }

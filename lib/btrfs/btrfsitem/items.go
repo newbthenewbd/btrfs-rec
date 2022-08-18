@@ -10,6 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
 )
 
@@ -61,6 +62,7 @@ func UnmarshalItem(key internal.Key, csumType btrfssum.CSumType, dat []byte) Ite
 	retPtr := reflect.New(gotyp)
 	if csums, ok := retPtr.Interface().(*ExtentCSum); ok {
 		csums.ChecksumSize = csumType.Size()
+		csums.Addr = btrfsvol.LogicalAddr(key.Offset)
 	}
 	n, err := binstruct.Unmarshal(dat, retPtr.Interface())
 	if err != nil {
