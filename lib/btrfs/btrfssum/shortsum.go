@@ -149,8 +149,11 @@ func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error)
 // SumRunWithGaps ////////////////////////////////////////////////////
 
 type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
+	// Store the start address and size, in order to facilitate
+	// leading and trailing gaps.
 	Addr Addr
 	Size btrfsvol.AddrDelta
+
 	Runs []SumRun[Addr]
 }
 
