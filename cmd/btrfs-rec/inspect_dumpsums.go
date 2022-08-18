@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/scanforextents"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
 func init() {
@@ -24,12 +24,12 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			sums, err := scanforextents.SumEverything(ctx, fs)
+			sums, err := btrfsinspect.SumEverything(ctx, fs)
 			if err != nil {
 				return err
 			}
 			dlog.Info(ctx, "Writing sums as gob to stdout...")
-			return scanforextents.WriteAllSums(os.Stdout, sums)
+			return btrfsinspect.WriteAllSums(os.Stdout, sums)
 		},
 	})
 }

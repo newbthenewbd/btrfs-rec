@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package scanforextents
+package rebuildmappings
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
@@ -55,8 +56,8 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 }
 
 func WalkGaps(ctx context.Context,
-	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
-	fn func(btrfsvol.DeviceID, SumRun[btrfsvol.PhysicalAddr]) error,
+	sums btrfsinspect.AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
+	fn func(btrfsvol.DeviceID, btrfsinspect.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {
 		for _, gap := range gaps[devID] {
@@ -66,7 +67,7 @@ func WalkGaps(ctx context.Context,
 			begAddr := roundUp(gap.Beg, btrfsitem.CSumBlockSize)
 			begOff := int(begAddr/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
 			endOff := int(gap.End/btrfsitem.CSumBlockSize) * sums.Physical[devID].ChecksumSize
-			if err := fn(devID, SumRun[btrfsvol.PhysicalAddr]{
+			if err := fn(devID, btrfsinspect.SumRun[btrfsvol.PhysicalAddr]{
 				ChecksumSize: sums.Physical[devID].ChecksumSize,
 				Addr:         begAddr,
 				Sums:         sums.Physical[devID].Sums[begOff:endOff],

@@ -13,7 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/scanforextents"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 )
 
 func init() {
@@ -26,7 +27,7 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			bgs, err := scanforextents.ReadNodeScanResults(fs, args[0])
+			bgs, err := rebuildmappings.ReadNodeScanResults(fs, args[0])
 			if err != nil {
 				return err
 			}
@@ -34,13 +35,13 @@ func init() {
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
 			dlog.Infof(ctx, "Reading %q...", args[1])
-			sums, err := scanforextents.ReadAllSums(args[1])
+			sums, err := btrfsinspect.ReadAllSums(args[1])
 			if err != nil {
 				return err
 			}
 			dlog.Infof(ctx, "... done reading %q", args[1])
 
-			if err := scanforextents.ScanForExtents(ctx, fs, bgs, sums); err != nil {
+			if err := rebuildmappings.ScanForExtents(ctx, fs, bgs, sums); err != nil {
 				return err
 			}
 

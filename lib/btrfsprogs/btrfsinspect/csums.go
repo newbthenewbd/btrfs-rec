@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package scanforextents
+package btrfsinspect
 
 import (
 	"context"
@@ -285,7 +285,7 @@ func SumEverything(ctx context.Context, fs *btrfs.FS) (AllSums, error) {
 						return err
 					}
 					progress(i)
-					sum, err := ChecksumPhysical(dev, alg, btrfsvol.PhysicalAddr(i*btrfsitem.CSumBlockSize))
+					sum, err := btrfsutil.ChecksumPhysical(dev, alg, btrfsvol.PhysicalAddr(i*btrfsitem.CSumBlockSize))
 					if err != nil {
 						return err
 					}
