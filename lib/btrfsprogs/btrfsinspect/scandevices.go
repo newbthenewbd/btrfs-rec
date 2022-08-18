@@ -22,7 +22,7 @@ import (
 
 type ScanDevicesResult map[btrfsvol.DeviceID]ScanOneDeviceResult
 
-func ScanDevices(ctx context.Context, fs *btrfs.FS, sb btrfs.Superblock) (ScanDevicesResult, error) {
+func ScanDevices(ctx context.Context, fs *btrfs.FS) (ScanDevicesResult, error) {
 	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 	var mu sync.Mutex
 	result := make(map[btrfsvol.DeviceID]ScanOneDeviceResult)
@@ -30,7 +30,11 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, sb btrfs.Superblock) (ScanDe
 		id := id
 		dev := dev
 		grp.Go(dev.Name(), func(ctx context.Context) error {
-			devResult, err := ScanOneDevice(ctx, dev, sb)
+			sb, err := dev.Superblock()
+			if err != nil {
+				return err
+			}
+			devResult, err := ScanOneDevice(ctx, dev, *sb)
 			if err != nil {
 				return err
 			}

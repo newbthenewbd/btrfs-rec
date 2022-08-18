@@ -7,7 +7,7 @@ gen() (
 	if test -s "$tgt"; then
 		return
 	fi
-	{ set -x; time "$@"; } \
+	{ set -x; command time --verbose "$@"; } \
 	     >"$tgt" \
 	     2> >(tee >&2 "$log")
 )
