@@ -43,7 +43,8 @@ func init() {
 					return nil, err
 				}
 				var scanResults btrfsinspect.ScanDevicesResult
-				if err := lowmemjson.DecodeThenEOF(fh, &scanResults); err != nil {
+				buf := bufio.NewReader(fh)
+				if err := lowmemjson.DecodeThenEOF(buf, &scanResults); err != nil {
 					return nil, err
 				}
 				_ = fh.Close()

@@ -102,7 +102,7 @@ func (sum *ShortSum) DecodeJSON(r io.RuneScanner) error {
 
 type SumRun[Addr btrfsvol.IntAddr[Addr]] struct {
 	// How big a ShortSum is in this Run.
-	ChecksumSize int
+	ChecksumSize int `json:",omitempty"`
 	// Base address where this run starts.
 	Addr Addr `json:",omitempty"`
 	// All of the ShortSums in this run, concatenated together.
@@ -157,6 +157,11 @@ type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
 	Runs []SumRun[Addr]
 }
 
+var (
+	_ lowmemjson.Encodable = SumRunWithGaps[btrfsvol.LogicalAddr]{}
+	_ lowmemjson.Decodable = (*SumRunWithGaps[btrfsvol.LogicalAddr])(nil)
+)
+
 func (sg SumRunWithGaps[Addr]) NumSums() int {
 	return int(sg.Size / BlockSize)
 }
@@ -191,4 +196,75 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (ShortSum, error) {
 	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * BlockSize)
 	return sg.SumForAddr(addr)
+}
+
+func (sg SumRunWithGaps[Addr]) EncodeJSON(w io.Writer) error {
+	if _, err := fmt.Fprintf(w, `{"Addr":%d,"Size":%d,"Runs":[`, sg.Addr, sg.Size); err != nil {
+		return err
+	}
+	cur := sg.Addr
+	for i, run := range sg.Runs {
+		if i > 0 {
+			if _, err := w.Write([]byte{','}); err != nil {
+				return err
+			}
+		}
+		switch {
+		case run.Addr < cur:
+			return fmt.Errorf("invalid %T: addr went backwards: %v < %v", sg, run.Addr, cur)
+		case run.Addr > cur:
+			if _, err := fmt.Fprintf(w, `{"Gap":%d},`, run.Addr.Sub(cur)); err != nil {
+				return err
+			}
+			fallthrough
+		default:
+			if err := lowmemjson.Encode(w, run); err != nil {
+				return err
+			}
+			cur = run.Addr.Add(run.Size())
+		}
+	}
+	end := sg.Addr.Add(sg.Size)
+	switch {
+	case end < cur:
+		return fmt.Errorf("invalid %T: addr went backwards: %v < %v", sg, end, cur)
+	case end > cur:
+		if _, err := fmt.Fprintf(w, `,{"Gap":%d}`, end.Sub(cur)); err != nil {
+			return err
+		}
+	}
+	if _, err := w.Write([]byte("]}")); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (sg *SumRunWithGaps[Addr]) DecodeJSON(r io.RuneScanner) error {
+	*sg = SumRunWithGaps[Addr]{}
+	var name string
+	return lowmemjson.DecodeObject(r,
+		func(r io.RuneScanner) error {
+			return lowmemjson.Decode(r, &name)
+		},
+		func(r io.RuneScanner) error {
+			switch name {
+			case "Addr":
+				return lowmemjson.Decode(r, &sg.Addr)
+			case "Size":
+				return lowmemjson.Decode(r, &sg.Size)
+			case "Runs":
+				return lowmemjson.DecodeArray(r, func(r io.RuneScanner) error {
+					var run SumRun[Addr]
+					if err := lowmemjson.Decode(r, &run); err != nil {
+						return err
+					}
+					if run.ChecksumSize > 0 {
+						sg.Runs = append(sg.Runs, run)
+					}
+					return nil
+				})
+			default:
+				return fmt.Errorf("unknown key %q", name)
+			}
+		})
 }
