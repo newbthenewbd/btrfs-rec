@@ -7,7 +7,6 @@ package rebuildmappings
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -24,30 +23,6 @@ func getNodeSize(fs *btrfs.FS) (btrfsvol.AddrDelta, error) {
 		return 0, err
 	}
 	return btrfsvol.AddrDelta(sb.NodeSize), nil
-}
-
-type blockgroup struct {
-	LAddr btrfsvol.LogicalAddr
-	Size  btrfsvol.AddrDelta
-	Flags btrfsvol.BlockGroupFlags
-}
-
-func dedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) []blockgroup {
-	bgsSet := make(map[blockgroup]struct{})
-	for _, devResults := range scanResults {
-		for _, bg := range devResults.FoundBlockGroups {
-			bgsSet[blockgroup{
-				LAddr: btrfsvol.LogicalAddr(bg.Key.ObjectID),
-				Size:  btrfsvol.AddrDelta(bg.Key.Offset),
-				Flags: bg.BG.Flags,
-			}] = struct{}{}
-		}
-	}
-	bgsOrdered := maps.Keys(bgsSet)
-	sort.Slice(bgsOrdered, func(i, j int) bool {
-		return bgsOrdered[i].LAddr < bgsOrdered[j].LAddr
-	})
-	return bgsOrdered
 }
 
 func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) error {
@@ -133,7 +108,10 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	// First dedup them, because they change for allocations and
 	// CoW means that they'll bounce around a lot, so you likely
 	// have oodles of duplicates?
-	bgsOrdered := dedupBlockGroups(scanResults)
+	bgsOrdered, err := DedupBlockGroups(scanResults)
+	if err != nil {
+		return err
+	}
 	for _, bg := range bgsOrdered {
 		otherLAddr, otherPAddr := fs.LV.ResolveAny(bg.LAddr, bg.Size)
 		if otherLAddr < 0 || otherPAddr.Addr < 0 {
