@@ -18,7 +18,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
@@ -37,19 +36,10 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			scanResults, err := func() (btrfsinspect.ScanDevicesResult, error) {
-				fh, err := os.Open(args[0])
-				if err != nil {
-					return nil, err
-				}
-				var scanResults btrfsinspect.ScanDevicesResult
-				buf := bufio.NewReader(fh)
-				if err := lowmemjson.DecodeThenEOF(buf, &scanResults); err != nil {
-					return nil, err
-				}
-				_ = fh.Close()
-				return scanResults, nil
-			}()
+			scanResults, err := readScanResults(args[0])
+			if err != nil {
+				return err
+			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
 			dlog.Info(ctx, "Mapping the logical address space...")

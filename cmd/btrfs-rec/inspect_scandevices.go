@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -24,11 +25,6 @@ func init() {
 			Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
-			maybeSetErr := func(_err error) {
-				if err == nil && _err != nil {
-					err = _err
-				}
-			}
 			ctx := cmd.Context()
 
 			results, err := btrfsinspect.ScanDevices(ctx, fs)
@@ -37,17 +33,37 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
-			buffer := bufio.NewWriter(os.Stdout)
-			defer func() {
-				maybeSetErr(buffer.Flush())
-			}()
-			return lowmemjson.Encode(&lowmemjson.ReEncoder{
-				Out: buffer,
-
-				Indent:                "\t",
-				ForceTrailingNewlines: true,
-				CompactIfUnder:        16,
-			}, results)
+			return writeScanResults(os.Stdout, results)
 		},
 	})
+}
+
+func writeScanResults(w io.Writer, results btrfsinspect.ScanDevicesResult) (err error) {
+	buffer := bufio.NewWriter(w)
+	defer func() {
+		if _err := buffer.Flush(); err == nil && _err != nil {
+			err = _err
+		}
+	}()
+	return lowmemjson.Encode(&lowmemjson.ReEncoder{
+		Out: buffer,
+
+		Indent:                "\t",
+		ForceTrailingNewlines: true,
+		CompactIfUnder:        16,
+	}, results)
+}
+
+func readScanResults(filename string) (btrfsinspect.ScanDevicesResult, error) {
+	fh, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	var scanResults btrfsinspect.ScanDevicesResult
+	buf := bufio.NewReader(fh)
+	if err := lowmemjson.DecodeThenEOF(buf, &scanResults); err != nil {
+		return nil, err
+	}
+	_ = fh.Close()
+	return scanResults, nil
 }

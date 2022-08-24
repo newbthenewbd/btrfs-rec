@@ -5,19 +5,17 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"bufio"
 	"io"
 	"os"
 
+	"git.lukeshu.com/go/lowmemjson"
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
-	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 )
 
 func init() {
@@ -38,25 +36,15 @@ func init() {
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			scanResultsBytes, err := os.ReadFile(args[0])
+			dlog.Infof(ctx, "Reading %q...", args[0])
+			scanResults, err := readScanResults(args[0])
 			if err != nil {
 				return err
 			}
-			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
-			if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
-				return err
-			}
+			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			devices := fs.LV.PhysicalVolumes()
-			for _, devID := range maps.SortedKeys(scanResults) {
-				dev, ok := devices[devID]
-				if !ok {
-					return fmt.Errorf("device ID %v mentioned in %q is not part of the filesystem",
-						devID, args[0])
-				}
-				dlog.Infof(ctx, "Rebuilding mappings from results on device %v...",
-					dev.Name())
-				scanResults[devID].AddToLV(ctx, fs, dev)
+			if err := rebuildmappings.RebuildMappings(ctx, fs, scanResults); err != nil {
+				return err
 			}
 
 			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
@@ -69,26 +57,18 @@ func init() {
 	})
 }
 
-func writeMappingsJSON(w io.Writer, fs *btrfs.FS) error {
-	mappings := fs.LV.Mappings()
-	if _, err := io.WriteString(w, "[\n"); err != nil {
-		return err
-	}
-	for i, mapping := range mappings {
-		suffix := ","
-		if i == len(mappings)-1 {
-			suffix = ""
+func writeMappingsJSON(w io.Writer, fs *btrfs.FS) (err error) {
+	buffer := bufio.NewWriter(w)
+	defer func() {
+		if _err := buffer.Flush(); err == nil && _err != nil {
+			err = _err
 		}
-		bs, err := json.Marshal(mapping)
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Printf("  %s%s\n", bs, suffix); err != nil {
-			return err
-		}
-	}
-	if _, err := io.WriteString(w, "]\n"); err != nil {
-		return err
-	}
-	return nil
+	}()
+	return lowmemjson.Encode(&lowmemjson.ReEncoder{
+		Out: buffer,
+
+		Indent:                "\t",
+		ForceTrailingNewlines: true,
+		CompactIfUnder:        120,
+	}, fs.LV.Mappings())
 }
