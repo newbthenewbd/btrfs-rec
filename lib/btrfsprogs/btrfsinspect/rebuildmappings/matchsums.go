@@ -6,7 +6,6 @@ package rebuildmappings
 
 import (
 	"context"
-	"errors"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -18,13 +17,13 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func ScanForExtents(ctx context.Context,
+func matchBlockGroupSums(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	dlog.Info(ctx, "Pairing up blockgroups and sums...")
+	dlog.Info(ctx, "... Pairing up blockgroups and sums...")
 	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
@@ -33,10 +32,10 @@ func ScanForExtents(ctx context.Context,
 		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
 			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(100*runs.PctFull()))
 	}
-	dlog.Info(ctx, "... done pairing")
+	dlog.Info(ctx, "... ... done pairing")
 
-	dlog.Info(ctx, "Searching for unmapped blockgroups in unmapped regions...")
-	gaps := ListUnmappedPhysicalRegions(fs)
+	dlog.Info(ctx, "... Searching for unmapped blockgroups in unmapped physical regions...")
+	regions := ListUnmappedPhysicalRegions(fs)
 	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		bgRun := bgSums[bgLAddr]
@@ -46,15 +45,15 @@ func ScanForExtents(ctx context.Context,
 			continue
 		}
 
-		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
-			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](gap, bgRun)
+		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](region, bgRun)
 			if err != nil {
 				return err
 			}
 			for _, match := range matches {
 				bgMatches[bgLAddr] = append(bgMatches[bgLAddr], btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
-					Addr: gap.Addr + (btrfsvol.PhysicalAddr(match) * btrfssum.BlockSize),
+					Addr: region.Addr + (btrfsvol.PhysicalAddr(match) * btrfssum.BlockSize),
 				})
 			}
 			return nil
@@ -69,9 +68,9 @@ func ScanForExtents(ctx context.Context,
 		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage",
 			i+1, len(bgSums), bgLAddr, len(bgMatches[bgLAddr]), int(100*bgRun.PctFull()))
 	}
-	dlog.Info(ctx, "... done searching")
+	dlog.Info(ctx, "... ... done searching")
 
-	dlog.Info(ctx, "Applying those mappings...")
+	dlog.Info(ctx, "... Applying those mappings...")
 	for _, bgLAddr := range maps.SortedKeys(bgMatches) {
 		matches := bgMatches[bgLAddr]
 		if len(matches) != 1 {
@@ -89,10 +88,17 @@ func ScanForExtents(ctx context.Context,
 			},
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
-			dlog.Error(ctx, err)
+			dlog.Errorf(ctx, "... error: %v", err)
+			continue
 		}
+		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... done applying")
+	dlog.Info(ctx, "... ... done applying")
+
+	return nil
+}
+
+/* TODO
 
 	dlog.Info(ctx, "Reverse-indexing remaining unmapped logical sums...")
 	sum2laddrs := make(map[btrfssum.ShortSum][]btrfsvol.LogicalAddr)
@@ -114,8 +120,6 @@ func ScanForExtents(ctx context.Context,
 	dlog.Infof(ctx, "... done reverse-indexing; %v still unmapped logical sums",
 		numUnmappedBlocks)
 
-	/* TODO
-
 	dlog.Info(ctx, "Cross-referencing sums to re-construct mappings...")
 	newMappings := &ExtentMappings{
 		InLV:          &fs.LV,
@@ -123,11 +127,11 @@ func ScanForExtents(ctx context.Context,
 		InSums:        sums,
 		InReverseSums: sum2laddrs,
 	}
-	gaps := ListPhysicalGaps(fs)
-	for _, devID := range maps.SortedKeys(gaps) {
+	regions := ListPhysicalRegions(fs)
+	for _, devID := range maps.SortedKeys(regions) {
 		if err := newMappings.ScanOneDevice(ctx,
 			devID, devs[devID].Name(),
-			gaps[devID],
+			regions[devID],
 		); err != nil {
 			return err
 		}
@@ -149,12 +153,8 @@ func ScanForExtents(ctx context.Context,
 	}
 	dlog.Info(ctx, "... done applying")
 
-	*/
-
 	return nil
 }
-
-/*
 
 type ExtentMappings struct {
 	// input
@@ -222,7 +222,7 @@ func (em *ExtentMappings) addMapping(sum ShortSum, mapping btrfsvol.Mapping) {
 func (em *ExtentMappings) ScanOneDevice(
 	ctx context.Context,
 	devID btrfsvol.DeviceID, devName string,
-	gaps []PhysicalGap,
+	regions []PhysicalRegion,
 ) error {
 	if em.internedMappings == nil {
 		em.internedMappings = make(map[btrfsvol.Mapping]*btrfsvol.Mapping)
@@ -234,7 +234,7 @@ func (em *ExtentMappings) ScanOneDevice(
 	dlog.Infof(ctx, "... dev[%q] Scanning for extents...", devName)
 
 	var totalMappings int
-	_ = WalkGaps(ctx, gaps, btrfssum.BlockSize,
+	_ = WalkRegions(ctx, regions, btrfssum.BlockSize,
 		func(_, _ int64) {},
 		func(paddr btrfsvol.PhysicalAddr) error {
 			qpaddr := btrfsvol.QualifiedPhysicalAddr{
@@ -258,7 +258,7 @@ func (em *ExtentMappings) ScanOneDevice(
 			lastProgress = pct
 		}
 	}
-	return WalkGaps(ctx, gaps, btrfssum.BlockSize,
+	return WalkRegions(ctx, regions, btrfssum.BlockSize,
 		func(_, _ int64) {
 			progress()
 		},

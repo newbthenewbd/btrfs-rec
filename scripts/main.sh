@@ -23,6 +23,9 @@ gen $b.gen/0.scandevices.json \
 gen $b.gen/1.dbgsums.json \
     ./btrfs-rec --pv=$b.img \
     inspect dbgsums $b.gen/0.scandevices.json
+gen $b.gen/1.mappings.json \
+    ./btrfs-rec --pv=$b.img \
+    inspect rebuild-mappings $b.gen/0.scandevices.json
 # gen $b.gen/1.mappings.json \
 #     ./btrfs-rec --pv=$b.img \
 #     inspect rebuild-mappings $b.gen/0.scan-for-nodes.json

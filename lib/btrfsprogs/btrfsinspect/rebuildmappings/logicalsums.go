@@ -18,8 +18,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func MapLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
-	dlog.Info(ctx, "Mapping the logical address space...")
+func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
+	dlog.Info(ctx, "... Mapping the logical address space...")
 	type record struct {
 		Gen btrfs.Generation
 		Sum btrfssum.ShortSum
@@ -52,14 +52,14 @@ func MapLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesRes
 			})
 		}
 	}
-	dlog.Info(ctx, "... done mapping")
+	dlog.Info(ctx, "... ... done mapping")
 
 	var flattened btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]
 	if len(addrspace) == 0 {
 		return flattened
 	}
 
-	dlog.Info(ctx, "Flattening the map ...")
+	dlog.Info(ctx, "... Flattening the map ...")
 	var curAddr btrfsvol.LogicalAddr
 	var curSums strings.Builder
 	for _, laddr := range maps.SortedKeys(addrspace) {
@@ -87,9 +87,52 @@ func MapLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesRes
 	last := flattened.Runs[len(flattened.Runs)-1]
 	end := last.Addr.Add(last.Size())
 	flattened.Size = end.Sub(flattened.Addr)
-	dlog.Info(ctx, "... done flattening")
+	dlog.Info(ctx, "... ... done flattening")
 
 	return flattened
+}
+
+func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]) []btrfssum.SumRun[btrfsvol.LogicalAddr] {
+	// There are a lot of ways this algorithm could be made
+	// faster.
+	var ret []btrfssum.SumRun[btrfsvol.LogicalAddr]
+	var cur struct {
+		Addr btrfsvol.LogicalAddr
+		Size btrfsvol.AddrDelta
+	}
+	for _, run := range logicalSums.Runs {
+		for addr := run.Addr; addr < run.Addr.Add(run.Size()); addr += btrfssum.BlockSize {
+			if _, maxlen := fs.LV.Resolve(addr); maxlen < btrfssum.BlockSize {
+				if cur.Size == 0 {
+					cur.Addr = addr
+					cur.Size = 0
+				}
+				cur.Size += btrfssum.BlockSize
+			} else if cur.Size > 0 {
+				begIdx := int(cur.Addr.Sub(run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
+				lenIdx := (int(cur.Size) / btrfssum.BlockSize) * run.ChecksumSize
+				endIdx := begIdx + lenIdx
+				ret = append(ret, btrfssum.SumRun[btrfsvol.LogicalAddr]{
+					ChecksumSize: run.ChecksumSize,
+					Addr:         cur.Addr,
+					Sums:         run.Sums[begIdx:endIdx],
+				})
+				cur.Size = 0
+			}
+		}
+		if cur.Size > 0 {
+			begIdx := int(cur.Addr.Sub(run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
+			lenIdx := (int(cur.Size) / btrfssum.BlockSize) * run.ChecksumSize
+			endIdx := begIdx + lenIdx
+			ret = append(ret, btrfssum.SumRun[btrfsvol.LogicalAddr]{
+				ChecksumSize: run.ChecksumSize,
+				Addr:         cur.Addr,
+				Sums:         run.Sums[begIdx:endIdx],
+			})
+			cur.Size = 0
+		}
+	}
+	return ret
 }
 
 func SumsForLogicalRegion(sums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {

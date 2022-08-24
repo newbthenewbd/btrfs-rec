@@ -19,7 +19,7 @@ type BlockGroup struct {
 	Flags btrfsvol.BlockGroupFlags
 }
 
-func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) ([]BlockGroup, error) {
+func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	// Dedup
 	bgsSet := make(map[BlockGroup]struct{})
 	for _, devResults := range scanResults {
@@ -47,6 +47,11 @@ func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) ([]BlockGroup,
 		pos = bg.LAddr.Add(bg.Size)
 	}
 
-	// Return
-	return bgsOrdered, nil
+	// Return.  We return a map instead of a slice in order to
+	// facilitate easy deletes.
+	bgsMap := make(map[btrfsvol.LogicalAddr]BlockGroup, len(bgsSet))
+	for bg := range bgsSet {
+		bgsMap[bg.LAddr] = bg
+	}
+	return bgsMap, nil
 }

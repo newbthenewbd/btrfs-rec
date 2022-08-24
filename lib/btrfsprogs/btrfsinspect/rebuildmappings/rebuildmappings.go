@@ -46,13 +46,14 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 			numNodes += len(paddrs)
 		}
 	}
-	dlog.Infof(ctx, "plan: 1/5 process %d chunks", numChunks)
-	dlog.Infof(ctx, "plan: 2/5 process %d device extents", numDevExts)
-	dlog.Infof(ctx, "plan: 3/5 process %d nodes", numNodes)
-	dlog.Infof(ctx, "plan: 4/5 process %d block groups", numBlockGroups)
-	dlog.Infof(ctx, "plan: 5/5 process sums")
+	dlog.Infof(ctx, "plan: 1/6 process %d chunks", numChunks)
+	dlog.Infof(ctx, "plan: 2/6 process %d device extents", numDevExts)
+	dlog.Infof(ctx, "plan: 3/6 process %d nodes", numNodes)
+	dlog.Infof(ctx, "plan: 4/6 process %d block groups", numBlockGroups)
+	dlog.Infof(ctx, "plan: 5/6 process sums of block groups")
+	dlog.Infof(ctx, "plan: 6/6 process remaining sums")
 
-	dlog.Infof(ctx, "1/5: Processing %d chunks...", numChunks)
+	dlog.Infof(ctx, "1/6: Processing %d chunks...", numChunks)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
 		for _, chunk := range devResults.FoundChunks {
@@ -65,7 +66,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	}
 	dlog.Info(ctx, "... done processing chunks")
 
-	dlog.Infof(ctx, "2/5: Processing %d device extents...", numDevExts)
+	dlog.Infof(ctx, "2/6: Processing %d device extents...", numDevExts)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
 		for _, ext := range devResults.FoundDevExtents {
@@ -80,7 +81,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	// too much.  (Because nodes are numerous and small, while the
 	// others are few and large; so it is likely that many of the
 	// nodes will be subsumed by other things.)
-	dlog.Infof(ctx, "3/5: Processing %d nodes...", numNodes)
+	dlog.Infof(ctx, "3/6: Processing %d nodes...", numNodes)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
 		// Sort them so that progress numbers are predictable.
@@ -104,15 +105,17 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 
 	// Use block groups to add missing flags (and as a hint to
 	// combine node entries).
-	dlog.Infof(ctx, "4/5: Processing %d block groups...", numBlockGroups)
+	dlog.Infof(ctx, "4/6: Processing %d block groups...", numBlockGroups)
 	// First dedup them, because they change for allocations and
 	// CoW means that they'll bounce around a lot, so you likely
 	// have oodles of duplicates?
-	bgsOrdered, err := DedupBlockGroups(scanResults)
+	bgs, err := DedupBlockGroups(scanResults)
 	if err != nil {
 		return err
 	}
-	for _, bg := range bgsOrdered {
+	dlog.Infof(ctx, "... de-duplicated to %d block groups", len(bgs))
+	for _, bgLAddr := range maps.SortedKeys(bgs) {
+		bg := bgs[bgLAddr]
 		otherLAddr, otherPAddr := fs.LV.ResolveAny(bg.LAddr, bg.Size)
 		if otherLAddr < 0 || otherPAddr.Addr < 0 {
 			dlog.Errorf(ctx, "... error: could not pair blockgroup laddr=%v (size=%v flags=%v) with a mapping",
@@ -133,10 +136,43 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
 			dlog.Errorf(ctx, "... error: adding flags from blockgroup: %v", err)
+			continue
 		}
+		delete(bgs, bgLAddr)
 	}
 	dlog.Info(ctx, "... done processing block groups")
 
-	dlog.Infof(ctx, "5/5: Processing sums: TODO")
+	dlog.Infof(ctx, "5/6: Processing sums of %d block groups", len(bgs))
+	physicalSums := ExtractPhysicalSums(scanResults)
+	logicalSums := ExtractLogicalSums(ctx, scanResults)
+	if err := matchBlockGroupSums(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
+		return err
+	}
+
+	dlog.Infof(ctx, "6/6: process remaining sums: TODO")
+
+	dlog.Infof(ctx, "report:")
+	unmappedPhysicalRegions := ListUnmappedPhysicalRegions(fs)
+	var unmappedPhysical btrfsvol.AddrDelta
+	var numUnmappedPhysical int
+	for _, devRegions := range unmappedPhysicalRegions {
+		numUnmappedPhysical += len(devRegions)
+		for _, region := range devRegions {
+			unmappedPhysical += region.End.Sub(region.Beg)
+		}
+	}
+	dlog.Infof(ctx, "... %d KiB of unmapped physical space (across %d regions)", unmappedPhysical/1024, numUnmappedPhysical)
+	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
+	var unmappedLogical btrfsvol.AddrDelta
+	for _, region := range unmappedLogicalRegions {
+		unmappedLogical += region.Size()
+	}
+	dlog.Infof(ctx, "... %d KiB of unmapped summed logical space (across %d regions)", unmappedLogical/1024, len(unmappedLogicalRegions))
+	var unmappedBlockGroups btrfsvol.AddrDelta
+	for _, bg := range bgs {
+		unmappedBlockGroups += bg.Size
+	}
+	dlog.Infof(ctx, "... %d KiB of unmapped block groups (across %d groups)", unmappedBlockGroups/1024, len(bgs))
+
 	return nil
 }

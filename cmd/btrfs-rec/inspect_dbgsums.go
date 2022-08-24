@@ -39,7 +39,7 @@ func init() {
 			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			flattened := rebuildmappings.MapLogicalSums(ctx, scanResults)
+			flattened := rebuildmappings.ExtractLogicalSums(ctx, scanResults)
 			if len(flattened.Runs) == 0 {
 				return fmt.Errorf("no checksums were found in the scan")
 			}
