@@ -16,12 +16,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type PhysicalGap struct {
+type PhysicalRegion struct {
 	Beg, End btrfsvol.PhysicalAddr
 }
 
-func ListPhysicalGaps(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalGap {
-	gaps := make(map[btrfsvol.DeviceID][]PhysicalGap)
+func ListUnmappedPhysicalRegions(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalRegion {
+	regions := make(map[btrfsvol.DeviceID][]PhysicalRegion)
 	pos := make(map[btrfsvol.DeviceID]btrfsvol.PhysicalAddr)
 	mappings := fs.LV.Mappings()
 	sort.Slice(mappings, func(i, j int) bool {
@@ -29,7 +29,7 @@ func ListPhysicalGaps(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalGap {
 	})
 	for _, mapping := range mappings {
 		if pos[mapping.PAddr.Dev] < mapping.PAddr.Addr {
-			gaps[mapping.PAddr.Dev] = append(gaps[mapping.PAddr.Dev], PhysicalGap{
+			regions[mapping.PAddr.Dev] = append(regions[mapping.PAddr.Dev], PhysicalRegion{
 				Beg: pos[mapping.PAddr.Dev],
 				End: mapping.PAddr.Addr,
 			})
@@ -41,21 +41,21 @@ func ListPhysicalGaps(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalGap {
 	for devID, dev := range fs.LV.PhysicalVolumes() {
 		devSize := dev.Size()
 		if pos[devID] < devSize {
-			gaps[devID] = append(gaps[devID], PhysicalGap{
+			regions[devID] = append(regions[devID], PhysicalRegion{
 				Beg: pos[devID],
 				End: devSize,
 			})
 		}
 	}
-	return gaps
+	return regions
 }
 
 func roundUp[T constraints.Integer](x, multiple T) T {
 	return ((x + multiple - 1) / multiple) * multiple
 }
 
-func WalkGaps(ctx context.Context,
-	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalGap,
+func WalkUnmappedPhysicalRegions(ctx context.Context,
+	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalRegion,
 	fn func(btrfsvol.DeviceID, btrfssum.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {

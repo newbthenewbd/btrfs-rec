@@ -53,7 +53,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	dlog.Info(ctx, "... done pairing")
 
 	dlog.Info(ctx, "Searching for unmapped blockgroups in unmapped regions...")
-	gaps := ListPhysicalGaps(fs)
+	gaps := ListUnmappedPhysicalRegions(fs)
 	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		bgRun := bgSums[bgLAddr]
@@ -63,7 +63,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			continue
 		}
 
-		if err := WalkGaps(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+		if err := WalkUnmappedPhysicalRegions(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
 			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](gap, bgRun)
 			if err != nil {
 				return err
