@@ -16,7 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
-	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 func ScanForExtents(ctx context.Context,
@@ -29,28 +28,7 @@ func ScanForExtents(ctx context.Context,
 	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		runs := btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{
-			Addr: blockgroup.LAddr,
-			Size: blockgroup.Size,
-		}
-		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
-			run, next, ok := logicalSums.RunForAddr(laddr)
-			if !ok {
-				laddr = next
-				continue
-			}
-			off := int((laddr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
-			deltaAddr := slices.Min[btrfsvol.AddrDelta](
-				blockgroup.Size-laddr.Sub(blockgroup.LAddr),
-				btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*btrfssum.BlockSize)
-			deltaOff := int(deltaAddr/btrfssum.BlockSize) * run.ChecksumSize
-			runs.Runs = append(runs.Runs, btrfssum.SumRun[btrfsvol.LogicalAddr]{
-				ChecksumSize: run.ChecksumSize,
-				Addr:         laddr,
-				Sums:         run.Sums[off : off+deltaOff],
-			})
-			laddr = laddr.Add(deltaAddr)
-		}
+		runs := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 		bgSums[blockgroup.LAddr] = runs
 		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
 			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(100*runs.PctFull()))

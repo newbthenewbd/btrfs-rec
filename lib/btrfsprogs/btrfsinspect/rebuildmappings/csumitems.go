@@ -15,6 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 func MapLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
@@ -89,4 +90,30 @@ func MapLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesRes
 	dlog.Info(ctx, "... done flattening")
 
 	return flattened
+}
+
+func SumsForLogicalRegion(sums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
+	runs := btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{
+		Addr: beg,
+		Size: size,
+	}
+	for laddr := beg; laddr < beg.Add(size); {
+		run, next, ok := sums.RunForAddr(laddr)
+		if !ok {
+			laddr = next
+			continue
+		}
+		off := int((laddr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
+		deltaAddr := slices.Min[btrfsvol.AddrDelta](
+			size-laddr.Sub(beg),
+			btrfsvol.AddrDelta((len(run.Sums)-off)/run.ChecksumSize)*btrfssum.BlockSize)
+		deltaOff := int(deltaAddr/btrfssum.BlockSize) * run.ChecksumSize
+		runs.Runs = append(runs.Runs, btrfssum.SumRun[btrfsvol.LogicalAddr]{
+			ChecksumSize: run.ChecksumSize,
+			Addr:         laddr,
+			Sums:         run.Sums[off : off+deltaOff],
+		})
+		laddr = laddr.Add(deltaAddr)
+	}
+	return runs
 }
