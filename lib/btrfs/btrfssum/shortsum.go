@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -175,6 +176,19 @@ func (sg SumRunWithGaps[Addr]) PctFull() float64 {
 	return float64(full) / float64(total)
 }
 
+func (sg SumRunWithGaps[Addr]) RunForAddr(addr Addr) (SumRun[Addr], Addr, bool) {
+	for _, run := range sg.Runs {
+		if run.Addr > addr {
+			return SumRun[Addr]{}, run.Addr, false
+		}
+		if run.Addr.Add(run.Size()) <= addr {
+			continue
+		}
+		return run, 0, true
+	}
+	return SumRun[Addr]{}, math.MaxInt64, false
+}
+
 func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 	if addr < sg.Addr || addr >= sg.Addr.Add(sg.Size) {
 		return "", io.EOF
@@ -190,6 +204,15 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 		return ShortSum(run.Sums[off : off+run.ChecksumSize]), nil
 	}
 	return "", diskio.ErrWildcard
+}
+
+func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error) error {
+	for _, run := range sg.Runs {
+		if err := run.Walk(ctx, fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Get implements diskio.Sequence[int, ShortSum]

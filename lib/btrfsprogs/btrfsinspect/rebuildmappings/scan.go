@@ -19,7 +19,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.LogicalAddr]BlockGroup, sums AllSums) error {
+func ScanForExtents(ctx context.Context,
+	fs *btrfs.FS,
+	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
+	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
+	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
+) error {
 	dlog.Info(ctx, "Pairing up blockgroups and sums...")
 	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
@@ -29,7 +34,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			Size: blockgroup.Size,
 		}
 		for laddr := blockgroup.LAddr; laddr < blockgroup.LAddr.Add(blockgroup.Size); {
-			run, next, ok := sums.RunForLAddr(laddr)
+			run, next, ok := logicalSums.RunForAddr(laddr)
 			if !ok {
 				laddr = next
 				continue
@@ -63,7 +68,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 			continue
 		}
 
-		if err := WalkUnmappedPhysicalRegions(ctx, sums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, gaps, func(devID btrfsvol.DeviceID, gap btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
 			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](gap, bgRun)
 			if err != nil {
 				return err
@@ -114,7 +119,7 @@ func ScanForExtents(ctx context.Context, fs *btrfs.FS, blockgroups map[btrfsvol.
 	dlog.Info(ctx, "Reverse-indexing remaining unmapped logical sums...")
 	sum2laddrs := make(map[btrfssum.ShortSum][]btrfsvol.LogicalAddr)
 	var numUnmappedBlocks int64
-	if err := sums.WalkLogical(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error {
+	if err := logicalSums.Walk(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error {
 		var dat [btrfssum.BlockSize]byte
 		if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 			if errors.Is(err, btrfsvol.ErrCouldNotMap) {

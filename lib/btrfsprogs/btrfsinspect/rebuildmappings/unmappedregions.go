@@ -55,7 +55,8 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 }
 
 func WalkUnmappedPhysicalRegions(ctx context.Context,
-	sums AllSums, gaps map[btrfsvol.DeviceID][]PhysicalRegion,
+	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
+	gaps map[btrfsvol.DeviceID][]PhysicalRegion,
 	fn func(btrfsvol.DeviceID, btrfssum.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {
@@ -64,12 +65,12 @@ func WalkUnmappedPhysicalRegions(ctx context.Context,
 				return err
 			}
 			begAddr := roundUp(gap.Beg, btrfssum.BlockSize)
-			begOff := int(begAddr/btrfssum.BlockSize) * sums.Physical[devID].ChecksumSize
-			endOff := int(gap.End/btrfssum.BlockSize) * sums.Physical[devID].ChecksumSize
+			begOff := int(begAddr/btrfssum.BlockSize) * physicalSums[devID].ChecksumSize
+			endOff := int(gap.End/btrfssum.BlockSize) * physicalSums[devID].ChecksumSize
 			if err := fn(devID, btrfssum.SumRun[btrfsvol.PhysicalAddr]{
-				ChecksumSize: sums.Physical[devID].ChecksumSize,
+				ChecksumSize: physicalSums[devID].ChecksumSize,
 				Addr:         begAddr,
-				Sums:         sums.Physical[devID].Sums[begOff:endOff],
+				Sums:         physicalSums[devID].Sums[begOff:endOff],
 			}); err != nil {
 				return err
 			}
