@@ -25,13 +25,13 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	for _, devResults := range scanResults {
 		records = append(records, devResults.FoundExtentCSums...)
 	}
-	// Sort higher-generation items earlier; then sort by addr.
+	// Sort lower-generation items earlier; then sort by addr.
 	sort.Slice(records, func(i, j int) bool {
 		a, b := records[i], records[j]
 		switch {
-		case a.Generation > b.Generation:
-			return true
 		case a.Generation < b.Generation:
+			return true
+		case a.Generation > b.Generation:
 			return false
 		default:
 			return a.Sums.Addr < b.Sums.Addr
@@ -42,10 +42,17 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	}
 	sumSize := records[0].Sums.ChecksumSize
 
-	// Now build them in to a coherent address space.  If an item
-	// conflicts with a previously added item, ignore it (let
-	// higher generations win; we already sorted to have higher
-	// generations sorted first).
+	// Now build them in to a coherent address space.
+	//
+	// We can't just reverse-sort by generation to avoid mutations, because given
+	//
+	//	gen1 AAAAAAA
+	//      gen2    BBBBBBBB
+	//      gen3          CCCCCCC
+	//
+	// "AAAAAAA" shouldn't be present, and if we just discard "BBBBBBBB"
+	// because it conflicts with "CCCCCCC", then we would erroneously
+	// include "AAAAAAA".
 	addrspace := &containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]{
 		KeyFn: func(item btrfsinspect.SysExtentCSum) containers.NativeOrdered[btrfsvol.LogicalAddr] {
 			return containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: item.Sums.Addr}
@@ -76,11 +83,13 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 				// Duplicates are to be expected.
 				break
 			}
-			if oldRecord.Generation > newRecord.Generation {
-				// Newer generation wins.
-				break
-			}
 			if oldRecord.Generation < newRecord.Generation {
+				// Newer generation wins.
+				addrspace.Delete(containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: oldRecord.Sums.Addr})
+				// loop around to check for more conflicts
+				continue
+			}
+			if oldRecord.Generation > newRecord.Generation {
 				// We sorted them!  This shouldn't happen.
 				panic("should not happen")
 			}
