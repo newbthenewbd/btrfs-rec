@@ -6,8 +6,8 @@ package rebuildmappings
 
 import (
 	"context"
+	"fmt"
 	"sort"
-	"strconv"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -18,23 +18,18 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
+const minFuzzyPct = 0.5
+
 type fuzzyRecord struct {
 	PAddr btrfsvol.QualifiedPhysicalAddr
-	N     int64
-	D     int64
-}
-
-func (r fuzzyRecord) Pct() float64 {
-	return float64(r.N) / float64(r.D)
+	N     int
 }
 
 func (a fuzzyRecord) Cmp(b fuzzyRecord) int {
-	aF := 1.0 - a.Pct()
-	bF := 1.0 - b.Pct()
 	switch {
-	case aF < bF:
+	case a.N < b.N:
 		return -1
-	case aF > bF:
+	case a.N > b.N:
 		return 1
 	default:
 		return 0
@@ -47,73 +42,80 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	dlog.Info(ctx, "... Pairing up blockgroups and sums...")
-	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
+	regions := ListUnmappedPhysicalRegions(fs)
+
+	dlog.Info(ctx, "... Indexing physical regions...") // O(m)
+	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
+	if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+		return region.Walk(ctx, func(paddr btrfsvol.PhysicalAddr, sum btrfssum.ShortSum) error {
+			physicalIndex[sum] = append(physicalIndex[sum], btrfsvol.QualifiedPhysicalAddr{
+				Dev:  devID,
+				Addr: paddr,
+			})
+			return nil
+		})
+	}); err != nil {
+		return err
+	}
+	dlog.Info(ctx, "... ... done indexing")
+
+	dlog.Info(ctx, "... Searching...")
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		runs := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
-		bgSums[blockgroup.LAddr] = runs
-		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
-			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(100*runs.PctFull()))
-	}
-	dlog.Info(ctx, "... ... done pairing")
+		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 
-	dlog.Info(ctx, "... Searching for unmapped blockgroups in unmapped physical regions...")
-	regions := ListUnmappedPhysicalRegions(fs)
-	bgMatches := make(map[btrfsvol.LogicalAddr]btrfsvol.QualifiedPhysicalAddr)
-	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
-		bgRun := bgSums[bgLAddr]
-		if len(bgRun.Runs) == 0 {
-			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
-				i+1, len(bgSums), bgLAddr)
-			continue
-		}
-
-		best := lowestN[fuzzyRecord]{N: 5}
-		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
-			for paddr := region.Addr; true; paddr += btrfssum.BlockSize {
-				n, d, err := pctMatch(ctx, region, paddr, bgRun)
-				if err != nil {
-					return err
+		d := bgRun.NumSums()
+		matches := make(map[btrfsvol.QualifiedPhysicalAddr]int)
+		if err := bgRun.Walk(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error { // O(n*…
+			off := laddr.Sub(bgRun.Addr)
+			for _, paddr := range physicalIndex[sum] { // …log(m)) expected but …m) worst
+				key := btrfsvol.QualifiedPhysicalAddr{
+					Dev:  paddr.Dev,
+					Addr: paddr.Addr.Add(-off),
 				}
-				if d == 0 {
-					break
-				}
-				best.Insert(fuzzyRecord{
-					PAddr: btrfsvol.QualifiedPhysicalAddr{
-						Dev:  devID,
-						Addr: paddr,
-					},
-					N: n,
-					D: d,
-				})
+				matches[key] = matches[key] + 1
 			}
 			return nil
 		}); err != nil {
 			return err
 		}
 
-		var pcts []string
-		for _, r := range best.Dat {
-			pcts = append(pcts, strconv.Itoa(int(100*r.Pct()))+"%")
+		best := lowestN[fuzzyRecord]{N: 2}
+		for paddr, n := range matches { // O(m)
+			best.Insert(fuzzyRecord{
+				PAddr: paddr,
+				N:     d - n,
+			})
+		}
+
+		var apply bool
+		var matchesStr string
+		switch len(best.Dat) {
+		case 0: // can happen if there are no sums in the run
+			matchesStr = ""
+		case 1: // not sure how this can happen, but whatev
+			pct := float64(d-best.Dat[0].N) / float64(d)
+			matchesStr = fmt.Sprintf("%v%%", int(100*pct))
+			apply = pct > minFuzzyPct
+		case 2:
+			pct := float64(d-best.Dat[0].N) / float64(d)
+			pct2 := float64(d-best.Dat[1].N) / float64(d)
+			matchesStr = fmt.Sprintf("best=%v%% secondbest=%v%%", int(100*pct), int(100*pct2))
+			apply = pct > minFuzzyPct && pct2 < minFuzzyPct
 		}
 		lvl := dlog.LogLevelError
-		if len(best.Dat) > 0 && best.Dat[0].Pct() > 0.5 {
-			bgMatches[bgLAddr] = best.Dat[0].PAddr
+		if apply {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] best %d matches are: %v",
-			i+1, len(bgSums), bgLAddr, len(pcts), pcts)
-	}
-	dlog.Info(ctx, "... ... done searching")
+		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
+			i+1, len(blockgroups), bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
+		if !apply {
+			continue
+		}
 
-	dlog.Info(ctx, "... Applying those mappings...")
-	for _, bgLAddr := range maps.SortedKeys(bgMatches) {
-		paddr := bgMatches[bgLAddr]
-		blockgroup := blockgroups[bgLAddr]
 		mapping := btrfsvol.Mapping{
 			LAddr:      blockgroup.LAddr,
-			PAddr:      paddr,
+			PAddr:      best.Dat[0].PAddr,
 			Size:       blockgroup.Size,
 			SizeLocked: true,
 			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
@@ -127,7 +129,6 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		}
 		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... ... done applying")
 
 	return nil
 }
@@ -148,24 +149,4 @@ func (l *lowestN[T]) Insert(v T) {
 	sort.Slice(l.Dat, func(i, j int) bool {
 		return l.Dat[i].Cmp(l.Dat[j]) < 0
 	})
-}
-
-func pctMatch(
-	ctx context.Context,
-	searchspace btrfssum.SumRun[btrfsvol.PhysicalAddr], start btrfsvol.PhysicalAddr,
-	pattern btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
-) (n, d int64, err error) {
-	if psize := searchspace.Size() - start.Sub(searchspace.Addr); psize < pattern.Size {
-		return
-	}
-	err = pattern.Walk(ctx, func(laddr btrfsvol.LogicalAddr, lsum btrfssum.ShortSum) error {
-		d++
-		paddr := start.Add(laddr.Sub(pattern.Addr))
-		psum, _ := searchspace.SumForAddr(paddr)
-		if psum == lsum {
-			n++
-		}
-		return nil
-	})
-	return
 }
