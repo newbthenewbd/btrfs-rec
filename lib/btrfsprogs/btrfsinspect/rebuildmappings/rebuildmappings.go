@@ -51,8 +51,8 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	dlog.Infof(ctx, "plan: 2/6 process %d device extents", numDevExts)
 	dlog.Infof(ctx, "plan: 3/6 process %d nodes", numNodes)
 	dlog.Infof(ctx, "plan: 4/6 process %d block groups", numBlockGroups)
-	dlog.Infof(ctx, "plan: 5/6 process sums of block groups")
-	dlog.Infof(ctx, "plan: 6/6 process remaining sums")
+	dlog.Infof(ctx, "plan: 5/6 search for block groups in checksum map (exact)")
+	dlog.Infof(ctx, "plan: 6/6 search for block groups in checksum map (fuzzy)")
 
 	dlog.Infof(ctx, "1/6: Processing %d chunks...", numChunks)
 	for _, devID := range devIDs {
@@ -143,14 +143,19 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	}
 	dlog.Info(ctx, "... done processing block groups")
 
-	dlog.Infof(ctx, "5/6: Processing sums of %d block groups", len(bgs))
+	dlog.Infof(ctx, "5/6: Searching for %d block groups in checksum map (exact)...", len(bgs))
 	physicalSums := ExtractPhysicalSums(scanResults)
 	logicalSums := ExtractLogicalSums(ctx, scanResults)
 	if err := matchBlockGroupSums(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
 		return err
 	}
+	dlog.Info(ctx, "... done searching for exact block groups")
 
-	dlog.Infof(ctx, "6/6: process remaining sums: TODO")
+	dlog.Infof(ctx, "6/6: Searching for %d block groups in checksum map (fuzzy)...", len(bgs))
+	if err := fuzzyMatchBlockGroupSums(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
+		return err
+	}
+	dlog.Info(ctx, "... done searching for fuzzy block groups")
 
 	dlog.Info(ctx, "report:")
 	p := message.NewPrinter(message.MatchLanguage("en"))
