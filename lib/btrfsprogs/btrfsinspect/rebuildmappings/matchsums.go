@@ -23,35 +23,24 @@ func matchBlockGroupSums(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	dlog.Info(ctx, "... Pairing up blockgroups and sums...")
-	bgSums := make(map[btrfsvol.LogicalAddr]btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr])
+	regions := ListUnmappedPhysicalRegions(fs)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		runs := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
-		bgSums[blockgroup.LAddr] = runs
-		dlog.Infof(ctx, "... (%v/%v) blockgroup[laddr=%v] has %v runs covering %v%%",
-			i+1, len(blockgroups), bgLAddr, len(runs.Runs), int(100*runs.PctFull()))
-	}
-	dlog.Info(ctx, "... ... done pairing")
-
-	dlog.Info(ctx, "... Searching for unmapped blockgroups in unmapped physical regions...")
-	regions := ListUnmappedPhysicalRegions(fs)
-	bgMatches := make(map[btrfsvol.LogicalAddr][]btrfsvol.QualifiedPhysicalAddr)
-	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
-		bgRun := bgSums[bgLAddr]
+		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 		if len(bgRun.Runs) == 0 {
 			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
-				i+1, len(bgSums), bgLAddr)
+				i+1, len(blockgroups), bgLAddr)
 			continue
 		}
 
+		var matches []btrfsvol.QualifiedPhysicalAddr
 		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
-			matches, err := diskio.IndexAll[int64, btrfssum.ShortSum](region, bgRun)
+			rawMatches, err := diskio.IndexAll[int64, btrfssum.ShortSum](region, bgRun)
 			if err != nil {
 				return err
 			}
-			for _, match := range matches {
-				bgMatches[bgLAddr] = append(bgMatches[bgLAddr], btrfsvol.QualifiedPhysicalAddr{
+			for _, match := range rawMatches {
+				matches = append(matches, btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
 					Addr: region.Addr + (btrfsvol.PhysicalAddr(match) * btrfssum.BlockSize),
 				})
@@ -61,22 +50,16 @@ func matchBlockGroupSums(ctx context.Context,
 			return err
 		}
 
-		lvl := dlog.LogLevelInfo
-		if len(bgMatches[bgLAddr]) == 0 {
-			lvl = dlog.LogLevelError
+		lvl := dlog.LogLevelError
+		if len(matches) == 1 {
+			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage",
-			i+1, len(bgSums), bgLAddr, len(bgMatches[bgLAddr]), int(100*bgRun.PctFull()))
-	}
-	dlog.Info(ctx, "... ... done searching")
-
-	dlog.Info(ctx, "... Applying those mappings...")
-	for _, bgLAddr := range maps.SortedKeys(bgMatches) {
-		matches := bgMatches[bgLAddr]
+		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage from %v runs",
+			i+1, len(blockgroups), bgLAddr, len(matches), int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if len(matches) != 1 {
 			continue
 		}
-		blockgroup := blockgroups[bgLAddr]
+
 		mapping := btrfsvol.Mapping{
 			LAddr:      blockgroup.LAddr,
 			PAddr:      matches[0],
@@ -93,7 +76,5 @@ func matchBlockGroupSums(ctx context.Context,
 		}
 		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... ... done applying")
-
 	return nil
 }
