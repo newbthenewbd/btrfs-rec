@@ -60,6 +60,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	dlog.Info(ctx, "... ... done indexing")
 
 	dlog.Info(ctx, "... Searching...")
+	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
 		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
@@ -108,7 +109,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 			lvl = dlog.LogLevelInfo
 		}
 		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
-			i+1, len(blockgroups), bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
+			i+1, numBlockgroups, bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if !apply {
 			continue
 		}
@@ -129,6 +130,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		}
 		delete(blockgroups, bgLAddr)
 	}
+	dlog.Info(ctx, "... ... done searcihng")
 
 	return nil
 }

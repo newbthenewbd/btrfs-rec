@@ -24,12 +24,13 @@ func matchBlockGroupSums(ctx context.Context,
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
 	regions := ListUnmappedPhysicalRegions(fs)
+	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
 		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 		if len(bgRun.Runs) == 0 {
 			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
-				i+1, len(blockgroups), bgLAddr)
+				i+1, numBlockgroups, bgLAddr)
 			continue
 		}
 
@@ -55,7 +56,7 @@ func matchBlockGroupSums(ctx context.Context,
 			lvl = dlog.LogLevelInfo
 		}
 		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage from %v runs",
-			i+1, len(blockgroups), bgLAddr, len(matches), int(100*bgRun.PctFull()), len(bgRun.Runs))
+			i+1, numBlockgroups, bgLAddr, len(matches), int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if len(matches) != 1 {
 			continue
 		}
