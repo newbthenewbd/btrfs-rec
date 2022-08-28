@@ -397,9 +397,6 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 		if err := cbs.PostNode(path, node); err != nil {
 			errHandle(&TreeError{Path: path, Err: err})
 		}
-		if ctx.Err() != nil {
-			return
-		}
 	}
 }
 

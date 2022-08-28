@@ -42,9 +42,8 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	regions := ListUnmappedPhysicalRegions(fs)
-
 	dlog.Info(ctx, "... Indexing physical regions...") // O(m)
+	regions := ListUnmappedPhysicalRegions(fs)
 	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
 	if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
 		return region.Walk(ctx, func(paddr btrfsvol.PhysicalAddr, sum btrfssum.ShortSum) error {

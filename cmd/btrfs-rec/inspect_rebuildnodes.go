@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"runtime"
 	"sort"
 
 	"github.com/datawire/dlib/dlog"
@@ -35,11 +34,10 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			nodeScanResults, err := readNodeScanResults(args[0])
+			nodeScanResults, err := readScanResults(args[0])
 			if err != nil {
 				return err
 			}
-			runtime.GC()
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
 			dlog.Info(ctx, "Identifying lost+found nodes...")
@@ -73,22 +71,6 @@ func init() {
 			return nil
 		},
 	})
-}
-
-type NodeScanResults = map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
-
-func readNodeScanResults(filename string) (NodeScanResults, error) {
-	scanResultsBytes, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var scanResults NodeScanResults
-	if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
-		return nil, err
-	}
-
-	return scanResults, nil
 }
 
 var maxKey = btrfs.Key{
@@ -156,7 +138,7 @@ func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAd
 	fs.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
 }
 
-func countNodes(nodeScanResults NodeScanResults) int {
+func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
 	var cnt int
 	for _, devResults := range nodeScanResults {
 		cnt += len(devResults.FoundNodes)
@@ -164,7 +146,7 @@ func countNodes(nodeScanResults NodeScanResults) int {
 	return cnt
 }
 
-func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeScanResults) (map[btrfsvol.LogicalAddr]struct{}, error) {
+func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]struct{}, error) {
 	lastPct := -1
 	total := countNodes(nodeScanResults)
 	progress := func(done int) {
@@ -267,7 +249,7 @@ type rebuiltNode struct {
 	btrfs.Node
 }
 
-func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults NodeScanResults, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*rebuiltNode, error) {
+func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*rebuiltNode, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
