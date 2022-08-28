@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/datawire/dlib/dlog"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -39,6 +41,7 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 		fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
 			func(err *btrfstree.TreeError) {
 				// do nothing
+				dlog.Errorf(ctx, "dbg err: %v", err)
 			},
 			btrfstree.TreeWalkHandler{
 				Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
@@ -56,6 +59,8 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 	}
 }
 
+var noParents = make(map[btrfsprim.ObjID]struct{})
+
 func (fs *FS) ReadNode(path btrfstree.TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], error) {
 	sb, err := fs.Superblock()
 	if err != nil {
@@ -72,10 +77,16 @@ func (fs *FS) ReadNode(path btrfstree.TreePath) (*diskio.Ref[btrfsvol.LogicalAdd
 			objID := potentialOwners[len(potentialOwners)-1]
 			parentUUID := fs.cacheTreeParent[objID]
 			if parentUUID == (btrfsprim.UUID{}) {
+				if _, already := noParents[objID]; !already {
+					dlog.Infof(ctx, "dbg: objID=%v has no parent", objID)
+					noParents[objID] = struct{}{}
+				}
 				break
 			}
+			dlog.Infof(ctx, "dbg: parent of objID=%v is %v", objID, parentUUID)
 			parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
 			if !ok {
+				dlog.Errorf(ctx, "dbg: could not resolve parentUUID=%v to an ObjID", parentUUID)
 				break
 			}
 			potentialOwners = append(potentialOwners, parentObjID)

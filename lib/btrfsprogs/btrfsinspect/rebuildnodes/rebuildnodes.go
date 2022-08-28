@@ -6,10 +6,12 @@ package rebuildnodes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	iofs "io/fs"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -152,6 +154,9 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 		},
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
+			if !errors.Is(err, btrfstree.ErrNotANode) && !strings.Contains(err.Error(), "read: could not map logical address") {
+				dlog.Errorf(ctx, "dbg walk err: %v", err)
+			}
 		},
 	})
 
@@ -220,6 +225,7 @@ func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfsprim.UUID, bool) 
 		},
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
+			dlog.Errorf(ctx, "dbg err: %v", err)
 		},
 	})
 	return ret, retOK
@@ -255,9 +261,17 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	var done int
 
 	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
+	dbg := make(map[btrfsvol.LogicalAddr]btrfstree.TreePath)
 	walkHandler := btrfstree.TreeWalkHandler{
-		Node: func(_ btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+			if other, conflict := dbg[path.Node(-1).ToNodeAddr]; conflict {
+				panic(fmt.Errorf("same node visited twice: %v != %v", other, path))
+			}
+			dbg[path.Node(-1).ToNodeAddr] = path.DeepCopy()
 			done++
+			if done != len(dbg) {
+				panic(fmt.Errorf("done=%v != len(dbg)=%v", done, len(dbg)))
+			}
 			progress(done)
 			return nil
 		},
