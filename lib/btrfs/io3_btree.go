@@ -6,6 +6,7 @@ package btrfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	iofs "io/fs"
@@ -322,7 +323,12 @@ func LookupTreeRoot(fs Trees, treeID ObjID) (*TreeRoot, error) {
 }
 
 type TreeWalkHandler struct {
-	// Callbacks for entire nodes
+	// Callbacks for entire nodes.
+	//
+	// If any of these return an error that is io/fs.SkipDir, the
+	// node immediately stops getting processed; if PreNode, Node,
+	// or BadNode return io/fs.SkipDir then key pointers and items
+	// within the node are not processed.
 	PreNode  func(TreePath) error
 	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
 	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
@@ -368,6 +374,9 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 
 	if cbs.PreNode != nil {
 		if err := cbs.PreNode(path); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return
+			}
 			errHandle(&TreeError{Path: path, Err: err})
 		}
 		if ctx.Err() != nil {
@@ -381,12 +390,18 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	if err != nil && node != nil && cbs.BadNode != nil {
 		// opportunity to fix the node
 		err = cbs.BadNode(path, node, err)
+		if errors.Is(err, iofs.SkipDir) {
+			return
+		}
 	}
 	if err != nil {
 		errHandle(&TreeError{Path: path, Err: err})
 	} else {
 		if cbs.Node != nil {
 			if err := cbs.Node(path, node); err != nil {
+				if errors.Is(err, iofs.SkipDir) {
+					return
+				}
 				errHandle(&TreeError{Path: path, Err: err})
 			}
 		}
@@ -452,6 +467,9 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 	if cbs.PostNode != nil {
 		if err := cbs.PostNode(path, node); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return
+			}
 			errHandle(&TreeError{Path: path, Err: err})
 		}
 	}
