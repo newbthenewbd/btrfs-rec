@@ -141,7 +141,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		}
 
 		if checkForNode {
-			nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, nil)
+			nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, btrfs.NodeExpectations{})
 			if err != nil {
 				if !errors.Is(err, btrfs.ErrNotANode) {
 					dlog.Errorf(ctx, "... dev[%q] error: %v", dev.Name(), err)

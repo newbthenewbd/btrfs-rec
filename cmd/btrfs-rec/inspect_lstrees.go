@@ -19,6 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
@@ -96,13 +97,16 @@ func init() {
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
 				fmt.Printf("lost+found\n")
+				sb, _ := fs.Superblock()
 				for _, devResults := range scanResults {
 					for laddr := range devResults.FoundNodes {
 						if _, visited := visitedNodes[laddr]; visited {
 							continue
 						}
 						visitedNodes[laddr] = struct{}{}
-						node, err := fs.ReadNode(laddr)
+						node, err := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfs.NodeExpectations{
+							LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+						})
 						if err != nil {
 							treeErrCnt++
 							continue

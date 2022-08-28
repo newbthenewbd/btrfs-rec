@@ -13,6 +13,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
@@ -378,7 +379,15 @@ func (node *Node) LeafFreeSpace() uint32 {
 
 var ErrNotANode = errors.New("does not look like a node")
 
-func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, laddrCB func(btrfsvol.LogicalAddr) error) (*diskio.Ref[Addr, Node], error) {
+type NodeExpectations struct {
+	LAddr containers.Optional[btrfsvol.LogicalAddr]
+	// Things knowable from the parent.
+	Level         containers.Optional[uint8]
+	MaxGeneration containers.Optional[Generation]
+	Owner         containers.Optional[ObjID]
+}
+
+func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
 	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
 		return nil, err
@@ -414,10 +423,21 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, laddr
 			addr, stored, calced)
 	}
 
-	if laddrCB != nil {
-		if err := laddrCB(nodeRef.Data.Head.Addr); err != nil {
-			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
-		}
+	if exp.LAddr.OK && nodeRef.Data.Head.Addr != exp.LAddr.Val {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: read from laddr=%v but claims to be at laddr=%v",
+			addr, exp.LAddr.Val, nodeRef.Data.Head.Addr)
+	}
+	if exp.Level.OK && nodeRef.Data.Head.Level != exp.Level.Val {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected level=%v but claims to be level=%v",
+			addr, exp.Level.Val, nodeRef.Data.Head.Level)
+	}
+	if exp.MaxGeneration.OK && nodeRef.Data.Head.Generation > exp.MaxGeneration.Val {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected generation<=%v but claims to be generation=%v",
+			addr, exp.MaxGeneration.Val, nodeRef.Data.Head.Generation)
+	}
+	if exp.Owner.OK && nodeRef.Data.Head.Owner != exp.Owner.Val {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected owner=%v but claims to have owner=%v",
+			addr, exp.Owner.Val, nodeRef.Data.Head.Owner)
 	}
 
 	// parse (main)
@@ -429,31 +449,4 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, laddr
 	// return
 
 	return nodeRef, nil
-}
-
-func (fs *FS) ReadNode(addr btrfsvol.LogicalAddr) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
-	}
-
-	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, addr, func(claimAddr btrfsvol.LogicalAddr) error {
-		if claimAddr != addr {
-			return fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
-				addr, claimAddr)
-		}
-		return nil
-	})
-}
-
-func (fs *FS) readNodeAtLevel(addr btrfsvol.LogicalAddr, expLevel uint8) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
-	node, err := fs.ReadNode(addr)
-	if err != nil {
-		return node, err
-	}
-	if node.Data.Head.Level != expLevel {
-		return node, fmt.Errorf("btrfs.FS.ReadNode: node@%v: expected level %v but has level %v",
-			node.Addr, expLevel, node.Data.Head.Level)
-	}
-	return node, nil
 }

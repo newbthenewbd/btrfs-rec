@@ -16,6 +16,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
@@ -73,45 +74,48 @@ var _ Trees = (*FS)(nil)
 //
 //	[superblock]
 //	     |
-//	     | <------------------------------------------ pathElem={idx:-1, addr:0x01, lvl:3}
+//	     | <------------------------------------------ pathElem={idx:-1, addr:0x01, lvl:3, gen:6}
 //	     |
 //	  +[0x01]-----------+
-//	  | lvl=3           |
+//	  | lvl=3  gen=6    |
 //	  +-+-+-+-+-+-+-+-+-+
 //	  |1|2|3|4|5|6|7|8|9|
 //	  +---+---+---+---+-+
 //	                 |
-//	                 | <------------------------------ pathElem={idx:8, addr:0x02, lvl:2}
+//	                 | <------------------------------ pathElem={idx:8, addr:0x02, lvl:2: gen:6}
 //	                 |
 //	              +[0x02]-----------+
-//	              | lvl=2           |
+//	              | lvl=2  gen=5    |
 //	              +-+-+-+-+-+-+-+-+-+
 //	              |1|2|3|4|5|6|7|8|9|
 //	              +---+---+---+---+-+
 //	                           |
-//	                           | <-------------------- pathElem={idx:7, addr:0x03, lvl:1}
+//	                           | <-------------------- pathElem={idx:7, addr:0x03, lvl:1: gen:5}
 //	                           |
 //	                        +[0x03]-----------+
-//	                        | lvl=1           |
+//	                        | lvl=1  gen=5    |
 //	                        +-+-+-+-+-+-+-+-+-+
 //	                        |1|2|3|4|5|6|7|8|9|
 //	                        +---+---+---+---+-+
 //	                               |
-//	                               | <---------------- pathElem={idx:4, addr:0x04, lvl:0}
+//	                               | <---------------- pathElem={idx:4, addr:0x04, lvl:0: gen:5}
 //	                               |
 //	                             +[0x04]-----------+
-//	                             | lvl=0           |
+//	                             | lvl=0  gen=2    |
 //	                             +-+-+-+-+-+-+-+-+-+
 //	                             |1|2|3|4|5|6|7|8|9|
 //	                             +---+---+---+---+-+
 //	                                |
-//	                                | <--------------- pathElem={idx:5, addr:0, lvl:0}
+//	                                | <--------------- pathElem={idx:5, addr:0, lvl:0, gen:2}
 //	                                |
 //	                              [item]
 //
 // the path would be
 //
-//	{-1, 0x01, 3}→{8, 0x02, 2}→{7, 0x03, 1}→{4, 0x04, 0}→{2, 0, 0}
+//	{
+//		TreeID: …,
+//		Nodes: {-1, 0x01, 3, 6}→{8, 0x02, 2, 6}→{7, 0x03, 1, 5}→{4, 0x04, 5}→{2, 0, 0, 2},
+//	}
 type TreePath struct {
 	TreeID ObjID
 	Nodes  []TreePathElem
@@ -129,6 +133,9 @@ type TreePathElem struct {
 	// NodeLevel is the expected or actual level of the node at
 	// NodeAddr.
 	NodeLevel uint8
+	// NodeParentGeneration is the generation of the parent node;
+	// the maximum expected generation of the child node.
+	NodeParentGeneration Generation
 }
 
 func (elem TreePathElem) writeNodeTo(w io.Writer) {
@@ -165,6 +172,11 @@ func (path TreePath) Append(elem TreePathElem) TreePath {
 	return path
 }
 
+func (path TreePath) Parent() TreePath {
+	path.Nodes = path.Nodes[:len(path.Nodes)-1]
+	return path
+}
+
 // path.Node(x) is like path.Nodes[x], but negative values of x move
 // down from the end of path.Nodes (similar to how lists work in many
 // other languages, such as Python).
@@ -173,6 +185,20 @@ func (path TreePath) Node(x int) *TreePathElem {
 		x += len(path.Nodes)
 	}
 	return &path.Nodes[x]
+}
+
+func (fs *FS) ReadNode(path TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
+	}
+
+	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, path.Node(-1).NodeAddr, NodeExpectations{
+		LAddr:         containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: path.Node(-1).NodeAddr},
+		Level:         containers.Optional[uint8]{OK: true, Val: path.Node(-1).NodeLevel},
+		MaxGeneration: containers.Optional[Generation]{OK: true, Val: path.Node(-1).NodeParentGeneration},
+		Owner:         containers.Optional[ObjID]{OK: true, Val: path.TreeID},
+	})
 }
 
 type TreeError struct {
@@ -272,6 +298,7 @@ type TreeWalkHandler struct {
 	BadItem func(TreePath, Item) error
 }
 
+// TreeWalk implements the 'Trees' interface.
 func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{
 		TreeID: treeID,
@@ -282,9 +309,10 @@ func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeEr
 		return
 	}
 	path = path.Append(TreePathElem{
-		ItemIdx:   -1,
-		NodeAddr:  rootInfo.RootNode,
-		NodeLevel: rootInfo.Level,
+		ItemIdx:              -1,
+		NodeAddr:             rootInfo.RootNode,
+		NodeLevel:            rootInfo.Level,
+		NodeParentGeneration: rootInfo.Generation,
 	})
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
@@ -296,9 +324,10 @@ func (fs *FS) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func
 		TreeID: rootInfo.TreeID,
 		Nodes: []TreePathElem{
 			{
-				ItemIdx:   -1,
-				NodeAddr:  rootInfo.RootNode,
-				NodeLevel: rootInfo.Level,
+				ItemIdx:              -1,
+				NodeAddr:             rootInfo.RootNode,
+				NodeLevel:            rootInfo.Level,
+				NodeParentGeneration: rootInfo.Generation,
 			},
 		},
 	}
@@ -321,7 +350,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 			return
 		}
 	}
-	node, err := fs.readNodeAtLevel(path.Node(-1).NodeAddr, path.Node(-1).NodeLevel)
+	node, err := fs.ReadNode(path)
 	if ctx.Err() != nil {
 		return
 	}
@@ -344,9 +373,10 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
 			itemPath := path.Append(TreePathElem{
-				ItemIdx:   i,
-				NodeAddr:  item.BlockPtr,
-				NodeLevel: node.Data.Head.Level - 1,
+				ItemIdx:              i,
+				NodeAddr:             item.BlockPtr,
+				NodeLevel:            node.Data.Head.Level - 1,
+				NodeParentGeneration: node.Data.Head.Generation,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
@@ -405,9 +435,10 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 		TreeID: treeRoot.TreeID,
 		Nodes: []TreePathElem{
 			{
-				ItemIdx:   -1,
-				NodeAddr:  treeRoot.RootNode,
-				NodeLevel: treeRoot.Level,
+				ItemIdx:              -1,
+				NodeAddr:             treeRoot.RootNode,
+				NodeLevel:            treeRoot.Level,
+				NodeParentGeneration: treeRoot.Generation,
 			},
 		},
 	}
@@ -415,7 +446,7 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 		if path.Node(-1).NodeAddr == 0 {
 			return TreePath{}, nil, iofs.ErrNotExist
 		}
-		node, err := fs.readNodeAtLevel(path.Node(-1).NodeAddr, path.Node(-1).NodeLevel)
+		node, err := fs.ReadNode(path)
 		if err != nil {
 			return TreePath{}, nil, err
 		}
@@ -438,9 +469,10 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
 			path = path.Append(TreePathElem{
-				ItemIdx:   lastGood,
-				NodeAddr:  node.Data.BodyInternal[lastGood].BlockPtr,
-				NodeLevel: node.Data.Head.Level - 1,
+				ItemIdx:              lastGood,
+				NodeAddr:             node.Data.BodyInternal[lastGood].BlockPtr,
+				NodeLevel:            node.Data.Head.Level - 1,
+				NodeParentGeneration: node.Data.Head.Generation,
 			})
 		} else {
 			// leaf node
@@ -484,7 +516,7 @@ func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	path.Node(-1).ItemIdx--
 	if path.Node(-1).NodeAddr != 0 {
 		if node.Addr != path.Node(-2).NodeAddr {
-			node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
@@ -494,16 +526,17 @@ func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	// go down
 	for path.Node(-1).NodeAddr != 0 {
 		if node.Addr != path.Node(-1).NodeAddr {
-			node, err = fs.readNodeAtLevel(path.Node(-1).NodeAddr, path.Node(-1).NodeLevel)
+			node, err = fs.ReadNode(path)
 			if err != nil {
 				return TreePath{}, nil, err
 			}
 		}
 		if node.Data.Head.Level > 0 {
 			path = path.Append(TreePathElem{
-				ItemIdx:   len(node.Data.BodyInternal) - 1,
-				NodeAddr:  node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				NodeLevel: node.Data.Head.Level - 1,
+				ItemIdx:              len(node.Data.BodyInternal) - 1,
+				NodeAddr:             node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				NodeLevel:            node.Data.Head.Level - 1,
+				NodeParentGeneration: node.Data.Head.Generation,
 			})
 		} else {
 			path = path.Append(TreePathElem{
@@ -513,7 +546,7 @@ func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	}
 	// return
 	if node.Addr != path.Node(-2).NodeAddr {
-		node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
 		}
@@ -527,7 +560,7 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 
 	// go up
 	if node.Addr != path.Node(-2).NodeAddr {
-		node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
 		}
@@ -539,18 +572,18 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 			return TreePath{}, nil, nil
 		}
 		if node.Addr != path.Node(-2).NodeAddr {
-			node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
 			path.Node(-2).NodeLevel = node.Data.Head.Level
 		}
 	}
-	// go left
+	// go right
 	path.Node(-1).ItemIdx++
 	if path.Node(-1).NodeAddr != 0 {
 		if node.Addr != path.Node(-2).NodeAddr {
-			node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
@@ -560,7 +593,7 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	// go down
 	for path.Node(-1).NodeAddr != 0 {
 		if node.Addr != path.Node(-1).NodeAddr {
-			node, err = fs.readNodeAtLevel(path.Node(-1).NodeAddr, path.Node(-1).NodeLevel)
+			node, err = fs.ReadNode(path)
 			if err != nil {
 				return TreePath{}, nil, err
 			}
@@ -568,9 +601,10 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 		}
 		if node.Data.Head.Level > 0 {
 			path = path.Append(TreePathElem{
-				ItemIdx:   0,
-				NodeAddr:  node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				NodeLevel: node.Data.Head.Level - 1,
+				ItemIdx:              0,
+				NodeAddr:             node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				NodeLevel:            node.Data.Head.Level - 1,
+				NodeParentGeneration: node.Data.Head.Generation,
 			})
 		} else {
 			path = path.Append(TreePathElem{
@@ -580,7 +614,7 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	}
 	// return
 	if node.Addr != path.Node(-2).NodeAddr {
-		node, err = fs.readNodeAtLevel(path.Node(-2).NodeAddr, path.Node(-2).NodeLevel)
+		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
 		}
@@ -588,6 +622,7 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	return path, node, nil
 }
 
+// TreeSearch implements the 'Trees' interface.
 func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
 	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
@@ -600,12 +635,14 @@ func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
 	return node.Data.BodyLeaf[path.Node(-1).ItemIdx], nil
 }
 
+// KeySearch returns a comparator suitable to be passed to TreeSearch.
 func KeySearch(fn func(Key) int) func(Key, uint32) int {
 	return func(key Key, _ uint32) int {
 		return fn(key)
 	}
 }
 
+// TreeLookup implements the 'Trees' interface.
 func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
 	item, err := fs.TreeSearch(treeID, KeySearch(key.Cmp))
 	if err != nil {
@@ -614,6 +651,7 @@ func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
 	return item, err
 }
 
+// TreeSearchAll implements the 'Trees' interface.
 func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, error) {
 	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {

@@ -54,7 +54,7 @@ func span(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	// item error
 	if path.Node(-1).NodeAddr == 0 {
 		// If we got an item error, then the node is readable
-		node, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+		node, _ := fs.ReadNode(path.Parent())
 		key := node.Data.BodyLeaf[path.Node(-1).ItemIdx].Key
 		return key, key
 	}
@@ -65,7 +65,7 @@ func span(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	if len(path.Nodes) == 1 {
 		return btrfs.Key{}, maxKey
 	}
-	parentNode, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+	parentNode, _ := fs.ReadNode(path.Parent())
 	low := parentNode.Data.BodyInternal[path.Node(-1).ItemIdx].Key
 	var high btrfs.Key
 	if path.Node(-1).ItemIdx+1 < len(parentNode.Data.BodyInternal) {
@@ -226,7 +226,7 @@ func (bt *brokenTrees) TreeSearch(treeID btrfs.ObjID, fn func(btrfs.Key, uint32)
 		return btrfs.Item{}, iofs.ErrNotExist
 	}
 
-	node, err := bt.inner.ReadNode(indexItem.Value.Path.Node(-2).NodeAddr)
+	node, err := bt.inner.ReadNode(indexItem.Value.Path.Parent())
 	if err != nil {
 		return btrfs.Item{}, err
 	}
@@ -253,7 +253,7 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key, uint
 	for i := range indexItems {
 		if node == nil || node.Addr != indexItems[i].Path.Node(-2).NodeAddr {
 			var err error
-			node, err = bt.inner.ReadNode(indexItems[i].Path.Node(-2).NodeAddr)
+			node, err = bt.inner.ReadNode(indexItems[i].Path.Parent())
 			if err != nil {
 				return nil, err
 			}
@@ -306,7 +306,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 		if cbs.Item != nil {
 			if node == nil || node.Addr != indexItem.Value.Path.Node(-2).NodeAddr {
 				var err error
-				node, err = bt.inner.ReadNode(indexItem.Value.Path.Node(-2).NodeAddr)
+				node, err = bt.inner.ReadNode(indexItem.Value.Path.Parent())
 				if err != nil {
 					errHandle(&btrfs.TreeError{Path: indexItem.Value.Path, Err: err})
 					return nil

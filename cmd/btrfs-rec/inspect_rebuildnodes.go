@@ -20,6 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
@@ -100,7 +101,7 @@ func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	// item error
 	if path.Node(-1).NodeAddr == 0 {
 		// If we got an item error, then the node is readable
-		node, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+		node, _ := fs.ReadNode(path.Parent())
 		key := node.Data.BodyLeaf[path.Node(-1).ItemIdx].Key
 		return key, key
 	}
@@ -111,7 +112,7 @@ func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	if len(path.Nodes) == 1 {
 		return btrfs.Key{}, maxKey
 	}
-	parentNode, _ := fs.ReadNode(path.Node(-2).NodeAddr)
+	parentNode, _ := fs.ReadNode(path.Parent())
 	low := parentNode.Data.BodyInternal[path.Node(-1).ItemIdx].Key
 	var high btrfs.Key
 	if path.Node(-1).ItemIdx+1 < len(parentNode.Data.BodyInternal) {
@@ -125,7 +126,10 @@ func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 }
 
 func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfs.TreeError), cbs btrfs.TreeWalkHandler) {
-	nodeRef, _ := fs.ReadNode(nodeAddr)
+	sb, _ := fs.Superblock()
+	nodeRef, _ := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, nodeAddr, btrfs.NodeExpectations{
+		LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeAddr},
+	})
 	if nodeRef == nil {
 		return
 	}
@@ -337,8 +341,11 @@ func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.Lo
 	}
 
 	// Attach foundRoots to the gaps.
+	sb, _ := fs.Superblock()
 	for foundLAddr := range foundRoots {
-		foundRef, err := fs.ReadNode(foundLAddr)
+		foundRef, err := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, foundLAddr, btrfs.NodeExpectations{
+			LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: foundLAddr},
+		})
 		if foundRef == nil {
 			return err
 		}
