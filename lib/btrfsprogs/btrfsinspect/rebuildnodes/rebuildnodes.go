@@ -7,6 +7,7 @@ package rebuildnodes
 import (
 	"context"
 	"fmt"
+	iofs "io/fs"
 	"math"
 	"sort"
 
@@ -133,15 +134,19 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 			lastPct = pct
 		}
 	}
-	var done int
 
 	attachedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfstree.TreeWalkHandler{
 			Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-				attachedNodes[path.Node(-1).ToNodeAddr] = struct{}{}
-				done++
-				progress(done)
+				addr := path.Node(-1).ToNodeAddr
+				if _, alreadyVisited := attachedNodes[addr]; alreadyVisited {
+					// Can happen because of COW subvolumes;
+					// this is really a DAG not a tree.
+					return iofs.SkipDir
+				}
+				attachedNodes[addr] = struct{}{}
+				progress(len(attachedNodes))
 				return nil
 			},
 		},
@@ -160,7 +165,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	}
 	dlog.Infof(ctx,
 		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
-		done, len(orphanedNodes), done+len(orphanedNodes))
+		len(attachedNodes), len(orphanedNodes), len(attachedNodes)+len(orphanedNodes))
 
 	// 'orphanedRoots' is a subset of 'orphanedNodes'; start with
 	// it as the complete orphanedNodes, and then remove entries.
@@ -168,6 +173,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	for node := range orphanedNodes {
 		orphanedRoots[node] = struct{}{}
 	}
+	done := len(attachedNodes)
 	for potentialRoot := range orphanedRoots {
 		done++
 		progress(done)
@@ -276,6 +282,10 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 		},
 	}
 
+	// We use WalkAllTrees instead of just iterating over
+	// nodeScanResults so that we don't need to specifically check
+	// if any of the root nodes referenced directly by the
+	// superblock are dead.
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
