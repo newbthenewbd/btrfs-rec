@@ -7,39 +7,39 @@ package btrfsitem
 import (
 	"reflect"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
 const (
-	BLOCK_GROUP_ITEM_KEY     = internal.BLOCK_GROUP_ITEM_KEY
-	CHUNK_ITEM_KEY           = internal.CHUNK_ITEM_KEY
-	DEV_EXTENT_KEY           = internal.DEV_EXTENT_KEY
-	DEV_ITEM_KEY             = internal.DEV_ITEM_KEY
-	DIR_INDEX_KEY            = internal.DIR_INDEX_KEY
-	DIR_ITEM_KEY             = internal.DIR_ITEM_KEY
-	EXTENT_CSUM_KEY          = internal.EXTENT_CSUM_KEY
-	EXTENT_DATA_KEY          = internal.EXTENT_DATA_KEY
-	EXTENT_DATA_REF_KEY      = internal.EXTENT_DATA_REF_KEY
-	EXTENT_ITEM_KEY          = internal.EXTENT_ITEM_KEY
-	FREE_SPACE_BITMAP_KEY    = internal.FREE_SPACE_BITMAP_KEY
-	FREE_SPACE_EXTENT_KEY    = internal.FREE_SPACE_EXTENT_KEY
-	FREE_SPACE_INFO_KEY      = internal.FREE_SPACE_INFO_KEY
-	INODE_ITEM_KEY           = internal.INODE_ITEM_KEY
-	INODE_REF_KEY            = internal.INODE_REF_KEY
-	METADATA_ITEM_KEY        = internal.METADATA_ITEM_KEY
-	ORPHAN_ITEM_KEY          = internal.ORPHAN_ITEM_KEY
-	PERSISTENT_ITEM_KEY      = internal.PERSISTENT_ITEM_KEY
-	QGROUP_RELATION_KEY      = internal.QGROUP_RELATION_KEY
-	ROOT_BACKREF_KEY         = internal.ROOT_BACKREF_KEY
-	ROOT_ITEM_KEY            = internal.ROOT_ITEM_KEY
-	ROOT_REF_KEY             = internal.ROOT_REF_KEY
-	SHARED_BLOCK_REF_KEY     = internal.SHARED_BLOCK_REF_KEY
-	SHARED_DATA_REF_KEY      = internal.SHARED_DATA_REF_KEY
-	TREE_BLOCK_REF_KEY       = internal.TREE_BLOCK_REF_KEY
-	UNTYPED_KEY              = internal.UNTYPED_KEY
-	UUID_RECEIVED_SUBVOL_KEY = internal.UUID_RECEIVED_SUBVOL_KEY
-	UUID_SUBVOL_KEY          = internal.UUID_SUBVOL_KEY
-	XATTR_ITEM_KEY           = internal.XATTR_ITEM_KEY
+	BLOCK_GROUP_ITEM_KEY     = btrfsprim.BLOCK_GROUP_ITEM_KEY
+	CHUNK_ITEM_KEY           = btrfsprim.CHUNK_ITEM_KEY
+	DEV_EXTENT_KEY           = btrfsprim.DEV_EXTENT_KEY
+	DEV_ITEM_KEY             = btrfsprim.DEV_ITEM_KEY
+	DIR_INDEX_KEY            = btrfsprim.DIR_INDEX_KEY
+	DIR_ITEM_KEY             = btrfsprim.DIR_ITEM_KEY
+	EXTENT_CSUM_KEY          = btrfsprim.EXTENT_CSUM_KEY
+	EXTENT_DATA_KEY          = btrfsprim.EXTENT_DATA_KEY
+	EXTENT_DATA_REF_KEY      = btrfsprim.EXTENT_DATA_REF_KEY
+	EXTENT_ITEM_KEY          = btrfsprim.EXTENT_ITEM_KEY
+	FREE_SPACE_BITMAP_KEY    = btrfsprim.FREE_SPACE_BITMAP_KEY
+	FREE_SPACE_EXTENT_KEY    = btrfsprim.FREE_SPACE_EXTENT_KEY
+	FREE_SPACE_INFO_KEY      = btrfsprim.FREE_SPACE_INFO_KEY
+	INODE_ITEM_KEY           = btrfsprim.INODE_ITEM_KEY
+	INODE_REF_KEY            = btrfsprim.INODE_REF_KEY
+	METADATA_ITEM_KEY        = btrfsprim.METADATA_ITEM_KEY
+	ORPHAN_ITEM_KEY          = btrfsprim.ORPHAN_ITEM_KEY
+	PERSISTENT_ITEM_KEY      = btrfsprim.PERSISTENT_ITEM_KEY
+	QGROUP_RELATION_KEY      = btrfsprim.QGROUP_RELATION_KEY
+	ROOT_BACKREF_KEY         = btrfsprim.ROOT_BACKREF_KEY
+	ROOT_ITEM_KEY            = btrfsprim.ROOT_ITEM_KEY
+	ROOT_REF_KEY             = btrfsprim.ROOT_REF_KEY
+	SHARED_BLOCK_REF_KEY     = btrfsprim.SHARED_BLOCK_REF_KEY
+	SHARED_DATA_REF_KEY      = btrfsprim.SHARED_DATA_REF_KEY
+	TREE_BLOCK_REF_KEY       = btrfsprim.TREE_BLOCK_REF_KEY
+	UNTYPED_KEY              = btrfsprim.UNTYPED_KEY
+	UUID_RECEIVED_SUBVOL_KEY = btrfsprim.UUID_RECEIVED_SUBVOL_KEY
+	UUID_SUBVOL_KEY          = btrfsprim.UUID_SUBVOL_KEY
+	XATTR_ITEM_KEY           = btrfsprim.XATTR_ITEM_KEY
 )
 
 var keytype2gotype = map[Type]reflect.Type{
@@ -72,8 +72,8 @@ var keytype2gotype = map[Type]reflect.Type{
 	UUID_SUBVOL_KEY:          reflect.TypeOf(UUIDMap{}),
 	XATTR_ITEM_KEY:           reflect.TypeOf(DirEntry{}),
 }
-var untypedObjID2gotype = map[internal.ObjID]reflect.Type{
-	internal.FREE_SPACE_OBJECTID: reflect.TypeOf(FreeSpaceHeader{}),
+var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{
+	btrfsprim.FREE_SPACE_OBJECTID: reflect.TypeOf(FreeSpaceHeader{}),
 }
 
 func (BlockGroup) isItem()      {}

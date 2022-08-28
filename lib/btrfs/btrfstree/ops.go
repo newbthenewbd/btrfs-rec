@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfs
+package btrfstree
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/datawire/dlib/derror"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
@@ -35,30 +36,24 @@ type Trees interface {
 	//     002 (read node)
 	//     003 .Node() (or .BadNode())
 	//         for item in node.items:
-	//           if internal:
+	//           if btrfsprim:
 	//     004     .PreKeyPointer()
 	//     005     (recurse)
 	//     006     .PostKeyPointer()
 	//           else:
 	//     004     .Item() (or .BadItem())
 	//     007 .PostNode()
-	TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
+	TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
 
-	TreeLookup(treeID ObjID, key Key) (Item, error)
-	TreeSearch(treeID ObjID, fn func(key Key, size uint32) int) (Item, error) // size is math.MaxUint32 for key-pointers
+	TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error)
+	TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (Item, error) // size is math.MaxUint32 for key-pointers
 
 	// If some items are able to be read, but there is an error reading the
 	// full set, then it might return *both* a list of items and an error.
 	//
 	// If no such item is found, an error that is io/fs.ErrNotExist is
 	// returned.
-	TreeSearchAll(treeID ObjID, fn func(key Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
-
-	// For bootstrapping purposes.
-	Superblock() (*Superblock, error)
-
-	// For reading raw data extants pointed at by tree items.
-	ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+	TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
 }
 
 type TreeWalkHandler struct {
@@ -72,7 +67,7 @@ type TreeWalkHandler struct {
 	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
 	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
 	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	// Callbacks for items on internal nodes
+	// Callbacks for items on btrfsprim nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
 	// Callbacks for items on leaf nodes
@@ -91,9 +86,22 @@ func (e *TreeError) Error() string {
 	return fmt.Sprintf("%v: %v", e.Path, e.Err)
 }
 
+type NodeSource interface {
+	Superblock() (*Superblock, error)
+	ReadNode(TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error)
+}
+
+type TreesImpl struct {
+	NodeSource
+}
+
 // TreeWalk implements the 'Trees' interface.
-func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	rootInfo, err := LookupTreeRoot(fs, treeID)
+func (fs TreesImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		errHandle(&TreeError{Path: TreePath{{FromTree: treeID}}, Err: err})
+	}
+	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
 		errHandle(&TreeError{Path: TreePath{{FromTree: treeID}}, Err: err})
 		return
@@ -103,7 +111,7 @@ func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeEr
 
 // TreeWalk is a utility function to help with implementing the 'Trees'
 // interface.
-func (fs *FS) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs TreesImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{{
 		FromTree:       rootInfo.TreeID,
 		FromGeneration: rootInfo.Generation,
@@ -114,7 +122,7 @@ func (fs *FS) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
-func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs TreesImpl) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -225,7 +233,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 }
 
-func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs TreesImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{{
 		FromTree:       treeRoot.TreeID,
 		FromGeneration: treeRoot.Generation,
@@ -243,7 +251,7 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 		}
 
 		if node.Data.Head.Level > 0 {
-			// internal node
+			// btrfsprim node
 
 			// Search for the right-most node.Data.BodyInternal item for which
 			// `fn(item.Key) >= 0`.
@@ -295,7 +303,7 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 	}
 }
 
-func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs TreesImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -351,7 +359,7 @@ func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	return path, node, nil
 }
 
-func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs TreesImpl) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -423,8 +431,12 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 }
 
 // TreeSearch implements the 'Trees' interface.
-func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
-	rootInfo, err := LookupTreeRoot(fs, treeID)
+func (fs TreesImpl) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) (Item, error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return Item{}, err
+	}
+	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -436,14 +448,14 @@ func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
 }
 
 // KeySearch returns a comparator suitable to be passed to TreeSearch.
-func KeySearch(fn func(Key) int) func(Key, uint32) int {
-	return func(key Key, _ uint32) int {
+func KeySearch(fn func(btrfsprim.Key) int) func(btrfsprim.Key, uint32) int {
+	return func(key btrfsprim.Key, _ uint32) int {
 		return fn(key)
 	}
 }
 
 // TreeLookup implements the 'Trees' interface.
-func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
+func (fs TreesImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
 	item, err := fs.TreeSearch(treeID, KeySearch(key.Cmp))
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
@@ -452,8 +464,12 @@ func (fs *FS) TreeLookup(treeID ObjID, key Key) (Item, error) {
 }
 
 // TreeSearchAll implements the 'Trees' interface.
-func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, error) {
-	rootInfo, err := LookupTreeRoot(fs, treeID)
+func (fs TreesImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) ([]Item, error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, err
+	}
+	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
 		return nil, err
 	}

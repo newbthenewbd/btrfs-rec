@@ -15,6 +15,8 @@ import (
 	"github.com/datawire/dlib/derror"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -22,7 +24,7 @@ import (
 )
 
 type BareInode struct {
-	Inode     ObjID
+	Inode     btrfsprim.ObjID
 	InodeItem *btrfsitem.Inode
 	Errs      derror.MultiError
 }
@@ -30,11 +32,11 @@ type BareInode struct {
 type FullInode struct {
 	BareInode
 	XAttrs     map[string]string
-	OtherItems []Item
+	OtherItems []btrfstree.Item
 }
 
 type InodeRef struct {
-	Inode ObjID
+	Inode btrfsprim.ObjID
 	btrfsitem.InodeRef
 }
 
@@ -58,22 +60,26 @@ type File struct {
 }
 
 type Subvolume struct {
-	FS     Trees
-	TreeID ObjID
+	FS interface {
+		btrfstree.Trees
+		Superblock() (*btrfstree.Superblock, error)
+		ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+	}
+	TreeID btrfsprim.ObjID
 
 	rootOnce sync.Once
 	rootVal  btrfsitem.Root
 	rootErr  error
 
-	bareInodeCache containers.LRUCache[ObjID, *BareInode]
-	fullInodeCache containers.LRUCache[ObjID, *FullInode]
-	dirCache       containers.LRUCache[ObjID, *Dir]
-	fileCache      containers.LRUCache[ObjID, *File]
+	bareInodeCache containers.LRUCache[btrfsprim.ObjID, *BareInode]
+	fullInodeCache containers.LRUCache[btrfsprim.ObjID, *FullInode]
+	dirCache       containers.LRUCache[btrfsprim.ObjID, *Dir]
+	fileCache      containers.LRUCache[btrfsprim.ObjID, *File]
 }
 
 func (sv *Subvolume) init() {
 	sv.rootOnce.Do(func() {
-		root, err := sv.FS.TreeLookup(ROOT_TREE_OBJECTID, Key{
+		root, err := sv.FS.TreeLookup(btrfsprim.ROOT_TREE_OBJECTID, btrfsprim.Key{
 			ObjectID: sv.TreeID,
 			ItemType: btrfsitem.ROOT_ITEM_KEY,
 			Offset:   0,
@@ -93,17 +99,17 @@ func (sv *Subvolume) init() {
 	})
 }
 
-func (sv *Subvolume) GetRootInode() (ObjID, error) {
+func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
 	sv.init()
 	return sv.rootVal.RootDirID, sv.rootErr
 }
 
-func (sv *Subvolume) LoadBareInode(inode ObjID) (*BareInode, error) {
+func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
 		}
-		item, err := sv.FS.TreeLookup(sv.TreeID, Key{
+		item, err := sv.FS.TreeLookup(sv.TreeID, btrfsprim.Key{
 			ObjectID: inode,
 			ItemType: btrfsitem.INODE_ITEM_KEY,
 			Offset:   0,
@@ -128,7 +134,7 @@ func (sv *Subvolume) LoadBareInode(inode ObjID) (*BareInode, error) {
 	return val, nil
 }
 
-func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
+func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 	val := sv.fullInodeCache.GetOrElse(inode, func() (val *FullInode) {
 		val = &FullInode{
 			BareInode: BareInode{
@@ -136,7 +142,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 			},
 			XAttrs: make(map[string]string),
 		}
-		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key Key, _ uint32) int {
+		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key btrfsprim.Key, _ uint32) int {
 			return containers.NativeCmp(inode, key.ObjectID)
 		})
 		if err != nil {
@@ -171,7 +177,7 @@ func (sv *Subvolume) LoadFullInode(inode ObjID) (*FullInode, error) {
 	return val, nil
 }
 
-func (sv *Subvolume) LoadDir(inode ObjID) (*Dir, error) {
+func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
 	val := sv.dirCache.GetOrElse(inode, func() (val *Dir) {
 		val = new(Dir)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -203,7 +209,7 @@ func (ret *Dir) populate() {
 				continue
 			}
 			ref := InodeRef{
-				Inode:    ObjID(item.Key.Offset),
+				Inode:    btrfsprim.ObjID(item.Key.Offset),
 				InodeRef: body[0],
 			}
 			if ret.DotDot != nil {
@@ -288,7 +294,7 @@ func (dir *Dir) AbsPath() (string, error) {
 	return filepath.Join(parentName, string(dir.DotDot.Name)), nil
 }
 
-func (sv *Subvolume) LoadFile(inode ObjID) (*File, error) {
+func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
 	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
 		val = new(File)
 		fullInode, err := sv.LoadFullInode(inode)

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfs
+package btrfstree
 
 import (
 	"encoding/binary"
@@ -11,6 +11,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
@@ -74,7 +75,7 @@ type Node struct {
 
 	// The node's body (which one of these is present depends on
 	// the node's type, as specified in the header)
-	BodyInternal []KeyPointer // for internal nodes
+	BodyInternal []KeyPointer // for btrfsprim nodes
 	BodyLeaf     []Item       // for leave nodes
 
 	Padding []byte
@@ -82,15 +83,15 @@ type Node struct {
 
 type NodeHeader struct {
 	Checksum      btrfssum.CSum        `bin:"off=0x0,  siz=0x20"`
-	MetadataUUID  UUID                 `bin:"off=0x20, siz=0x10"`
+	MetadataUUID  btrfsprim.UUID       `bin:"off=0x20, siz=0x10"`
 	Addr          btrfsvol.LogicalAddr `bin:"off=0x30, siz=0x8"` // Logical address of this node
 	Flags         NodeFlags            `bin:"off=0x38, siz=0x7"`
 	BackrefRev    BackrefRev           `bin:"off=0x3f, siz=0x1"`
-	ChunkTreeUUID UUID                 `bin:"off=0x40, siz=0x10"`
-	Generation    Generation           `bin:"off=0x50, siz=0x8"`
-	Owner         ObjID                `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
+	ChunkTreeUUID btrfsprim.UUID       `bin:"off=0x40, siz=0x10"`
+	Generation    btrfsprim.Generation `bin:"off=0x50, siz=0x8"`
+	Owner         btrfsprim.ObjID      `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
 	NumItems      uint32               `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
-	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
+	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for btrfsprim nodes
 	binstruct.End `bin:"off=0x65"`
 }
 
@@ -105,29 +106,29 @@ func (node Node) MaxItems() uint32 {
 	}
 }
 
-func (node Node) MinItem() (Key, bool) {
+func (node Node) MinItem() (btrfsprim.Key, bool) {
 	if node.Head.Level > 0 {
 		if len(node.BodyInternal) == 0 {
-			return Key{}, false
+			return btrfsprim.Key{}, false
 		}
 		return node.BodyInternal[0].Key, true
 	} else {
 		if len(node.BodyLeaf) == 0 {
-			return Key{}, false
+			return btrfsprim.Key{}, false
 		}
 		return node.BodyLeaf[0].Key, true
 	}
 }
 
-func (node Node) MaxItem() (Key, bool) {
+func (node Node) MaxItem() (btrfsprim.Key, bool) {
 	if node.Head.Level > 0 {
 		if len(node.BodyInternal) == 0 {
-			return Key{}, false
+			return btrfsprim.Key{}, false
 		}
 		return node.BodyInternal[len(node.BodyInternal)-1].Key, true
 	} else {
 		if len(node.BodyLeaf) == 0 {
-			return Key{}, false
+			return btrfsprim.Key{}, false
 		}
 		return node.BodyLeaf[len(node.BodyLeaf)-1].Key, true
 	}
@@ -175,7 +176,7 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 		_n, err := node.unmarshalInternal(nodeBuf[n:])
 		n += _n
 		if err != nil {
-			return n, fmt.Errorf("internal: %w", err)
+			return n, fmt.Errorf("btrfsprim: %w", err)
 		}
 	} else {
 		_n, err := node.unmarshalLeaf(nodeBuf[n:])
@@ -230,12 +231,12 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
-// Node: "internal" ////////////////////////////////////////////////////////////////////////////////
+// Node: "btrfsprim" ////////////////////////////////////////////////////////////////////////////////
 
 type KeyPointer struct {
-	Key           Key                  `bin:"off=0x0, siz=0x11"`
+	Key           btrfsprim.Key        `bin:"off=0x0, siz=0x11"`
 	BlockPtr      btrfsvol.LogicalAddr `bin:"off=0x11, siz=0x8"`
-	Generation    Generation           `bin:"off=0x19, siz=0x8"`
+	Generation    btrfsprim.Generation `bin:"off=0x19, siz=0x8"`
 	binstruct.End `bin:"off=0x21"`
 }
 
@@ -277,15 +278,15 @@ func (node *Node) marshalInternalTo(bodyBuf []byte) error {
 // Node: "leaf" ////////////////////////////////////////////////////////////////////////////////////
 
 type Item struct {
-	Key      Key
+	Key      btrfsprim.Key
 	BodySize uint32 // [ignored-when-writing]
 	Body     btrfsitem.Item
 }
 
 type ItemHeader struct {
-	Key           Key    `bin:"off=0x0, siz=0x11"`
-	DataOffset    uint32 `bin:"off=0x11, siz=0x4"` // [ignored-when-writing] relative to the end of the header (0x65)
-	DataSize      uint32 `bin:"off=0x15, siz=0x4"` // [ignored-when-writing]
+	Key           btrfsprim.Key `bin:"off=0x0, siz=0x11"`
+	DataOffset    uint32        `bin:"off=0x11, siz=0x4"` // [ignored-when-writing] relative to the end of the header (0x65)
+	DataSize      uint32        `bin:"off=0x15, siz=0x4"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0x19"`
 }
 
@@ -384,8 +385,8 @@ type NodeExpectations struct {
 	LAddr containers.Optional[btrfsvol.LogicalAddr]
 	// Things knowable from the parent.
 	Level         containers.Optional[uint8]
-	MaxGeneration containers.Optional[Generation]
-	Owner         []ObjID
+	MaxGeneration containers.Optional[btrfsprim.Generation]
+	Owner         []btrfsprim.ObjID
 }
 
 func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {

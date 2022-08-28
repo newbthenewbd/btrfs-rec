@@ -6,28 +6,28 @@ package btrfsitem
 
 import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 type Inode struct { // INODE_ITEM=1
-	Generation    internal.Generation `bin:"off=0x00, siz=0x08"`
-	TransID       int64               `bin:"off=0x08, siz=0x08"`
-	Size          int64               `bin:"off=0x10, siz=0x08"` // stat
-	NumBytes      int64               `bin:"off=0x18, siz=0x08"` // allocated bytes, may be larger than size (or smaller if there are holes?)
-	BlockGroup    int64               `bin:"off=0x20, siz=0x08"`
-	NLink         int32               `bin:"off=0x28, siz=0x04"` // stat
-	UID           int32               `bin:"off=0x2C, siz=0x04"` // stat
-	GID           int32               `bin:"off=0x30, siz=0x04"` // stat
-	Mode          StatMode            `bin:"off=0x34, siz=0x04"` // stat
-	RDev          int64               `bin:"off=0x38, siz=0x08"` // stat
-	Flags         InodeFlags          `bin:"off=0x40, siz=0x08"` // statx.stx_attributes, sorta
-	Sequence      int64               `bin:"off=0x48, siz=0x08"` // NFS
-	Reserved      [4]int64            `bin:"off=0x50, siz=0x20"`
-	ATime         internal.Time       `bin:"off=0x70, siz=0x0c"` // stat
-	CTime         internal.Time       `bin:"off=0x7c, siz=0x0c"` // stat
-	MTime         internal.Time       `bin:"off=0x88, siz=0x0c"` // stat
-	OTime         internal.Time       `bin:"off=0x94, siz=0x0c"` // statx.stx_btime (why is this called "otime" instead of "btime"?)
+	Generation    btrfsprim.Generation `bin:"off=0x00, siz=0x08"`
+	TransID       int64                `bin:"off=0x08, siz=0x08"`
+	Size          int64                `bin:"off=0x10, siz=0x08"` // stat
+	NumBytes      int64                `bin:"off=0x18, siz=0x08"` // allocated bytes, may be larger than size (or smaller if there are holes?)
+	BlockGroup    int64                `bin:"off=0x20, siz=0x08"`
+	NLink         int32                `bin:"off=0x28, siz=0x04"` // stat
+	UID           int32                `bin:"off=0x2C, siz=0x04"` // stat
+	GID           int32                `bin:"off=0x30, siz=0x04"` // stat
+	Mode          StatMode             `bin:"off=0x34, siz=0x04"` // stat
+	RDev          int64                `bin:"off=0x38, siz=0x08"` // stat
+	Flags         InodeFlags           `bin:"off=0x40, siz=0x08"` // statx.stx_attributes, sorta
+	Sequence      int64                `bin:"off=0x48, siz=0x08"` // NFS
+	Reserved      [4]int64             `bin:"off=0x50, siz=0x20"`
+	ATime         btrfsprim.Time       `bin:"off=0x70, siz=0x0c"` // stat
+	CTime         btrfsprim.Time       `bin:"off=0x7c, siz=0x0c"` // stat
+	MTime         btrfsprim.Time       `bin:"off=0x88, siz=0x0c"` // stat
+	OTime         btrfsprim.Time       `bin:"off=0x94, siz=0x0c"` // statx.stx_btime (why is this called "otime" instead of "btime"?)
 	binstruct.End `bin:"off=0xa0"`
 }
 

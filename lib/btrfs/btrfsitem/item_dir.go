@@ -10,7 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
 const MaxNameLen = 255
@@ -24,11 +24,11 @@ func NameHash(dat []byte) uint64 {
 //   - for DIR_ITEM and XATTR_ITEM = NameHash(name)
 //   - for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
 type DirEntry struct { // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
-	Location      internal.Key `bin:"off=0x0, siz=0x11"`
-	TransID       int64        `bin:"off=0x11, siz=8"`
-	DataLen       uint16       `bin:"off=0x19, siz=2"` // [ignored-when-writing]
-	NameLen       uint16       `bin:"off=0x1b, siz=2"` // [ignored-when-writing]
-	Type          FileType     `bin:"off=0x1d, siz=1"`
+	Location      btrfsprim.Key `bin:"off=0x0, siz=0x11"`
+	TransID       int64         `bin:"off=0x11, siz=8"`
+	DataLen       uint16        `bin:"off=0x19, siz=2"` // [ignored-when-writing]
+	NameLen       uint16        `bin:"off=0x1b, siz=2"` // [ignored-when-writing]
+	Type          FileType      `bin:"off=0x1d, siz=1"`
 	binstruct.End `bin:"off=0x1e"`
 	Data          []byte `bin:"-"`
 	Name          []byte `bin:"-"`

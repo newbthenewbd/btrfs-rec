@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfs
+package btrfstree
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
@@ -17,21 +18,21 @@ import (
 
 type Superblock struct {
 	Checksum   btrfssum.CSum         `bin:"off=0x0,  siz=0x20"` // Checksum of everything past this field (from 0x20 to 0x1000)
-	FSUUID     UUID                  `bin:"off=0x20, siz=0x10"` // FS UUID
+	FSUUID     btrfsprim.UUID        `bin:"off=0x20, siz=0x10"` // FS UUID
 	Self       btrfsvol.PhysicalAddr `bin:"off=0x30, siz=0x8"`  // physical address of this block (different for mirrors)
 	Flags      uint64                `bin:"off=0x38, siz=0x8"`  // flags
 	Magic      [8]byte               `bin:"off=0x40, siz=0x8"`  // magic ('_BHRfS_M')
-	Generation Generation            `bin:"off=0x48, siz=0x8"`
+	Generation btrfsprim.Generation  `bin:"off=0x48, siz=0x8"`
 
 	RootTree  btrfsvol.LogicalAddr `bin:"off=0x50, siz=0x8"` // logical address of the root tree root
 	ChunkTree btrfsvol.LogicalAddr `bin:"off=0x58, siz=0x8"` // logical address of the chunk tree root
 	LogTree   btrfsvol.LogicalAddr `bin:"off=0x60, siz=0x8"` // logical address of the log tree root
 
-	LogRootTransID  uint64 `bin:"off=0x68, siz=0x8"` // log_root_transid
-	TotalBytes      uint64 `bin:"off=0x70, siz=0x8"` // total_bytes
-	BytesUsed       uint64 `bin:"off=0x78, siz=0x8"` // bytes_used
-	RootDirObjectID ObjID  `bin:"off=0x80, siz=0x8"` // root_dir_objectid (usually 6)
-	NumDevices      uint64 `bin:"off=0x88, siz=0x8"` // num_devices
+	LogRootTransID  uint64          `bin:"off=0x68, siz=0x8"` // log_root_transid
+	TotalBytes      uint64          `bin:"off=0x70, siz=0x8"` // total_bytes
+	BytesUsed       uint64          `bin:"off=0x78, siz=0x8"` // bytes_used
+	RootDirObjectID btrfsprim.ObjID `bin:"off=0x80, siz=0x8"` // root_dir_objectid (usually 6)
+	NumDevices      uint64          `bin:"off=0x88, siz=0x8"` // num_devices
 
 	SectorSize        uint32 `bin:"off=0x90, siz=0x4"`
 	NodeSize          uint32 `bin:"off=0x94, siz=0x4"`
@@ -39,30 +40,30 @@ type Superblock struct {
 	StripeSize        uint32 `bin:"off=0x9c, siz=0x4"`
 	SysChunkArraySize uint32 `bin:"off=0xa0, siz=0x4"`
 
-	ChunkRootGeneration Generation        `bin:"off=0xa4, siz=0x8"`
-	CompatFlags         uint64            `bin:"off=0xac, siz=0x8"` // compat_flags
-	CompatROFlags       uint64            `bin:"off=0xb4, siz=0x8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
-	IncompatFlags       IncompatFlags     `bin:"off=0xbc, siz=0x8"` // incompat_flags - only implementations that support the flags can use the filesystem
-	ChecksumType        btrfssum.CSumType `bin:"off=0xc4, siz=0x2"`
+	ChunkRootGeneration btrfsprim.Generation `bin:"off=0xa4, siz=0x8"`
+	CompatFlags         uint64               `bin:"off=0xac, siz=0x8"` // compat_flags
+	CompatROFlags       uint64               `bin:"off=0xb4, siz=0x8"` // compat_ro_flags - only implementations that support the flags can write to the filesystem
+	IncompatFlags       IncompatFlags        `bin:"off=0xbc, siz=0x8"` // incompat_flags - only implementations that support the flags can use the filesystem
+	ChecksumType        btrfssum.CSumType    `bin:"off=0xc4, siz=0x2"`
 
 	RootLevel  uint8 `bin:"off=0xc6, siz=0x1"` // root_level
 	ChunkLevel uint8 `bin:"off=0xc7, siz=0x1"` // chunk_root_level
 	LogLevel   uint8 `bin:"off=0xc8, siz=0x1"` // log_root_level
 
-	DevItem            btrfsitem.Dev `bin:"off=0xc9,  siz=0x62"`  // DEV_ITEM data for this device
-	Label              [0x100]byte   `bin:"off=0x12b, siz=0x100"` // label (may not contain '/' or '\\')
-	CacheGeneration    Generation    `bin:"off=0x22b, siz=0x8"`
-	UUIDTreeGeneration Generation    `bin:"off=0x233, siz=0x8"`
+	DevItem            btrfsitem.Dev        `bin:"off=0xc9,  siz=0x62"`  // DEV_ITEM data for this device
+	Label              [0x100]byte          `bin:"off=0x12b, siz=0x100"` // label (may not contain '/' or '\\')
+	CacheGeneration    btrfsprim.Generation `bin:"off=0x22b, siz=0x8"`
+	UUIDTreeGeneration btrfsprim.Generation `bin:"off=0x233, siz=0x8"`
 
 	// FeatureIncompatMetadataUUID
-	MetadataUUID UUID `bin:"off=0x23b, siz=0x10"`
+	MetadataUUID btrfsprim.UUID `bin:"off=0x23b, siz=0x10"`
 
 	// FeatureIncompatExtentTreeV2
 	NumGlobalRoots uint64 `bin:"off=0x24b, siz=0x8"`
 
 	// FeatureIncompatExtentTreeV2
 	BlockGroupRoot           btrfsvol.LogicalAddr `bin:"off=0x253, siz=0x8"`
-	BlockGroupRootGeneration Generation           `bin:"off=0x25b, siz=0x8"`
+	BlockGroupRootGeneration btrfsprim.Generation `bin:"off=0x25b, siz=0x8"`
 	BlockGroupRootLevel      uint8                `bin:"off=0x263, siz=0x1"`
 
 	Reserved [199]byte `bin:"off=0x264, siz=0xc7"` // future expansion
@@ -106,7 +107,7 @@ func (a Superblock) Equal(b Superblock) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func (sb Superblock) EffectiveMetadataUUID() UUID {
+func (sb Superblock) EffectiveMetadataUUID() btrfsprim.UUID {
 	if !sb.IncompatFlags.Has(FeatureIncompatMetadataUUID) {
 		return sb.FSUUID
 	}
@@ -114,7 +115,7 @@ func (sb Superblock) EffectiveMetadataUUID() UUID {
 }
 
 type SysChunk struct {
-	Key   Key
+	Key   btrfsprim.Key
 	Chunk btrfsitem.Chunk
 }
 
@@ -160,23 +161,23 @@ func (sb Superblock) ParseSysChunkArray() ([]SysChunk, error) {
 }
 
 type RootBackup struct {
-	TreeRoot    ObjID      `bin:"off=0x0, siz=0x8"`
-	TreeRootGen Generation `bin:"off=0x8, siz=0x8"`
+	TreeRoot    btrfsprim.ObjID      `bin:"off=0x0, siz=0x8"`
+	TreeRootGen btrfsprim.Generation `bin:"off=0x8, siz=0x8"`
 
-	ChunkRoot    ObjID      `bin:"off=0x10, siz=0x8"`
-	ChunkRootGen Generation `bin:"off=0x18, siz=0x8"`
+	ChunkRoot    btrfsprim.ObjID      `bin:"off=0x10, siz=0x8"`
+	ChunkRootGen btrfsprim.Generation `bin:"off=0x18, siz=0x8"`
 
-	ExtentRoot    ObjID      `bin:"off=0x20, siz=0x8"`
-	ExtentRootGen Generation `bin:"off=0x28, siz=0x8"`
+	ExtentRoot    btrfsprim.ObjID      `bin:"off=0x20, siz=0x8"`
+	ExtentRootGen btrfsprim.Generation `bin:"off=0x28, siz=0x8"`
 
-	FSRoot    ObjID      `bin:"off=0x30, siz=0x8"`
-	FSRootGen Generation `bin:"off=0x38, siz=0x8"`
+	FSRoot    btrfsprim.ObjID      `bin:"off=0x30, siz=0x8"`
+	FSRootGen btrfsprim.Generation `bin:"off=0x38, siz=0x8"`
 
-	DevRoot    ObjID      `bin:"off=0x40, siz=0x8"`
-	DevRootGen Generation `bin:"off=0x48, siz=0x8"`
+	DevRoot    btrfsprim.ObjID      `bin:"off=0x40, siz=0x8"`
+	DevRootGen btrfsprim.Generation `bin:"off=0x48, siz=0x8"`
 
-	ChecksumRoot    ObjID      `bin:"off=0x50, siz=0x8"`
-	ChecksumRootGen Generation `bin:"off=0x58, siz=0x8"`
+	ChecksumRoot    btrfsprim.ObjID      `bin:"off=0x50, siz=0x8"`
+	ChecksumRootGen btrfsprim.Generation `bin:"off=0x58, siz=0x8"`
 
 	TotalBytes uint64 `bin:"off=0x60, siz=0x8"`
 	BytesUsed  uint64 `bin:"off=0x68, siz=0x8"`

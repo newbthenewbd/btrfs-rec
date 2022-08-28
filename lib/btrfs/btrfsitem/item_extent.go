@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
@@ -66,15 +66,15 @@ func (o Extent) MarshalBinary() ([]byte, error) {
 }
 
 type ExtentHeader struct {
-	Refs          int64               `bin:"off=0, siz=8"`
-	Generation    internal.Generation `bin:"off=8, siz=8"`
-	Flags         ExtentFlags         `bin:"off=16, siz=8"`
+	Refs          int64                `bin:"off=0, siz=8"`
+	Generation    btrfsprim.Generation `bin:"off=8, siz=8"`
+	Flags         ExtentFlags          `bin:"off=16, siz=8"`
 	binstruct.End `bin:"off=24"`
 }
 
 type TreeBlockInfo struct {
-	Key           internal.Key `bin:"off=0, siz=0x11"`
-	Level         uint8        `bin:"off=0x11, siz=0x1"`
+	Key           btrfsprim.Key `bin:"off=0, siz=0x11"`
+	Level         uint8         `bin:"off=0x11, siz=0x1"`
 	binstruct.End `bin:"off=0x12"`
 }
 

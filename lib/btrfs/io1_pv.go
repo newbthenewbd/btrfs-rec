@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
@@ -15,8 +16,8 @@ import (
 type Device struct {
 	diskio.File[btrfsvol.PhysicalAddr]
 
-	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
-	cacheSuperblock  *Superblock
+	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
+	cacheSuperblock  *btrfstree.Superblock
 }
 
 var _ diskio.File[btrfsvol.PhysicalAddr] = (*Device)(nil)
@@ -27,18 +28,18 @@ var SuperblockAddrs = []btrfsvol.PhysicalAddr{
 	0x40_0000_0000, // 256GiB
 }
 
-func (dev *Device) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
+func (dev *Device) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock], error) {
 	if dev.cacheSuperblocks != nil {
 		return dev.cacheSuperblocks, nil
 	}
-	superblockSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(Superblock{}))
+	superblockSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfstree.Superblock{}))
 
 	sz := dev.Size()
 
-	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
+	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
 	for i, addr := range SuperblockAddrs {
 		if addr+superblockSize <= sz {
-			superblock := &diskio.Ref[btrfsvol.PhysicalAddr, Superblock]{
+			superblock := &diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]{
 				File: dev,
 				Addr: addr,
 			}
@@ -55,7 +56,7 @@ func (dev *Device) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superbloc
 	return ret, nil
 }
 
-func (dev *Device) Superblock() (*Superblock, error) {
+func (dev *Device) Superblock() (*btrfstree.Superblock, error) {
 	if dev.cacheSuperblock != nil {
 		return dev.cacheSuperblock, nil
 	}

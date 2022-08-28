@@ -16,6 +16,8 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
@@ -64,7 +66,7 @@ func init() {
 			}
 			visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 			btrfsutil.WalkAllTrees(cmd.Context(), fs, btrfsutil.WalkAllTreesHandler{
-				PreTree: func(name string, treeID btrfs.ObjID) {
+				PreTree: func(name string, treeID btrfsprim.ObjID) {
 					treeErrCnt = 0
 					treeItemCnt = make(map[btrfsitem.Type]int)
 					fmt.Printf("tree id=%v name=%q\n", treeID, name)
@@ -72,23 +74,23 @@ func init() {
 				Err: func(_ *btrfsutil.WalkError) {
 					treeErrCnt++
 				},
-				TreeWalkHandler: btrfs.TreeWalkHandler{
-					Node: func(_ btrfs.TreePath, ref *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+				TreeWalkHandler: btrfstree.TreeWalkHandler{
+					Node: func(_ btrfstree.TreePath, ref *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 						visitedNodes[ref.Addr] = struct{}{}
 						return nil
 					},
-					Item: func(_ btrfs.TreePath, item btrfs.Item) error {
+					Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
 						treeItemCnt[typ] = treeItemCnt[typ] + 1
 						return nil
 					},
-					BadItem: func(_ btrfs.TreePath, item btrfs.Item) error {
+					BadItem: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
 						treeItemCnt[typ] = treeItemCnt[typ] + 1
 						return nil
 					},
 				},
-				PostTree: func(_ string, _ btrfs.ObjID) {
+				PostTree: func(_ string, _ btrfsprim.ObjID) {
 					flush()
 				},
 			})
@@ -104,7 +106,7 @@ func init() {
 							continue
 						}
 						visitedNodes[laddr] = struct{}{}
-						node, err := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfs.NodeExpectations{
+						node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
 							LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 						})
 						if err != nil {

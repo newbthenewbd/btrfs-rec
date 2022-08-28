@@ -13,6 +13,8 @@ import (
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
@@ -45,13 +47,13 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	return rebuiltNodes, nil
 }
 
-var maxKey = btrfs.Key{
+var maxKey = btrfsprim.Key{
 	ObjectID: math.MaxUint64,
 	ItemType: math.MaxUint8,
 	Offset:   math.MaxUint64,
 }
 
-func keyMm(key btrfs.Key) btrfs.Key {
+func keyMm(key btrfsprim.Key) btrfsprim.Key {
 	switch {
 	case key.Offset > 0:
 		key.Offset--
@@ -63,10 +65,10 @@ func keyMm(key btrfs.Key) btrfs.Key {
 	return key
 }
 
-func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
+func spanOfTreePath(fs *btrfs.FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.Key) {
 	// tree root error
 	if len(path) == 0 {
-		return btrfs.Key{}, maxKey
+		return btrfsprim.Key{}, maxKey
 	}
 
 	// item error
@@ -81,11 +83,11 @@ func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	//
 	// assume that path.Node(-1).ToNodeAddr is not readable, but that path.Node(-2).ToNodeAddr is.
 	if len(path) == 1 {
-		return btrfs.Key{}, maxKey
+		return btrfsprim.Key{}, maxKey
 	}
 	parentNode, _ := fs.ReadNode(path.Parent())
 	low := parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx].Key
-	var high btrfs.Key
+	var high btrfsprim.Key
 	if path.Node(-1).FromItemIdx+1 < len(parentNode.Data.BodyInternal) {
 		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx+1].Key)
 	} else {
@@ -95,21 +97,21 @@ func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	return low, high
 }
 
-func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfs.TreeError), cbs btrfs.TreeWalkHandler) {
+func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
 	sb, _ := fs.Superblock()
-	nodeRef, _ := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, nodeAddr, btrfs.NodeExpectations{
+	nodeRef, _ := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, nodeAddr, btrfstree.NodeExpectations{
 		LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeAddr},
 	})
 	if nodeRef == nil {
 		return
 	}
-	treeInfo := btrfs.TreeRoot{
+	treeInfo := btrfstree.TreeRoot{
 		TreeID:     nodeRef.Data.Head.Owner,
 		RootNode:   nodeAddr,
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 	}
-	fs.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
+	btrfstree.TreesImpl{NodeSource: fs}.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
 }
 
 func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
@@ -135,8 +137,8 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 
 	attachedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
-		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+		TreeWalkHandler: btrfstree.TreeWalkHandler{
+			Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 				attachedNodes[path.Node(-1).ToNodeAddr] = struct{}{}
 				done++
 				progress(done)
@@ -174,11 +176,11 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 		}
 		walkCtx, cancel := context.WithCancel(ctx)
 		walkFromNode(walkCtx, fs, potentialRoot,
-			func(err *btrfs.TreeError) {
+			func(err *btrfstree.TreeError) {
 				// do nothing
 			},
-			btrfs.TreeWalkHandler{
-				PreNode: func(path btrfs.TreePath) error {
+			btrfstree.TreeWalkHandler{
+				PreNode: func(path btrfstree.TreePath) error {
 					nodeAddr := path.Node(-1).ToNodeAddr
 					if nodeAddr != potentialRoot {
 						delete(orphanedRoots, nodeAddr)
@@ -197,13 +199,13 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	return orphanedRoots, nil
 }
 
-func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfs.UUID, bool) {
+func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfsprim.UUID, bool) {
 	ctx, cancel := context.WithCancel(ctx)
-	var ret btrfs.UUID
+	var ret btrfsprim.UUID
 	var retOK bool
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
-		TreeWalkHandler: btrfs.TreeWalkHandler{
-			Node: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+		TreeWalkHandler: btrfstree.TreeWalkHandler{
+			Node: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 				ret = node.Data.Head.ChunkTreeUUID
 				retOK = true
 				cancel()
@@ -219,8 +221,8 @@ func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfs.UUID, bool) {
 
 type RebuiltNode struct {
 	Err            error
-	MinKey, MaxKey btrfs.Key
-	btrfs.Node
+	MinKey, MaxKey btrfsprim.Key
+	btrfstree.Node
 }
 
 func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
@@ -247,20 +249,20 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	var done int
 
 	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
-	walkHandler := btrfs.TreeWalkHandler{
-		Node: func(_ btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
+	walkHandler := btrfstree.TreeWalkHandler{
+		Node: func(_ btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 			done++
 			progress(done)
 			return nil
 		},
-		BadNode: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
+		BadNode: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
 			min, max := spanOfTreePath(fs, path)
 			rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
 				Err:    err,
 				MinKey: min,
 				MaxKey: max,
-				Node: btrfs.Node{
-					Head: btrfs.NodeHeader{
+				Node: btrfstree.Node{
+					Head: btrfstree.NodeHeader{
 						MetadataUUID:  sb.EffectiveMetadataUUID(),
 						Addr:          path.Node(-1).ToNodeAddr,
 						ChunkTreeUUID: chunkTreeUUID,
@@ -282,7 +284,7 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	})
 	for foundRoot := range foundRoots {
 		walkFromNode(ctx, fs, foundRoot,
-			func(err *btrfs.TreeError) {
+			func(err *btrfstree.TreeError) {
 				// do nothing
 			},
 			walkHandler)
@@ -293,8 +295,8 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 
 func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
 	// Index 'rebuiltNodes' for fast lookups.
-	gaps := make(map[btrfs.ObjID]map[uint8][]*RebuiltNode)
-	maxLevel := make(map[btrfs.ObjID]uint8)
+	gaps := make(map[btrfsprim.ObjID]map[uint8][]*RebuiltNode)
+	maxLevel := make(map[btrfsprim.ObjID]uint8)
 	for _, node := range rebuiltNodes {
 		maxLevel[node.Head.Owner] = slices.Max(maxLevel[node.Head.Owner], node.Head.Level)
 
@@ -314,7 +316,7 @@ func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.Lo
 	// Attach foundRoots to the gaps.
 	sb, _ := fs.Superblock()
 	for foundLAddr := range foundRoots {
-		foundRef, err := btrfs.ReadNode[btrfsvol.LogicalAddr](fs, *sb, foundLAddr, btrfs.NodeExpectations{
+		foundRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, foundLAddr, btrfstree.NodeExpectations{
 			LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: foundLAddr},
 		})
 		if foundRef == nil {
@@ -352,7 +354,7 @@ func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.Lo
 				continue
 			}
 			parent := parentGen[parentIdx]
-			parent.BodyInternal = append(parent.BodyInternal, btrfs.KeyPointer{
+			parent.BodyInternal = append(parent.BodyInternal, btrfstree.KeyPointer{
 				Key:        foundMinKey,
 				BlockPtr:   foundLAddr,
 				Generation: foundRef.Data.Head.Generation,

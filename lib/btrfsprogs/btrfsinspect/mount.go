@@ -23,6 +23,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -43,7 +44,7 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
 	rootSubvol := &subvolume{
 		Subvolume: btrfs.Subvolume{
 			FS:     btrfsutil.NewBrokenTrees(ctx, fs),
-			TreeID: btrfs.FS_TREE_OBJECTID,
+			TreeID: btrfsprim.FS_TREE_OBJECTID,
 		},
 		DeviceName: deviceName,
 		Mountpoint: mountpoint,
@@ -152,7 +153,7 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 	}
 }
 
-func (sv *subvolume) LoadDir(inode btrfs.ObjID) (val *btrfs.Dir, err error) {
+func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) {
 	val, err = sv.Subvolume.LoadDir(inode)
 	if val != nil {
 		haveSubvolumes := false
@@ -232,7 +233,7 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 		op.Parent = fuseops.InodeID(parent)
 	}
 
-	dir, err := sv.LoadDir(btrfs.ObjID(op.Parent))
+	dir, err := sv.LoadDir(btrfsprim.ObjID(op.Parent))
 	if err != nil {
 		return err
 	}
@@ -283,7 +284,7 @@ func (sv *subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeA
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	bareInode, err := sv.LoadBareInode(btrfs.ObjID(op.Inode))
+	bareInode, err := sv.LoadBareInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -301,7 +302,7 @@ func (sv *subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	dir, err := sv.LoadDir(btrfs.ObjID(op.Inode))
+	dir, err := sv.LoadDir(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -354,7 +355,7 @@ func (sv *subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirH
 }
 
 func (sv *subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
-	file, err := sv.LoadFile(btrfs.ObjID(op.Inode))
+	file, err := sv.LoadFile(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -398,7 +399,7 @@ func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFil
 }
 
 func (sv *subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
-	file, err := sv.LoadFile(btrfs.ObjID(op.Inode))
+	file, err := sv.LoadFile(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -420,7 +421,7 @@ func (sv *subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	fullInode, err := sv.LoadFullInode(btrfs.ObjID(op.Inode))
+	fullInode, err := sv.LoadFullInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
@@ -452,7 +453,7 @@ func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error {
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	fullInode, err := sv.LoadFullInode(btrfs.ObjID(op.Inode))
+	fullInode, err := sv.LoadFullInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}

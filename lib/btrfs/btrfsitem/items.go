@@ -9,12 +9,12 @@ import (
 	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
 )
 
-type Type = internal.ItemType
+type Type = btrfsprim.ItemType
 
 type Item interface {
 	isItem()
@@ -37,7 +37,7 @@ func (o *Error) UnmarshalBinary(dat []byte) (int, error) {
 }
 
 // Rather than returning a separate error value, return an Error item.
-func UnmarshalItem(key internal.Key, csumType btrfssum.CSumType, dat []byte) Item {
+func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) Item {
 	var gotyp reflect.Type
 	if key.ItemType == UNTYPED_KEY {
 		var ok bool

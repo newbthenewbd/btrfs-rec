@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfs
+package btrfstree
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
@@ -64,11 +65,11 @@ type TreePath []TreePathElem
 type TreePathElem struct {
 	// FromTree is the owning tree ID of the parent node; or the
 	// well-known tree ID if this is the root.
-	FromTree ObjID
+	FromTree btrfsprim.ObjID
 	// FromGeneration is the generation of the parent node the
 	// parent node; or generation stored in the superblock if this
 	// is the root.
-	FromGeneration Generation
+	FromGeneration btrfsprim.Generation
 	// FromItemIdx is the index of this KeyPointer in the parent
 	// Node; or -1 if this is the root and there is no KeyPointer.
 	FromItemIdx int

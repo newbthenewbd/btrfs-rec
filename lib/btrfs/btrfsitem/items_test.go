@@ -11,12 +11,12 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
 )
 
 func FuzzRoundTrip(f *testing.F) {
-	keySize := binstruct.StaticSize(internal.Key{})
+	keySize := binstruct.StaticSize(btrfsprim.Key{})
 	sumtypeSize := binstruct.StaticSize(btrfssum.CSumType(0))
 
 	f.Add(make([]byte, 256))
@@ -31,7 +31,7 @@ func FuzzRoundTrip(f *testing.F) {
 
 		// key
 
-		var key internal.Key
+		var key btrfsprim.Key
 		n, err := binstruct.Unmarshal(keyInDat, &key)
 		require.NoError(t, err, "binstruct.Unmarshal(dat, &key)")
 		require.Equal(t, keySize, n, "binstruct.Unmarshal(dat, &key)")

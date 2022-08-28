@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfs_test
+package btrfstree_test
 
 import (
 	"testing"
@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 )
 
 func FuzzRoundTripNode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, inDat []byte) {
 		t.Logf("dat=(%d)%q", len(inDat), inDat)
-		node := btrfs.Node{
+		node := btrfstree.Node{
 			ChecksumType: btrfssum.TYPE_CRC32,
 		}
 		n, err := binstruct.Unmarshal(inDat, &node)

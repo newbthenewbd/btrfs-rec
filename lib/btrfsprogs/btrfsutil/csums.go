@@ -9,11 +9,12 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-func ChecksumLogical(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.CSum, error) {
+func ChecksumLogical(fs *btrfs.FS, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.CSum, error) {
 	var dat [btrfssum.BlockSize]byte
 	if _, err := fs.ReadAt(dat[:], laddr); err != nil {
 		return btrfssum.CSum{}, err
@@ -37,8 +38,8 @@ func ChecksumQualifiedPhysical(fs *btrfs.FS, alg btrfssum.CSumType, paddr btrfsv
 	return ChecksumPhysical(dev, alg, paddr.Addr)
 }
 
-func LookupCSum(fs btrfs.Trees, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
-	item, err := fs.TreeSearch(btrfs.CSUM_TREE_OBJECTID, func(key btrfs.Key, size uint32) int {
+func LookupCSum(fs *btrfs.FS, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
+	item, err := fs.TreeSearch(btrfsprim.CSUM_TREE_OBJECTID, func(key btrfsprim.Key, size uint32) int {
 		itemBeg := btrfsvol.LogicalAddr(key.ObjectID)
 		numSums := int64(size) / int64(alg.Size())
 		itemEnd := itemBeg + btrfsvol.LogicalAddr(numSums*btrfssum.BlockSize)

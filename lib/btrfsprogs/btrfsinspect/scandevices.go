@@ -17,7 +17,9 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
@@ -55,35 +57,35 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS) (ScanDevicesResult, error) {
 type ScanOneDeviceResult struct {
 	Checksums        btrfssum.SumRun[btrfsvol.PhysicalAddr]
 	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
-	FoundChunks      []btrfs.SysChunk
+	FoundChunks      []btrfstree.SysChunk
 	FoundBlockGroups []SysBlockGroup
 	FoundDevExtents  []SysDevExtent
 	FoundExtentCSums []SysExtentCSum
 }
 
 type SysBlockGroup struct {
-	Key btrfs.Key
+	Key btrfsprim.Key
 	BG  btrfsitem.BlockGroup
 }
 
 type SysDevExtent struct {
-	Key    btrfs.Key
+	Key    btrfsprim.Key
 	DevExt btrfsitem.DevExtent
 }
 
 type SysExtentCSum struct {
-	Generation btrfs.Generation
+	Generation btrfsprim.Generation
 	Sums       btrfsitem.ExtentCSum
 }
 
 // ScanOneDevice mostly mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device().
-func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) (ScanOneDeviceResult, error) {
+func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblock) (ScanOneDeviceResult, error) {
 	result := ScanOneDeviceResult{
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
 
-	sbSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfs.Superblock{}))
+	sbSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfstree.Superblock{}))
 
 	devSize := dev.Size()
 	if sb.NodeSize < sb.SectorSize {
@@ -141,9 +143,9 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 		}
 
 		if checkForNode {
-			nodeRef, err := btrfs.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, btrfs.NodeExpectations{})
+			nodeRef, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, btrfstree.NodeExpectations{})
 			if err != nil {
-				if !errors.Is(err, btrfs.ErrNotANode) {
+				if !errors.Is(err, btrfstree.ErrNotANode) {
 					dlog.Errorf(ctx, "... dev[%q] error: %v", dev.Name(), err)
 				}
 			} else {
@@ -159,7 +161,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfs.Superblock) 
 						}
 						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found chunk",
 						//	dev.Name(), nodeRef.Addr, i)
-						result.FoundChunks = append(result.FoundChunks, btrfs.SysChunk{
+						result.FoundChunks = append(result.FoundChunks, btrfstree.SysChunk{
 							Key:   item.Key,
 							Chunk: chunk,
 						})

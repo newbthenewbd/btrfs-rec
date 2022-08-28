@@ -8,15 +8,15 @@ import (
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
 )
 
 // key.objectid = inode
 // key.offset = offset within file
 type FileExtent struct { // EXTENT_DATA=108
-	Generation internal.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
-	RAMBytes   int64               `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
+	Generation btrfsprim.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
+	RAMBytes   int64                `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
 
 	// 32 bits describing the data encoding
 	Compression   CompressionType `bin:"off=0x10, siz=0x1"`

@@ -9,13 +9,13 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
 type RootRef struct { // ROOT_REF=156 ROOT_BACKREF=144
-	DirID         internal.ObjID `bin:"off=0x00, siz=0x8"`
-	Sequence      int64          `bin:"off=0x08, siz=0x8"`
-	NameLen       uint16         `bin:"off=0x10, siz=0x2"` // [ignored-when-writing]
+	DirID         btrfsprim.ObjID `bin:"off=0x00, siz=0x8"`
+	Sequence      int64           `bin:"off=0x08, siz=0x8"`
+	NameLen       uint16          `bin:"off=0x10, siz=0x2"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0x12"`
 	Name          []byte `bin:"-"`
 }

@@ -10,11 +10,13 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 )
 
 type WalkError struct {
 	TreeName string
-	Err      *btrfs.TreeError
+	Err      *btrfstree.TreeError
 }
 
 func (e *WalkError) Unwrap() error { return e.Err }
@@ -26,10 +28,10 @@ func (e *WalkError) Error() string {
 type WalkAllTreesHandler struct {
 	Err func(*WalkError)
 	// Callbacks for entire trees
-	PreTree  func(name string, id btrfs.ObjID)
-	PostTree func(name string, id btrfs.ObjID)
+	PreTree  func(name string, id btrfsprim.ObjID)
+	PostTree func(name string, id btrfsprim.ObjID)
 	// Callbacks for nodes or smaller
-	btrfs.TreeWalkHandler
+	btrfstree.TreeWalkHandler
 }
 
 // WalkAllTrees walks all trees in a *btrfs.FS.  Rather than returning
@@ -40,31 +42,31 @@ func WalkAllTrees(ctx context.Context, fs *btrfs.FS, cbs WalkAllTreesHandler) {
 
 	trees := []struct {
 		Name string
-		ID   btrfs.ObjID
+		ID   btrfsprim.ObjID
 	}{
 		{
 			Name: "root tree",
-			ID:   btrfs.ROOT_TREE_OBJECTID,
+			ID:   btrfsprim.ROOT_TREE_OBJECTID,
 		},
 		{
 			Name: "chunk tree",
-			ID:   btrfs.CHUNK_TREE_OBJECTID,
+			ID:   btrfsprim.CHUNK_TREE_OBJECTID,
 		},
 		{
 			Name: "log tree",
-			ID:   btrfs.TREE_LOG_OBJECTID,
+			ID:   btrfsprim.TREE_LOG_OBJECTID,
 		},
 		{
 			Name: "block group tree",
-			ID:   btrfs.BLOCK_GROUP_TREE_OBJECTID,
+			ID:   btrfsprim.BLOCK_GROUP_TREE_OBJECTID,
 		},
 	}
 	origItem := cbs.Item
-	cbs.Item = func(path btrfs.TreePath, item btrfs.Item) error {
+	cbs.Item = func(path btrfstree.TreePath, item btrfstree.Item) error {
 		if item.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			trees = append(trees, struct {
 				Name string
-				ID   btrfs.ObjID
+				ID   btrfsprim.ObjID
 			}{
 				Name: fmt.Sprintf("tree %v (via %v %v)",
 					item.Key.ObjectID.Format(0), treeName, path),
@@ -86,7 +88,7 @@ func WalkAllTrees(ctx context.Context, fs *btrfs.FS, cbs WalkAllTreesHandler) {
 		fs.TreeWalk(
 			ctx,
 			tree.ID,
-			func(err *btrfs.TreeError) { cbs.Err(&WalkError{TreeName: treeName, Err: err}) },
+			func(err *btrfstree.TreeError) { cbs.Err(&WalkError{TreeName: treeName, Err: err}) },
 			cbs.TreeWalkHandler,
 		)
 		if cbs.PostTree != nil {

@@ -13,6 +13,8 @@ import (
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
@@ -22,12 +24,12 @@ type FS struct {
 	// implementing special things like fsck.
 	LV btrfsvol.LogicalVolume[*Device]
 
-	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
-	cacheSuperblock  *Superblock
+	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
+	cacheSuperblock  *btrfstree.Superblock
 
-	cacheObjID2UUID map[ObjID]UUID
-	cacheUUID2ObjID map[UUID]ObjID
-	cacheTreeParent map[ObjID]UUID
+	cacheObjID2UUID map[btrfsprim.ObjID]btrfsprim.UUID
+	cacheUUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID
+	cacheTreeParent map[btrfsprim.ObjID]btrfsprim.UUID
 }
 
 var _ diskio.File[btrfsvol.LogicalAddr] = (*FS)(nil)
@@ -72,11 +74,11 @@ func (fs *FS) WriteAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.WriteAt(p, off)
 }
 
-func (fs *FS) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superblock], error) {
+func (fs *FS) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock], error) {
 	if fs.cacheSuperblocks != nil {
 		return fs.cacheSuperblocks, nil
 	}
-	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
+	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
 	devs := fs.LV.PhysicalVolumes()
 	if len(devs) == 0 {
 		return nil, fmt.Errorf("no devices")
@@ -92,7 +94,7 @@ func (fs *FS) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, Superblock], e
 	return ret, nil
 }
 
-func (fs *FS) Superblock() (*Superblock, error) {
+func (fs *FS) Superblock() (*btrfstree.Superblock, error) {
 	if fs.cacheSuperblock != nil {
 		return fs.cacheSuperblock, nil
 	}
@@ -147,7 +149,7 @@ func (fs *FS) ReInit(ctx context.Context) error {
 	return nil
 }
 
-func (fs *FS) initDev(ctx context.Context, sb Superblock) error {
+func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 	syschunks, err := sb.ParseSysChunkArray()
 	if err != nil {
 		return err
@@ -160,12 +162,12 @@ func (fs *FS) initDev(ctx context.Context, sb Superblock) error {
 		}
 	}
 	var errs derror.MultiError
-	fs.TreeWalk(ctx, CHUNK_TREE_OBJECTID,
-		func(err *TreeError) {
+	fs.TreeWalk(ctx, btrfsprim.CHUNK_TREE_OBJECTID,
+		func(err *btrfstree.TreeError) {
 			errs = append(errs, err)
 		},
-		TreeWalkHandler{
-			Item: func(_ TreePath, item Item) error {
+		btrfstree.TreeWalkHandler{
+			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 					return nil
 				}

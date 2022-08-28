@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
 
@@ -34,14 +35,14 @@ func init() {
 				Err: func(err *btrfsutil.WalkError) {
 					dlog.Error(ctx, err)
 				},
-				TreeWalkHandler: btrfs.TreeWalkHandler{
-					Item: func(path btrfs.TreePath, item btrfs.Item) error {
+				TreeWalkHandler: btrfstree.TreeWalkHandler{
+					Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
 						fmt.Printf("%s = ", path)
 						spew.Dump(item)
 						os.Stdout.WriteString("\n")
 						return nil
 					},
-					BadItem: func(path btrfs.TreePath, item btrfs.Item) error {
+					BadItem: func(path btrfstree.TreePath, item btrfstree.Item) error {
 						fmt.Printf("%s = ", path)
 						spew.Dump(item)
 						os.Stdout.WriteString("\n")

@@ -6,8 +6,8 @@ package btrfsitem
 
 import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/internal"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
@@ -22,7 +22,7 @@ type Chunk struct { // CHUNK_ITEM=228
 
 type ChunkHeader struct {
 	Size           btrfsvol.AddrDelta       `bin:"off=0x0,  siz=0x8"`
-	Owner          internal.ObjID           `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
+	Owner          btrfsprim.ObjID          `bin:"off=0x8,  siz=0x8"` // root referencing this chunk (always EXTENT_TREE_OBJECTID=2)
 	StripeLen      uint64                   `bin:"off=0x10, siz=0x8"` // ???
 	Type           btrfsvol.BlockGroupFlags `bin:"off=0x18, siz=0x8"`
 	IOOptimalAlign uint32                   `bin:"off=0x20, siz=0x4"`
@@ -36,11 +36,11 @@ type ChunkHeader struct {
 type ChunkStripe struct {
 	DeviceID      btrfsvol.DeviceID     `bin:"off=0x0,  siz=0x8"`
 	Offset        btrfsvol.PhysicalAddr `bin:"off=0x8,  siz=0x8"`
-	DeviceUUID    internal.UUID         `bin:"off=0x10, siz=0x10"`
+	DeviceUUID    btrfsprim.UUID        `bin:"off=0x10, siz=0x10"`
 	binstruct.End `bin:"off=0x20"`
 }
 
-func (chunk Chunk) Mappings(key internal.Key) []btrfsvol.Mapping {
+func (chunk Chunk) Mappings(key btrfsprim.Key) []btrfsvol.Mapping {
 	ret := make([]btrfsvol.Mapping, 0, len(chunk.Stripes))
 	for _, stripe := range chunk.Stripes {
 		ret = append(ret, btrfsvol.Mapping{
