@@ -61,7 +61,7 @@ type File struct {
 
 type Subvolume struct {
 	FS interface {
-		btrfstree.Trees
+		btrfstree.TreeOperator
 		Superblock() (*btrfstree.Superblock, error)
 		ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
 	}

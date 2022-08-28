@@ -14,7 +14,11 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// - The first element will always have an ItemIdx of -1.
+// TreePath is a path from the superblock (i.e. the root of the btrfs
+// system) to the a node or item within one of the btrees in the
+// system.
+//
+//   - The first element will always have an ItemIdx of -1.
 //
 //   - For .Item() callbacks, the last element will always have a
 //     NodeAddr of 0.

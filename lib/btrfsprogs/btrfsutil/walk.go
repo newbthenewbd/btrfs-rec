@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -37,7 +36,7 @@ type WalkAllTreesHandler struct {
 // WalkAllTrees walks all trees in a *btrfs.FS.  Rather than returning
 // an error, it calls errCb each time an error is encountered.  The
 // error will always be of type WalkError.
-func WalkAllTrees(ctx context.Context, fs *btrfs.FS, cbs WalkAllTreesHandler) {
+func WalkAllTrees(ctx context.Context, fs btrfstree.TreeOperator, cbs WalkAllTreesHandler) {
 	var treeName string
 
 	trees := []struct {

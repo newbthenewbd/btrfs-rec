@@ -6,7 +6,6 @@ package btrfs
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -14,24 +13,23 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func (fs *FS) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	btrfstree.TreesImpl{NodeSource: fs}.TreeWalk(ctx, treeID, errHandle, cbs)
+	btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeWalk(ctx, treeID, errHandle, cbs)
 }
 func (fs *FS) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	return btrfstree.TreesImpl{NodeSource: fs}.TreeLookup(treeID, key)
+	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeLookup(treeID, key)
 }
 func (fs *FS) TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (btrfstree.Item, error) {
-	return btrfstree.TreesImpl{NodeSource: fs}.TreeSearch(treeID, fn)
+	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearch(treeID, fn)
 }
 func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]btrfstree.Item, error) {
-	return btrfstree.TreesImpl{NodeSource: fs}.TreeSearchAll(treeID, fn)
+	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, fn)
 }
 
-var _ btrfstree.Trees = (*FS)(nil)
+var _ btrfstree.TreeOperator = (*FS)(nil)
 
 func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 	if fs.cacheObjID2UUID == nil || fs.cacheUUID2ObjID == nil || fs.cacheTreeParent == nil {
@@ -59,44 +57,24 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 	}
 }
 
-var noParents = make(map[btrfsprim.ObjID]struct{})
+func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
+	ctx := context.TODO()
+	if tree < btrfsprim.FIRST_FREE_OBJECTID {
+		return 0, false
+	}
+	fs.populateTreeUUIDs(ctx)
+	parentUUID := fs.cacheTreeParent[tree]
+	if parentUUID == (btrfsprim.UUID{}) {
+		return 0, false
+	}
+	parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
+	if !ok {
+		dlog.Errorf(ctx, "dbg: could not resolve parentUUID=%v to an ObjID", parentUUID)
+		return 0, false
+	}
+	return parentObjID, true
+}
 
 func (fs *FS) ReadNode(path btrfstree.TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], error) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
-	}
-
-	potentialOwners := []btrfsprim.ObjID{
-		path.Node(-1).FromTree,
-	}
-	if potentialOwners[0] >= btrfsprim.FIRST_FREE_OBJECTID {
-		ctx := context.TODO()
-		fs.populateTreeUUIDs(ctx)
-		for potentialOwners[len(potentialOwners)-1] >= btrfsprim.FIRST_FREE_OBJECTID {
-			objID := potentialOwners[len(potentialOwners)-1]
-			parentUUID := fs.cacheTreeParent[objID]
-			if parentUUID == (btrfsprim.UUID{}) {
-				if _, already := noParents[objID]; !already {
-					dlog.Infof(ctx, "dbg: objID=%v has no parent", objID)
-					noParents[objID] = struct{}{}
-				}
-				break
-			}
-			dlog.Infof(ctx, "dbg: parent of objID=%v is %v", objID, parentUUID)
-			parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
-			if !ok {
-				dlog.Errorf(ctx, "dbg: could not resolve parentUUID=%v to an ObjID", parentUUID)
-				break
-			}
-			potentialOwners = append(potentialOwners, parentObjID)
-		}
-	}
-
-	return btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, path.Node(-1).ToNodeAddr, btrfstree.NodeExpectations{
-		LAddr:         containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: path.Node(-1).ToNodeAddr},
-		Level:         containers.Optional[uint8]{OK: true, Val: path.Node(-1).ToNodeLevel},
-		MaxGeneration: containers.Optional[btrfsprim.Generation]{OK: true, Val: path.Node(-1).FromGeneration},
-		Owner:         potentialOwners,
-	})
+	return btrfstree.FSReadNode(fs, path)
 }

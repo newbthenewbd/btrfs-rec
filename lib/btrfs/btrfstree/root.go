@@ -23,7 +23,7 @@ type TreeRoot struct {
 
 // LookupTreeRoot is a utility function to help with implementing the 'Trees'
 // interface.
-func LookupTreeRoot(fs Trees, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
+func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
 		return &TreeRoot{

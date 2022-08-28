@@ -27,22 +27,32 @@ import (
 )
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
+	uuidMap, err := buildTreeUUIDMap(ctx, fs, nodeScanResults)
+	if err != nil {
+		return nil, err
+	}
+
+	nfs := &RebuiltTrees{
+		inner:   fs,
+		uuidMap: uuidMap,
+	}
+
 	dlog.Info(ctx, "Identifying lost+found nodes...")
-	foundRoots, err := lostAndFoundNodes(ctx, fs, nodeScanResults)
+	foundRoots, err := lostAndFoundNodes(ctx, nfs, nodeScanResults)
 	if err != nil {
 		return nil, err
 	}
 	dlog.Infof(ctx, "... identified %d lost+found nodes", len(foundRoots))
 
 	dlog.Info(ctx, "Initializing nodes to re-build...")
-	rebuiltNodes, err := reInitBrokenNodes(ctx, fs, nodeScanResults, foundRoots)
+	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, nodeScanResults, foundRoots)
 	if err != nil {
 		return nil, err
 	}
 	dlog.Infof(ctx, "Initialized %d nodes", len(rebuiltNodes))
 
 	dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
-	if err := reAttachNodes(ctx, fs, foundRoots, rebuiltNodes); err != nil {
+	if err := reAttachNodes(ctx, nfs, foundRoots, rebuiltNodes); err != nil {
 		return nil, err
 	}
 	dlog.Info(ctx, "... done attaching")
@@ -68,7 +78,7 @@ func keyMm(key btrfsprim.Key) btrfsprim.Key {
 	return key
 }
 
-func spanOfTreePath(fs *btrfs.FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.Key) {
+func spanOfTreePath(fs _FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.Key) {
 	// tree root error
 	if len(path) == 0 {
 		return btrfsprim.Key{}, maxKey
@@ -100,7 +110,7 @@ func spanOfTreePath(fs *btrfs.FS, path btrfstree.TreePath) (btrfsprim.Key, btrfs
 	return low, high
 }
 
-func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
+func walkFromNode(ctx context.Context, fs _FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
 	sb, _ := fs.Superblock()
 	nodeRef, _ := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, nodeAddr, btrfstree.NodeExpectations{
 		LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeAddr},
@@ -114,7 +124,7 @@ func walkFromNode(ctx context.Context, fs *btrfs.FS, nodeAddr btrfsvol.LogicalAd
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 	}
-	btrfstree.TreesImpl{NodeSource: fs}.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
+	btrfstree.TreeOperatorImpl{NodeSource: fs}.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
 }
 
 func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
@@ -125,7 +135,7 @@ func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
 	return cnt
 }
 
-func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]struct{}, error) {
+func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]struct{}, error) {
 	lastPct := -1
 	total := countNodes(nodeScanResults)
 	progress := func(done int) {
@@ -210,7 +220,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	return orphanedRoots, nil
 }
 
-func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfsprim.UUID, bool) {
+func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	var ret btrfsprim.UUID
 	var retOK bool
@@ -237,7 +247,7 @@ type RebuiltNode struct {
 	btrfstree.Node
 }
 
-func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
+func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
@@ -317,7 +327,7 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	return rebuiltNodes, nil
 }
 
-func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
+func reAttachNodes(ctx context.Context, fs _FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
 	// Index 'rebuiltNodes' for fast lookups.
 	gaps := make(map[btrfsprim.ObjID]map[uint8][]*RebuiltNode)
 	maxLevel := make(map[btrfsprim.ObjID]uint8)

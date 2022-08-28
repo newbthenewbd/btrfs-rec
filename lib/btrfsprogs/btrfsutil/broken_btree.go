@@ -102,7 +102,7 @@ type brokenTrees struct {
 	treeIndexes map[btrfsprim.ObjID]cachedIndex
 }
 
-var _ btrfstree.Trees = (*brokenTrees)(nil)
+var _ btrfstree.TreeOperator = (*brokenTrees)(nil)
 
 // NewBrokenTrees wraps a *btrfs.FS to support looking up information
 // from broken trees.
@@ -123,7 +123,7 @@ var _ btrfstree.Trees = (*brokenTrees)(nil)
 // tree, and re-implements TreeLookup, TreeSearch, and TreeSearchAll
 // using that index.
 func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) interface {
-	btrfstree.Trees
+	btrfstree.TreeOperator
 	Superblock() (*btrfstree.Superblock, error)
 	ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
 } {
@@ -171,7 +171,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) cachedIndex {
 			KeyFn: func(iv indexValue) btrfsprim.Key { return iv.Key },
 		}
 		dlog.Infof(bt.ctx, "indexing tree %v...", treeID)
-		btrfstree.TreesImpl{NodeSource: bt.inner}.RawTreeWalk(
+		btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(
 			bt.ctx,
 			*treeRoot,
 			func(err *btrfstree.TreeError) {
