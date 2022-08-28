@@ -54,10 +54,10 @@ func ClearBadNodes(ctx context.Context, fs *btrfs.FS) error {
 						Flags:         btrfs.NodeWritten,
 						BackrefRev:    btrfs.MixedBackrefRev,
 						ChunkTreeUUID: chunkTreeUUID,
-						Generation:    0,
-						Owner:         path.TreeID,
+						Generation:    path.Node(-1).FromGeneration,
+						Owner:         path.Node(-1).FromTree,
 						NumItems:      0,
-						Level:         path.Node(-1).NodeLevel,
+						Level:         path.Node(-1).ToNodeLevel,
 					},
 				}
 				node.Data.Head.Checksum, err = node.Data.CalculateChecksum()

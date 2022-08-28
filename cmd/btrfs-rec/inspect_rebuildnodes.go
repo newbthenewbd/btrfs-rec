@@ -94,32 +94,31 @@ func keyMm(key btrfs.Key) btrfs.Key {
 
 func spanOfTreePath(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	// tree root error
-	if len(path.Nodes) == 0 {
+	if len(path) == 0 {
 		return btrfs.Key{}, maxKey
 	}
 
 	// item error
-	if path.Node(-1).NodeAddr == 0 {
+	if path.Node(-1).ToNodeAddr == 0 {
 		// If we got an item error, then the node is readable
 		node, _ := fs.ReadNode(path.Parent())
-		key := node.Data.BodyLeaf[path.Node(-1).ItemIdx].Key
+		key := node.Data.BodyLeaf[path.Node(-1).FromItemIdx].Key
 		return key, key
 	}
 
 	// node error
 	//
-	// assume that path.Node(-1).NodeAddr is not readable, but that path.Node(-2).NodeAddr is.
-	if len(path.Nodes) == 1 {
+	// assume that path.Node(-1).ToNodeAddr is not readable, but that path.Node(-2).ToNodeAddr is.
+	if len(path) == 1 {
 		return btrfs.Key{}, maxKey
 	}
 	parentNode, _ := fs.ReadNode(path.Parent())
-	low := parentNode.Data.BodyInternal[path.Node(-1).ItemIdx].Key
+	low := parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx].Key
 	var high btrfs.Key
-	if path.Node(-1).ItemIdx+1 < len(parentNode.Data.BodyInternal) {
-		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).ItemIdx+1].Key)
+	if path.Node(-1).FromItemIdx+1 < len(parentNode.Data.BodyInternal) {
+		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx+1].Key)
 	} else {
-		parentPath := path.DeepCopy()
-		parentPath.Nodes = parentPath.Nodes[:len(parentPath.Nodes)-1]
+		parentPath := path.Parent().DeepCopy()
 		_, high = spanOfTreePath(fs, parentPath)
 	}
 	return low, high
@@ -167,7 +166,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfs.TreeWalkHandler{
 			Node: func(path btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
-				attachedNodes[path.Node(-1).NodeAddr] = struct{}{}
+				attachedNodes[path.Node(-1).ToNodeAddr] = struct{}{}
 				done++
 				progress(done)
 				return nil
@@ -209,7 +208,7 @@ func lostAndFoundNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 			},
 			btrfs.TreeWalkHandler{
 				PreNode: func(path btrfs.TreePath) error {
-					nodeAddr := path.Node(-1).NodeAddr
+					nodeAddr := path.Node(-1).ToNodeAddr
 					if nodeAddr != potentialRoot {
 						delete(orphanedRoots, nodeAddr)
 					}
@@ -285,17 +284,18 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 		},
 		BadNode: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			min, max := spanOfTreePath(fs, path)
-			rebuiltNodes[path.Node(-1).NodeAddr] = &rebuiltNode{
+			rebuiltNodes[path.Node(-1).ToNodeAddr] = &rebuiltNode{
 				Err:    err,
 				MinKey: min,
 				MaxKey: max,
 				Node: btrfs.Node{
 					Head: btrfs.NodeHeader{
 						MetadataUUID:  sb.EffectiveMetadataUUID(),
-						Addr:          path.Node(-1).NodeAddr,
+						Addr:          path.Node(-1).ToNodeAddr,
 						ChunkTreeUUID: chunkTreeUUID,
-						Owner:         path.TreeID,
-						Level:         path.Node(-1).NodeLevel,
+						Owner:         path.Node(-1).FromTree,
+						Generation:    path.Node(-1).FromGeneration,
+						Level:         path.Node(-1).ToNodeLevel,
 					},
 				},
 			}

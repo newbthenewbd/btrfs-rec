@@ -47,32 +47,31 @@ func keyMm(key btrfs.Key) btrfs.Key {
 
 func span(fs *btrfs.FS, path btrfs.TreePath) (btrfs.Key, btrfs.Key) {
 	// tree root error
-	if len(path.Nodes) == 0 {
+	if len(path) == 0 {
 		return btrfs.Key{}, maxKey
 	}
 
 	// item error
-	if path.Node(-1).NodeAddr == 0 {
+	if path.Node(-1).ToNodeAddr == 0 {
 		// If we got an item error, then the node is readable
-		node, _ := fs.ReadNode(path.Parent())
-		key := node.Data.BodyLeaf[path.Node(-1).ItemIdx].Key
+		node, _ := fs.ReadNode(path[:len(path)-1])
+		key := node.Data.BodyLeaf[path.Node(-1).FromItemIdx].Key
 		return key, key
 	}
 
 	// node error
 	//
 	// assume that path.Node(-1).NodeAddr is not readable, but that path.Node(-2).NodeAddr is.
-	if len(path.Nodes) == 1 {
+	if len(path) == 1 {
 		return btrfs.Key{}, maxKey
 	}
 	parentNode, _ := fs.ReadNode(path.Parent())
-	low := parentNode.Data.BodyInternal[path.Node(-1).ItemIdx].Key
+	low := parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx].Key
 	var high btrfs.Key
-	if path.Node(-1).ItemIdx+1 < len(parentNode.Data.BodyInternal) {
-		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).ItemIdx+1].Key)
+	if path.Node(-1).FromItemIdx+1 < len(parentNode.Data.BodyInternal) {
+		high = keyMm(parentNode.Data.BodyInternal[path.Node(-1).FromItemIdx+1].Key)
 	} else {
-		parentPath := path.DeepCopy()
-		parentPath.Nodes = parentPath.Nodes[:len(parentPath.Nodes)-1]
+		parentPath := path.Parent().DeepCopy()
 		_, high = span(fs, parentPath)
 	}
 	return low, high
@@ -162,12 +161,12 @@ func (bt *brokenTrees) treeIndex(treeID btrfs.ObjID) cachedIndex {
 			bt.ctx,
 			*treeRoot,
 			func(err *btrfs.TreeError) {
-				if len(err.Path.Nodes) > 0 && err.Path.Node(-1).NodeAddr == 0 {
+				if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
 					// This is a panic because on the filesystems I'm working with it more likely
 					// indicates a bug in my item parser than a problem with the filesystem.
 					panic(fmt.Errorf("TODO: error parsing item: %w", err))
 				}
-				invLvl := len(err.Path.Nodes)
+				invLvl := len(err.Path)
 				lvlErrs, ok := cacheEntry.Errors[invLvl]
 				if !ok {
 					lvlErrs = make(map[btrfs.Key][]spanError)
@@ -231,7 +230,7 @@ func (bt *brokenTrees) TreeSearch(treeID btrfs.ObjID, fn func(btrfs.Key, uint32)
 		return btrfs.Item{}, err
 	}
 
-	item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).ItemIdx]
+	item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).FromItemIdx]
 
 	return item, nil
 }
@@ -251,14 +250,14 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfs.ObjID, fn func(btrfs.Key, uint
 	ret := make([]btrfs.Item, len(indexItems))
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]
 	for i := range indexItems {
-		if node == nil || node.Addr != indexItems[i].Path.Node(-2).NodeAddr {
+		if node == nil || node.Addr != indexItems[i].Path.Node(-2).ToNodeAddr {
 			var err error
 			node, err = bt.inner.ReadNode(indexItems[i].Path.Parent())
 			if err != nil {
 				return nil, err
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[indexItems[i].Path.Node(-1).ItemIdx]
+		ret[i] = node.Data.BodyLeaf[indexItems[i].Path.Node(-1).FromItemIdx]
 	}
 
 	var errs derror.MultiError
@@ -288,9 +287,9 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 	index := bt.treeIndex(treeID)
 	if index.TreeRootErr != nil {
 		errHandle(&btrfs.TreeError{
-			Path: btrfs.TreePath{
-				TreeID: treeID,
-			},
+			Path: btrfs.TreePath{{
+				FromTree: treeID,
+			}},
 			Err: index.TreeRootErr,
 		})
 		return
@@ -304,7 +303,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 			return bt.ctx.Err()
 		}
 		if cbs.Item != nil {
-			if node == nil || node.Addr != indexItem.Value.Path.Node(-2).NodeAddr {
+			if node == nil || node.Addr != indexItem.Value.Path.Node(-2).ToNodeAddr {
 				var err error
 				node, err = bt.inner.ReadNode(indexItem.Value.Path.Parent())
 				if err != nil {
@@ -312,7 +311,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfs.ObjID, errHand
 					return nil
 				}
 			}
-			item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).ItemIdx]
+			item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).FromItemIdx]
 			if err := cbs.Item(indexItem.Value.Path, item); err != nil {
 				errHandle(&btrfs.TreeError{Path: indexItem.Value.Path, Err: err})
 			}

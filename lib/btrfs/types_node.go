@@ -16,6 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 type NodeFlags uint64
@@ -384,7 +385,7 @@ type NodeExpectations struct {
 	// Things knowable from the parent.
 	Level         containers.Optional[uint8]
 	MaxGeneration containers.Optional[Generation]
-	Owner         containers.Optional[ObjID]
+	Owner         []ObjID
 }
 
 func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
@@ -435,9 +436,9 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected generation<=%v but claims to be generation=%v",
 			addr, exp.MaxGeneration.Val, nodeRef.Data.Head.Generation)
 	}
-	if exp.Owner.OK && nodeRef.Data.Head.Owner != exp.Owner.Val {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected owner=%v but claims to have owner=%v",
-			addr, exp.Owner.Val, nodeRef.Data.Head.Owner)
+	if len(exp.Owner) > 0 && !slices.Contains(nodeRef.Data.Head.Owner, exp.Owner) {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected owner in %v but claims to have owner=%v",
+			addr, exp.Owner, nodeRef.Data.Head.Owner)
 	}
 
 	// parse (main)

@@ -24,6 +24,10 @@ type FS struct {
 
 	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, Superblock]
 	cacheSuperblock  *Superblock
+
+	cacheObjID2UUID map[ObjID]UUID
+	cacheUUID2ObjID map[UUID]ObjID
+	cacheTreeParent map[ObjID]UUID
 }
 
 var _ diskio.File[btrfsvol.LogicalAddr] = (*FS)(nil)

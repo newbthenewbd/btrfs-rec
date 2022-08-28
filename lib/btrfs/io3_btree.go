@@ -70,121 +70,138 @@ var _ Trees = (*FS)(nil)
 //   - For .Item() callbacks, the last element will always have a
 //     NodeAddr of 0.
 //
-// For example, given the tree structure
+// For example, a path through a tree, with the associated PathElems:
 //
-//	[superblock]
+//	[superblock: tree=B, lvl=3, gen=6]
 //	     |
-//	     | <------------------------------------------ pathElem={idx:-1, addr:0x01, lvl:3, gen:6}
-//	     |
-//	  +[0x01]-----------+
-//	  | lvl=3  gen=6    |
-//	  +-+-+-+-+-+-+-+-+-+
-//	  |1|2|3|4|5|6|7|8|9|
-//	  +---+---+---+---+-+
+//	     | <------------------------------------------ pathElem={from_tree:B, from_gen=6, from_idx=-1,
+//	     |                                                       to_addr:0x01, to_lvl=3}
+//	  +[0x01]-------------+
+//	  | lvl=3 gen=6 own=B |
+//	  +-+-+-+-+-+-+-+-+-+-+
+//	  |0|1|2|3|4|5|6|7|8|9|
+//	  +-+-+-+-+-+-+-+-+-+-+
 //	                 |
-//	                 | <------------------------------ pathElem={idx:8, addr:0x02, lvl:2: gen:6}
-//	                 |
-//	              +[0x02]-----------+
-//	              | lvl=2  gen=5    |
-//	              +-+-+-+-+-+-+-+-+-+
-//	              |1|2|3|4|5|6|7|8|9|
-//	              +---+---+---+---+-+
+//	                 | <------------------------------ pathElem:{from_tree:B, from_gen:6, from_idx:7,
+//	                 |                                           to_addr:0x02, to_lvl:2}
+//	              +[0x02]--------------+
+//	              | lvl=2 gen=5 own=B  |
+//	              +-+-+-+-+-+-+-+-+-+-+
+//	              |0|1|2|3|4|5|6|7|8|9|
+//	              +-+-+-+-+-+-+-+-+-+-+
 //	                           |
-//	                           | <-------------------- pathElem={idx:7, addr:0x03, lvl:1: gen:5}
-//	                           |
-//	                        +[0x03]-----------+
-//	                        | lvl=1  gen=5    |
-//	                        +-+-+-+-+-+-+-+-+-+
-//	                        |1|2|3|4|5|6|7|8|9|
-//	                        +---+---+---+---+-+
+//	                           | <-------------------- pathElem={from_tree:B, from_gen:5, from_idx:6,
+//	                           |                                 to_addr:0x03, to_lvl:1}
+//	                        +[0x03]-------------+
+//	                        | lvl=1 gen=5 own=A |
+//	                        +-+-+-+-+-+-+-+-+-+-+
+//	                        |0|1|2|3|4|5|6|7|8|9|
+//	                        +-+-+-+-+-+-+-+-+-+-+
 //	                               |
-//	                               | <---------------- pathElem={idx:4, addr:0x04, lvl:0: gen:5}
-//	                               |
-//	                             +[0x04]-----------+
-//	                             | lvl=0  gen=2    |
-//	                             +-+-+-+-+-+-+-+-+-+
-//	                             |1|2|3|4|5|6|7|8|9|
-//	                             +---+---+---+---+-+
+//	                               | <---------------- pathElem={from_tree:A, from_gen:5, from_idx:3,
+//	                               |                             to_addr:0x04, to_lvl:0}
+//	                             +[0x04]-------------+
+//	                             | lvl=0 gen=2 own=A |
+//	                             +-+-+-+-+-+-+-+-+-+-+
+//	                             |0|1|2|3|4|5|6|7|8|9|
+//	                             +-+-+-+-+-+-+-+-+-+-+
 //	                                |
-//	                                | <--------------- pathElem={idx:5, addr:0, lvl:0, gen:2}
-//	                                |
+//	                                | <--------------- pathElem={from_tree:A, from_gen:2, from_idx:1,
+//	                                |                            to_addr:0, to_lvl:0}
 //	                              [item]
-//
-// the path would be
-//
-//	{
-//		TreeID: …,
-//		Nodes: {-1, 0x01, 3, 6}→{8, 0x02, 2, 6}→{7, 0x03, 1, 5}→{4, 0x04, 5}→{2, 0, 0, 2},
-//	}
-type TreePath struct {
-	TreeID ObjID
-	Nodes  []TreePathElem
-}
+type TreePath []TreePathElem
 
-// A TreePathElem essentially represents a KeyPointer.
+// A TreePathElem essentially represents a KeyPointer.  If there is an
+// error looking up the tree root, everything but FromTree is zero.
 type TreePathElem struct {
-	// ItemIdx is the index of this KeyPointer in the parent Node;
-	// or -1 if this is the root and there is no KeyPointer.
-	ItemIdx int
-	// NodeAddr is the address of the node that the KeyPointer
-	// points at, or 0 if this is a leaf item and nothing is
+	// FromTree is the owning tree ID of the parent node; or the
+	// well-known tree ID if this is the root.
+	FromTree ObjID
+	// FromGeneration is the generation of the parent node the
+	// parent node; or generation stored in the superblock if this
+	// is the root.
+	FromGeneration Generation
+	// FromItemIdx is the index of this KeyPointer in the parent
+	// Node; or -1 if this is the root and there is no KeyPointer.
+	FromItemIdx int
+
+	// ToNodeAddr is the address of the node that the KeyPointer
+	// points at, or 0 if this is a leaf item and nothing is being
+	// pointed at.
+	ToNodeAddr btrfsvol.LogicalAddr
+	// ToNodeLevel is the expected or actual level of the node at
+	// ToNodeAddr, or 0 if this is a leaf item and nothing is
 	// being pointed at.
-	NodeAddr btrfsvol.LogicalAddr
-	// NodeLevel is the expected or actual level of the node at
-	// NodeAddr.
-	NodeLevel uint8
-	// NodeParentGeneration is the generation of the parent node;
-	// the maximum expected generation of the child node.
-	NodeParentGeneration Generation
+	ToNodeLevel uint8
 }
 
 func (elem TreePathElem) writeNodeTo(w io.Writer) {
-	fmt.Fprintf(w, "node:%d@%v", elem.NodeLevel, elem.NodeAddr)
+	fmt.Fprintf(w, "node:%d@%v", elem.ToNodeLevel, elem.ToNodeAddr)
 }
 
 func (path TreePath) String() string {
-	var ret strings.Builder
-	fmt.Fprintf(&ret, "%s->", path.TreeID.Format(btrfsitem.ROOT_ITEM_KEY))
-	if len(path.Nodes) == 0 {
-		ret.WriteString("(empty-path)")
+	if len(path) == 0 {
+		return "(empty-path)"
 	} else {
-		path.Nodes[0].writeNodeTo(&ret)
-		for _, elem := range path.Nodes[1:] {
-			fmt.Fprintf(&ret, "[%v]", elem.ItemIdx)
-			if elem.NodeAddr != 0 {
+		var ret strings.Builder
+		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsitem.ROOT_ITEM_KEY))
+		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree}) {
+			ret.WriteString("(empty-path)")
+		} else {
+			path[0].writeNodeTo(&ret)
+		}
+		for _, elem := range path[1:] {
+			fmt.Fprintf(&ret, "[%v]", elem.FromItemIdx)
+			if elem.ToNodeAddr != 0 {
 				ret.WriteString("->")
 				elem.writeNodeTo(&ret)
 			}
 		}
+		return ret.String()
 	}
-	return ret.String()
 }
 
 func (path TreePath) DeepCopy() TreePath {
-	return TreePath{
-		TreeID: path.TreeID,
-		Nodes:  append([]TreePathElem(nil), path.Nodes...),
-	}
-}
-
-func (path TreePath) Append(elem TreePathElem) TreePath {
-	path.Nodes = append(path.Nodes, elem)
-	return path
+	return append(TreePath(nil), path...)
 }
 
 func (path TreePath) Parent() TreePath {
-	path.Nodes = path.Nodes[:len(path.Nodes)-1]
-	return path
+	return path[:len(path)-1]
 }
 
-// path.Node(x) is like path.Nodes[x], but negative values of x move
-// down from the end of path.Nodes (similar to how lists work in many
-// other languages, such as Python).
+// path.Node(x) is like &path[x], but negative values of x move down
+// from the end of path (similar to how lists work in many other
+// languages, such as Python).
 func (path TreePath) Node(x int) *TreePathElem {
 	if x < 0 {
-		x += len(path.Nodes)
+		x += len(path)
 	}
-	return &path.Nodes[x]
+	return &path[x]
+}
+
+func (fs *FS) populateTreeUUIDs(ctx context.Context) {
+	if fs.cacheObjID2UUID == nil || fs.cacheUUID2ObjID == nil || fs.cacheTreeParent == nil {
+		fs.cacheObjID2UUID = make(map[ObjID]UUID)
+		fs.cacheUUID2ObjID = make(map[UUID]ObjID)
+		fs.cacheTreeParent = make(map[ObjID]UUID)
+		fs.TreeWalk(ctx, ROOT_TREE_OBJECTID,
+			func(err *TreeError) {
+				// do nothing
+			},
+			TreeWalkHandler{
+				Item: func(_ TreePath, item Item) error {
+					itemBody, ok := item.Body.(btrfsitem.Root)
+					if !ok {
+						return nil
+					}
+					fs.cacheObjID2UUID[item.Key.ObjectID] = itemBody.UUID
+					fs.cacheTreeParent[item.Key.ObjectID] = itemBody.ParentUUID
+					fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
+					return nil
+				},
+			},
+		)
+	}
 }
 
 func (fs *FS) ReadNode(path TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
@@ -193,11 +210,31 @@ func (fs *FS) ReadNode(path TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], 
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
 
-	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, path.Node(-1).NodeAddr, NodeExpectations{
-		LAddr:         containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: path.Node(-1).NodeAddr},
-		Level:         containers.Optional[uint8]{OK: true, Val: path.Node(-1).NodeLevel},
-		MaxGeneration: containers.Optional[Generation]{OK: true, Val: path.Node(-1).NodeParentGeneration},
-		Owner:         containers.Optional[ObjID]{OK: true, Val: path.TreeID},
+	potentialOwners := []ObjID{
+		path.Node(-1).FromTree,
+	}
+	if potentialOwners[0] >= FIRST_FREE_OBJECTID {
+		ctx := context.TODO()
+		fs.populateTreeUUIDs(ctx)
+		for potentialOwners[len(potentialOwners)-1] >= FIRST_FREE_OBJECTID {
+			objID := potentialOwners[len(potentialOwners)-1]
+			parentUUID := fs.cacheTreeParent[objID]
+			if parentUUID == (UUID{}) {
+				break
+			}
+			parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
+			if !ok {
+				break
+			}
+			potentialOwners = append(potentialOwners, parentObjID)
+		}
+	}
+
+	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, path.Node(-1).ToNodeAddr, NodeExpectations{
+		LAddr:         containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: path.Node(-1).ToNodeAddr},
+		Level:         containers.Optional[uint8]{OK: true, Val: path.Node(-1).ToNodeLevel},
+		MaxGeneration: containers.Optional[Generation]{OK: true, Val: path.Node(-1).FromGeneration},
+		Owner:         potentialOwners,
 	})
 }
 
@@ -300,37 +337,24 @@ type TreeWalkHandler struct {
 
 // TreeWalk implements the 'Trees' interface.
 func (fs *FS) TreeWalk(ctx context.Context, treeID ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	path := TreePath{
-		TreeID: treeID,
-	}
 	rootInfo, err := LookupTreeRoot(fs, treeID)
 	if err != nil {
-		errHandle(&TreeError{Path: path, Err: err})
+		errHandle(&TreeError{Path: TreePath{{FromTree: treeID}}, Err: err})
 		return
 	}
-	path = path.Append(TreePathElem{
-		ItemIdx:              -1,
-		NodeAddr:             rootInfo.RootNode,
-		NodeLevel:            rootInfo.Level,
-		NodeParentGeneration: rootInfo.Generation,
-	})
-	fs.treeWalk(ctx, path, errHandle, cbs)
+	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
 }
 
 // TreeWalk is a utility function to help with implementing the 'Trees'
 // interface.
 func (fs *FS) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	path := TreePath{
-		TreeID: rootInfo.TreeID,
-		Nodes: []TreePathElem{
-			{
-				ItemIdx:              -1,
-				NodeAddr:             rootInfo.RootNode,
-				NodeLevel:            rootInfo.Level,
-				NodeParentGeneration: rootInfo.Generation,
-			},
-		},
-	}
+	path := TreePath{{
+		FromTree:       rootInfo.TreeID,
+		FromGeneration: rootInfo.Generation,
+		FromItemIdx:    -1,
+		ToNodeAddr:     rootInfo.RootNode,
+		ToNodeLevel:    rootInfo.Level,
+	}}
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
@@ -338,7 +362,7 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	if ctx.Err() != nil {
 		return
 	}
-	if path.Node(-1).NodeAddr == 0 {
+	if path.Node(-1).ToNodeAddr == 0 {
 		return
 	}
 
@@ -372,11 +396,12 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 	}
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
-			itemPath := path.Append(TreePathElem{
-				ItemIdx:              i,
-				NodeAddr:             item.BlockPtr,
-				NodeLevel:            node.Data.Head.Level - 1,
-				NodeParentGeneration: node.Data.Head.Generation,
+			itemPath := append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    i,
+				ToNodeAddr:     item.BlockPtr,
+				ToNodeLevel:    node.Data.Head.Level - 1,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
@@ -397,8 +422,10 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 			}
 		}
 		for i, item := range node.Data.BodyLeaf {
-			itemPath := path.Append(TreePathElem{
-				ItemIdx: i,
+			itemPath := append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    i,
 			})
 			if errBody, isErr := item.Body.(btrfsitem.Error); isErr {
 				if cbs.BadItem == nil {
@@ -431,19 +458,15 @@ func (fs *FS) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeE
 }
 
 func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
-	path := TreePath{
-		TreeID: treeRoot.TreeID,
-		Nodes: []TreePathElem{
-			{
-				ItemIdx:              -1,
-				NodeAddr:             treeRoot.RootNode,
-				NodeLevel:            treeRoot.Level,
-				NodeParentGeneration: treeRoot.Generation,
-			},
-		},
-	}
+	path := TreePath{{
+		FromTree:       treeRoot.TreeID,
+		FromGeneration: treeRoot.Generation,
+		FromItemIdx:    -1,
+		ToNodeAddr:     treeRoot.RootNode,
+		ToNodeLevel:    treeRoot.Level,
+	}}
 	for {
-		if path.Node(-1).NodeAddr == 0 {
+		if path.Node(-1).ToNodeAddr == 0 {
 			return TreePath{}, nil, iofs.ErrNotExist
 		}
 		node, err := fs.ReadNode(path)
@@ -468,11 +491,12 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 			if !ok {
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
-			path = path.Append(TreePathElem{
-				ItemIdx:              lastGood,
-				NodeAddr:             node.Data.BodyInternal[lastGood].BlockPtr,
-				NodeLevel:            node.Data.Head.Level - 1,
-				NodeParentGeneration: node.Data.Head.Generation,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    lastGood,
+				ToNodeAddr:     node.Data.BodyInternal[lastGood].BlockPtr,
+				ToNodeLevel:    node.Data.Head.Level - 1,
 			})
 		} else {
 			// leaf node
@@ -493,8 +517,10 @@ func (fs *FS) treeSearch(treeRoot TreeRoot, fn func(Key, uint32) int) (TreePath,
 			if !ok {
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
-			path = path.Append(TreePathElem{
-				ItemIdx: idx,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    idx,
 			})
 			return path, node, nil
 		}
@@ -506,46 +532,49 @@ func (fs *FS) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	path = path.DeepCopy()
 
 	// go up
-	for path.Node(-1).ItemIdx < 1 {
-		path.Nodes = path.Nodes[:len(path.Nodes)-1]
-		if len(path.Nodes) == 0 {
+	for path.Node(-1).FromItemIdx < 1 {
+		path = path.Parent()
+		if len(path) == 0 {
 			return TreePath{}, nil, nil
 		}
 	}
 	// go left
-	path.Node(-1).ItemIdx--
-	if path.Node(-1).NodeAddr != 0 {
-		if node.Addr != path.Node(-2).NodeAddr {
+	path.Node(-1).FromItemIdx--
+	if path.Node(-1).ToNodeAddr != 0 {
+		if node.Addr != path.Node(-2).ToNodeAddr {
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
-			path.Node(-1).NodeAddr = node.Data.BodyInternal[path.Node(-1).ItemIdx].BlockPtr
+			path.Node(-1).ToNodeAddr = node.Data.BodyInternal[path.Node(-1).FromItemIdx].BlockPtr
 		}
 	}
 	// go down
-	for path.Node(-1).NodeAddr != 0 {
-		if node.Addr != path.Node(-1).NodeAddr {
+	for path.Node(-1).ToNodeAddr != 0 {
+		if node.Addr != path.Node(-1).ToNodeAddr {
 			node, err = fs.ReadNode(path)
 			if err != nil {
 				return TreePath{}, nil, err
 			}
 		}
 		if node.Data.Head.Level > 0 {
-			path = path.Append(TreePathElem{
-				ItemIdx:              len(node.Data.BodyInternal) - 1,
-				NodeAddr:             node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				NodeLevel:            node.Data.Head.Level - 1,
-				NodeParentGeneration: node.Data.Head.Generation,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    len(node.Data.BodyInternal) - 1,
+				ToNodeAddr:     node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				ToNodeLevel:    node.Data.Head.Level - 1,
 			})
 		} else {
-			path = path.Append(TreePathElem{
-				ItemIdx: len(node.Data.BodyLeaf) - 1,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    len(node.Data.BodyLeaf) - 1,
 			})
 		}
 	}
 	// return
-	if node.Addr != path.Node(-2).NodeAddr {
+	if node.Addr != path.Node(-2).ToNodeAddr {
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
@@ -559,61 +588,64 @@ func (fs *FS) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) 
 	path = path.DeepCopy()
 
 	// go up
-	if node.Addr != path.Node(-2).NodeAddr {
+	if node.Addr != path.Node(-2).ToNodeAddr {
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
 		}
-		path.Node(-2).NodeLevel = node.Data.Head.Level
+		path.Node(-2).ToNodeLevel = node.Data.Head.Level
 	}
-	for path.Node(-1).ItemIdx+1 >= int(node.Data.Head.NumItems) {
-		path.Nodes = path.Nodes[:len(path.Nodes)-1]
-		if len(path.Nodes) == 1 {
+	for path.Node(-1).FromItemIdx+1 >= int(node.Data.Head.NumItems) {
+		path = path.Parent()
+		if len(path) == 1 {
 			return TreePath{}, nil, nil
 		}
-		if node.Addr != path.Node(-2).NodeAddr {
+		if node.Addr != path.Node(-2).ToNodeAddr {
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
-			path.Node(-2).NodeLevel = node.Data.Head.Level
+			path.Node(-2).ToNodeLevel = node.Data.Head.Level
 		}
 	}
 	// go right
-	path.Node(-1).ItemIdx++
-	if path.Node(-1).NodeAddr != 0 {
-		if node.Addr != path.Node(-2).NodeAddr {
+	path.Node(-1).FromItemIdx++
+	if path.Node(-1).ToNodeAddr != 0 {
+		if node.Addr != path.Node(-2).ToNodeAddr {
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
 				return TreePath{}, nil, err
 			}
-			path.Node(-1).NodeAddr = node.Data.BodyInternal[path.Node(-1).ItemIdx].BlockPtr
+			path.Node(-1).ToNodeAddr = node.Data.BodyInternal[path.Node(-1).FromItemIdx].BlockPtr
 		}
 	}
 	// go down
-	for path.Node(-1).NodeAddr != 0 {
-		if node.Addr != path.Node(-1).NodeAddr {
+	for path.Node(-1).ToNodeAddr != 0 {
+		if node.Addr != path.Node(-1).ToNodeAddr {
 			node, err = fs.ReadNode(path)
 			if err != nil {
 				return TreePath{}, nil, err
 			}
-			path.Node(-1).NodeLevel = node.Data.Head.Level
+			path.Node(-1).ToNodeLevel = node.Data.Head.Level
 		}
 		if node.Data.Head.Level > 0 {
-			path = path.Append(TreePathElem{
-				ItemIdx:              0,
-				NodeAddr:             node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				NodeLevel:            node.Data.Head.Level - 1,
-				NodeParentGeneration: node.Data.Head.Generation,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    0,
+				ToNodeAddr:     node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				ToNodeLevel:    node.Data.Head.Level - 1,
 			})
 		} else {
-			path = path.Append(TreePathElem{
-				ItemIdx: 0,
+			path = append(path, TreePathElem{
+				FromTree:       node.Data.Head.Owner,
+				FromGeneration: node.Data.Head.Generation,
+				FromItemIdx:    0,
 			})
 		}
 	}
 	// return
-	if node.Addr != path.Node(-2).NodeAddr {
+	if node.Addr != path.Node(-2).ToNodeAddr {
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
 			return TreePath{}, nil, err
@@ -632,7 +664,7 @@ func (fs *FS) TreeSearch(treeID ObjID, fn func(Key, uint32) int) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	return node.Data.BodyLeaf[path.Node(-1).ItemIdx], nil
+	return node.Data.BodyLeaf[path.Node(-1).FromItemIdx], nil
 }
 
 // KeySearch returns a comparator suitable to be passed to TreeSearch.
@@ -661,7 +693,7 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, err
 	if err != nil {
 		return nil, err
 	}
-	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).ItemIdx]
+	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).FromItemIdx]
 
 	var ret = []Item{middleItem}
 	var errs derror.MultiError
@@ -671,10 +703,10 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, err
 			errs = append(errs, err)
 			break
 		}
-		if len(prevPath.Nodes) == 0 {
+		if len(prevPath) == 0 {
 			break
 		}
-		prevItem := prevNode.Data.BodyLeaf[prevPath.Node(-1).ItemIdx]
+		prevItem := prevNode.Data.BodyLeaf[prevPath.Node(-1).FromItemIdx]
 		if fn(prevItem.Key, prevItem.BodySize) != 0 {
 			break
 		}
@@ -687,10 +719,10 @@ func (fs *FS) TreeSearchAll(treeID ObjID, fn func(Key, uint32) int) ([]Item, err
 			errs = append(errs, err)
 			break
 		}
-		if len(nextPath.Nodes) == 0 {
+		if len(nextPath) == 0 {
 			break
 		}
-		nextItem := nextNode.Data.BodyLeaf[nextPath.Node(-1).ItemIdx]
+		nextItem := nextNode.Data.BodyLeaf[nextPath.Node(-1).FromItemIdx]
 		if fn(nextItem.Key, nextItem.BodySize) != 0 {
 			break
 		}
