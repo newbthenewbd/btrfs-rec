@@ -2,19 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package main
+package rebuildnodes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 
 	"github.com/datawire/dlib/dlog"
-	"github.com/datawire/ocibuild/pkg/cliutil"
-	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -25,53 +21,28 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:  "rebuild-nodes NODESCAN.json",
-			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
+	dlog.Info(ctx, "Identifying lost+found nodes...")
+	foundRoots, err := lostAndFoundNodes(ctx, fs, nodeScanResults)
+	if err != nil {
+		return nil, err
+	}
+	dlog.Infof(ctx, "... identified %d lost+found nodes", len(foundRoots))
 
-			dlog.Infof(ctx, "Reading %q...", args[0])
-			nodeScanResults, err := readScanResults(args[0])
-			if err != nil {
-				return err
-			}
-			dlog.Infof(ctx, "... done reading %q", args[0])
+	dlog.Info(ctx, "Initializing nodes to re-build...")
+	rebuiltNodes, err := reInitBrokenNodes(ctx, fs, nodeScanResults, foundRoots)
+	if err != nil {
+		return nil, err
+	}
+	dlog.Infof(ctx, "Initialized %d nodes", len(rebuiltNodes))
 
-			dlog.Info(ctx, "Identifying lost+found nodes...")
-			foundRoots, err := lostAndFoundNodes(ctx, fs, nodeScanResults)
-			if err != nil {
-				return err
-			}
-			dlog.Infof(ctx, "... identified %d lost+found nodes", len(foundRoots))
+	dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
+	if err := reAttachNodes(ctx, fs, foundRoots, rebuiltNodes); err != nil {
+		return nil, err
+	}
+	dlog.Info(ctx, "... done attaching")
 
-			dlog.Info(ctx, "Initializing nodes to re-build...")
-			rebuiltNodes, err := reInitBrokenNodes(ctx, fs, nodeScanResults, foundRoots)
-			if err != nil {
-				return err
-			}
-			dlog.Infof(ctx, "Initialized %d nodes", len(rebuiltNodes))
-
-			dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
-			if err := reAttachNodes(ctx, fs, foundRoots, rebuiltNodes); err != nil {
-				return err
-			}
-			dlog.Info(ctx, "... done attaching")
-
-			dlog.Info(ctx, "Writing re-built nodes to stdout...")
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "    ")
-			if err := encoder.Encode(rebuiltNodes); err != nil {
-				return err
-			}
-			dlog.Info(ctx, "... done writing")
-
-			return nil
-		},
-	})
+	return rebuiltNodes, nil
 }
 
 var maxKey = btrfs.Key{
@@ -246,13 +217,13 @@ func getChunkTreeUUID(ctx context.Context, fs *btrfs.FS) (btrfs.UUID, bool) {
 	return ret, retOK
 }
 
-type rebuiltNode struct {
+type RebuiltNode struct {
 	Err            error
 	MinKey, MaxKey btrfs.Key
 	btrfs.Node
 }
 
-func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*rebuiltNode, error) {
+func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
@@ -275,7 +246,7 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	}
 	var done int
 
-	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*rebuiltNode)
+	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
 	walkHandler := btrfs.TreeWalkHandler{
 		Node: func(_ btrfs.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node]) error {
 			done++
@@ -284,7 +255,7 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 		},
 		BadNode: func(path btrfs.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfs.Node], err error) error {
 			min, max := spanOfTreePath(fs, path)
-			rebuiltNodes[path.Node(-1).ToNodeAddr] = &rebuiltNode{
+			rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
 				Err:    err,
 				MinKey: min,
 				MaxKey: max,
@@ -320,15 +291,15 @@ func reInitBrokenNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsi
 	return rebuiltNodes, nil
 }
 
-func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*rebuiltNode) error {
+func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
 	// Index 'rebuiltNodes' for fast lookups.
-	gaps := make(map[btrfs.ObjID]map[uint8][]*rebuiltNode)
+	gaps := make(map[btrfs.ObjID]map[uint8][]*RebuiltNode)
 	maxLevel := make(map[btrfs.ObjID]uint8)
 	for _, node := range rebuiltNodes {
 		maxLevel[node.Head.Owner] = slices.Max(maxLevel[node.Head.Owner], node.Head.Level)
 
 		if gaps[node.Head.Owner] == nil {
-			gaps[node.Head.Owner] = make(map[uint8][]*rebuiltNode)
+			gaps[node.Head.Owner] = make(map[uint8][]*RebuiltNode)
 		}
 		gaps[node.Head.Owner][node.Head.Level] = append(gaps[node.Head.Owner][node.Head.Level], node)
 	}
@@ -364,7 +335,7 @@ func reAttachNodes(ctx context.Context, fs *btrfs.FS, foundRoots map[btrfsvol.Lo
 			if !ok {
 				continue
 			}
-			parentIdx, ok := slices.Search(parentGen, func(parent *rebuiltNode) int {
+			parentIdx, ok := slices.Search(parentGen, func(parent *RebuiltNode) int {
 				switch {
 				case foundMinKey.Cmp(parent.MinKey) < 0:
 					// 'parent' is too far right
