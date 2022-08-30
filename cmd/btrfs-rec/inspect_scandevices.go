@@ -33,7 +33,12 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
-			return writeScanResults(os.Stdout, results)
+			if err := writeScanResults(os.Stdout, results); err != nil {
+				return err
+			}
+			dlog.Info(ctx, "... done writing")
+
+			return nil
 		},
 	})
 }

@@ -5,14 +5,17 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
+	"io"
 	"os"
 
+	"git.lukeshu.com/go/lowmemjson"
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes"
 )
 
@@ -38,9 +41,7 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing re-built nodes to stdout...")
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "    ")
-			if err := encoder.Encode(rebuiltNodes); err != nil {
+			if err := writeNodesJSON(os.Stdout, rebuiltNodes); err != nil {
 				return err
 			}
 			dlog.Info(ctx, "... done writing")
@@ -48,4 +49,19 @@ func init() {
 			return nil
 		},
 	})
+}
+
+func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsvol.LogicalAddr]*rebuildnodes.RebuiltNode) (err error) {
+	buffer := bufio.NewWriter(w)
+	defer func() {
+		if _err := buffer.Flush(); err == nil && _err != nil {
+			err = _err
+		}
+	}()
+	return lowmemjson.Encode(&lowmemjson.ReEncoder{
+		Out: buffer,
+
+		Indent:                "\t",
+		ForceTrailingNewlines: true,
+	}, rebuiltNodes)
 }

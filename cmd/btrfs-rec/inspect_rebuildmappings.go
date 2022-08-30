@@ -51,6 +51,7 @@ func init() {
 			if err := writeMappingsJSON(os.Stdout, fs); err != nil {
 				return err
 			}
+			dlog.Info(ctx, "... done writing")
 
 			return nil
 		},

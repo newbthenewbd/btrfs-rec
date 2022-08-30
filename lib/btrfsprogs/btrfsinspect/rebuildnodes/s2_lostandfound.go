@@ -86,8 +86,7 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		if orphanedNodes[potentialRoot] > 1 {
 			continue
 		}
-		walkCtx, cancel := context.WithCancel(ctx)
-		walkFromNode(walkCtx, fs, potentialRoot,
+		walkFromNode(ctx, fs, potentialRoot,
 			func(err *btrfstree.TreeError) {
 				// do nothing
 			},
@@ -97,11 +96,11 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 					if nodeAddr != potentialRoot {
 						delete(orphanedRoots, nodeAddr)
 					}
-					visitCnt := orphanedNodes[nodeAddr] + 1
-					orphanedNodes[nodeAddr] = visitCnt
-					if visitCnt > 1 {
-						cancel()
+					visitCnt, ok := orphanedNodes[nodeAddr]
+					if visitCnt > 0 || !ok {
+						return iofs.SkipDir
 					}
+					orphanedNodes[nodeAddr] = visitCnt + 1
 					return nil
 				},
 			},
