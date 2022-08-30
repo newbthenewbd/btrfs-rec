@@ -67,3 +67,15 @@ func (o *Set[T]) Delete(v T) {
 	}
 	delete(*o, v)
 }
+
+func (small Set[T]) HasIntersection(big Set[T]) bool {
+	if len(big) < len(small) {
+		small, big = big, small
+	}
+	for v := range small {
+		if _, ok := big[v]; ok {
+			return true
+		}
+	}
+	return false
+}
