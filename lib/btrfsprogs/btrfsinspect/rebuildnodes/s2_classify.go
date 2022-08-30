@@ -6,9 +6,11 @@ package rebuildnodes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	iofs "io/fs"
 	"reflect"
+	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -19,24 +21,34 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
-	dlog.Info(ctx, "Initializing nodes to re-build...")
+// classifyNodes returns
+//
+//  1. the set of nodes don't have another node claiming it as a child, and
+//  2. the set of bad-nodes, with reconstructed headers filled in.
+func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDevicesResult) (
+	orphanedNodes map[btrfsvol.LogicalAddr]struct{},
+	rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode,
+	err error,
+) {
+	dlog.Info(ctx, "Walking trees to identify orphan and broken nodes...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
 	chunkTreeUUID, ok := getChunkTreeUUID(ctx, fs)
 	if !ok {
-		return nil, fmt.Errorf("could not look up chunk tree UUID")
+		return nil, nil, fmt.Errorf("could not look up chunk tree UUID")
 	}
 
 	lastPct := -1
-	total := countNodes(nodeScanResults)
-	progress := func(done int) {
+	total := countNodes(scanResults)
+	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
+	progress := func() {
+		done := len(visitedNodes)
 		pct := int(100 * float64(done) / float64(total))
 		if pct != lastPct || done == total {
 			dlog.Infof(ctx, "... %v%% (%v/%v)",
@@ -45,18 +57,21 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		}
 	}
 
-	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
-	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
+	rebuiltNodes = make(map[btrfsvol.LogicalAddr]*RebuiltNode)
 	walkHandler := btrfstree.TreeWalkHandler{
-		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+		PreNode: func(path btrfstree.TreePath) error {
 			addr := path.Node(-1).ToNodeAddr
 			if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
 				// Can happen because of COW subvolumes;
 				// this is really a DAG not a tree.
 				return iofs.SkipDir
 			}
+			return nil
+		},
+		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+			addr := path.Node(-1).ToNodeAddr
 			visitedNodes[addr] = struct{}{}
-			progress(len(visitedNodes))
+			progress()
 			return nil
 		},
 		BadNode: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
@@ -98,29 +113,54 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		},
 	}
 
-	// We use WalkAllTrees instead of just iterating over
-	// nodeScanResults so that we don't need to specifically check
-	// if any of the root nodes referenced directly by the
-	// superblock are dead.
-	progress(len(visitedNodes))
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
+		TreeWalkHandler: walkHandler,
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
+			if !errors.Is(err, btrfstree.ErrNotANode) && !strings.Contains(err.Error(), "read: could not map logical address") {
+				dlog.Errorf(ctx, "dbg walk err: %v", err)
+			}
 		},
-		TreeWalkHandler: walkHandler,
 	})
-	for foundRoot := range foundRoots {
-		walkFromNode(ctx, fs, foundRoot,
+
+	// Start with 'orphanedRoots' as a complete set of all orphaned nodes, and then delete
+	// non-root entries from it.
+	orphanedNodes = make(map[btrfsvol.LogicalAddr]struct{})
+	for _, devResults := range scanResults {
+		for laddr := range devResults.FoundNodes {
+			if _, attached := visitedNodes[laddr]; !attached {
+				orphanedNodes[laddr] = struct{}{}
+			}
+		}
+	}
+	if len(visitedNodes)+len(orphanedNodes) != total {
+		panic("should not happen")
+	}
+	dlog.Infof(ctx,
+		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
+		len(visitedNodes), len(orphanedNodes), len(visitedNodes)+len(orphanedNodes))
+	for _, potentialRoot := range maps.SortedKeys(orphanedNodes) {
+		walkHandler.Node = func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+			addr := path.Node(-1).ToNodeAddr
+			if addr != potentialRoot {
+				delete(orphanedNodes, addr)
+			}
+			visitedNodes[addr] = struct{}{}
+			progress()
+			return nil
+		}
+		walkFromNode(ctx, fs, potentialRoot,
 			func(err *btrfstree.TreeError) {
 				// do nothing
 			},
-			walkHandler)
+			walkHandler,
+		)
 	}
 
 	if len(visitedNodes) != total {
 		panic("should not happen")
 	}
 
-	dlog.Infof(ctx, "... initialized %d nodes", len(rebuiltNodes))
-	return rebuiltNodes, nil
+	dlog.Infof(ctx, "... identified %d orphaned nodes and re-built %d nodes", len(orphanedNodes), len(rebuiltNodes))
+	return orphanedNodes, rebuiltNodes, nil
 }

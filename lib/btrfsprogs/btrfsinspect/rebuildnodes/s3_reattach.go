@@ -18,7 +18,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func reAttachNodes(ctx context.Context, fs _FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
+func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
 	dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
 
 	sb, err := fs.Superblock()
@@ -48,19 +48,19 @@ func reAttachNodes(ctx context.Context, fs _FS, foundRoots map[btrfsvol.LogicalA
 	}
 	dlog.Info(ctx, "... done indexing")
 
-	// Attach foundRoots to the gaps.
+	// Attach orphanedNodes to the gaps.
 	dlog.Info(ctx, "... attaching nodes...")
 	lastPct := -1
 	progress := func(done int) {
-		pct := int(100 * float64(done) / float64(len(foundRoots)))
-		if pct != lastPct || done == len(foundRoots) {
+		pct := int(100 * float64(done) / float64(len(orphanedNodes)))
+		if pct != lastPct || done == len(orphanedNodes) {
 			dlog.Infof(ctx, "... %v%% (%v/%v)",
-				pct, done, len(foundRoots))
+				pct, done, len(orphanedNodes))
 			lastPct = pct
 		}
 	}
 	numAttached := 0
-	for i, foundLAddr := range maps.SortedKeys(foundRoots) {
+	for i, foundLAddr := range maps.SortedKeys(orphanedNodes) {
 		progress(i)
 		foundRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, foundLAddr, btrfstree.NodeExpectations{
 			LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: foundLAddr},
@@ -113,10 +113,10 @@ func reAttachNodes(ctx context.Context, fs _FS, foundRoots map[btrfsvol.LogicalA
 				foundRef.Addr)
 		}
 	}
-	progress(len(foundRoots))
+	progress(len(orphanedNodes))
 	dlog.Info(ctx, "... ... done attaching")
 
 	dlog.Infof(ctx, "... re-attached %d nodes (%v%% success rate)",
-		numAttached, int(100*float64(numAttached)/float64(len(foundRoots))))
+		numAttached, int(100*float64(numAttached)/float64(len(orphanedNodes))))
 	return nil
 }

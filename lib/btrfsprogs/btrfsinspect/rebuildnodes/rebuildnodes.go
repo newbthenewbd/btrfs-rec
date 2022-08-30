@@ -31,17 +31,12 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		uuidMap: uuidMap,
 	}
 
-	foundRoots, err := lostAndFoundNodes(ctx, nfs, nodeScanResults)
+	orphanedNodes, rebuiltNodes, err := classifyNodes(ctx, nfs, nodeScanResults)
 	if err != nil {
 		return nil, err
 	}
 
-	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, nodeScanResults, foundRoots)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := reAttachNodes(ctx, nfs, foundRoots, rebuiltNodes); err != nil {
+	if err := reAttachNodes(ctx, nfs, orphanedNodes, rebuiltNodes); err != nil {
 		return nil, err
 	}
 
