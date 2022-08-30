@@ -99,7 +99,10 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 			progress()
 		}
 	}
-	progress()
+
+	if done != total {
+		panic("should not happen")
+	}
 
 	missing := make(map[btrfsprim.ObjID]struct{})
 	for treeID := range seenTreeIDs {

@@ -19,7 +19,11 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
+// lostAndFoundNodes returns the set of nodes don't have another node
+// claiming it as a child.
 func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]struct{}, error) {
+	dlog.Info(ctx, "Identifying lost+found nodes...")
+
 	lastPct := -1
 	total := countNodes(nodeScanResults)
 	progress := func(done int) {
@@ -62,6 +66,9 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 			}
 		}
 	}
+	if len(attachedNodes)+len(orphanedNodes) != total {
+		panic("should not happen")
+	}
 	dlog.Infof(ctx,
 		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
 		len(attachedNodes), len(orphanedNodes), len(attachedNodes)+len(orphanedNodes))
@@ -73,7 +80,7 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		orphanedRoots[node] = struct{}{}
 	}
 	done := len(attachedNodes)
-	for potentialRoot := range orphanedRoots {
+	for potentialRoot := range orphanedNodes {
 		done++
 		progress(done)
 		if orphanedNodes[potentialRoot] > 1 {
@@ -101,5 +108,10 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		)
 	}
 
+	if done != total {
+		panic("should not happen")
+	}
+
+	dlog.Infof(ctx, "... identified %d lost+found nodes", len(orphanedRoots))
 	return orphanedRoots, nil
 }

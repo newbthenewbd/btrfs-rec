@@ -35,12 +35,10 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		uuidMap: uuidMap,
 	}
 
-	dlog.Info(ctx, "Identifying lost+found nodes...")
 	foundRoots, err := lostAndFoundNodes(ctx, nfs, nodeScanResults)
 	if err != nil {
 		return nil, err
 	}
-	dlog.Infof(ctx, "... identified %d lost+found nodes", len(foundRoots))
 
 	dlog.Info(ctx, "Initializing nodes to re-build...")
 	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, nodeScanResults, foundRoots)
