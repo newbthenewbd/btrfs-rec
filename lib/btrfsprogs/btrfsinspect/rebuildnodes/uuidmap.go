@@ -6,6 +6,7 @@ package rebuildnodes
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/datawire/dlib/dlog"
@@ -26,9 +27,9 @@ type treeUUIDMap struct {
 	TreeParent map[btrfsprim.ObjID]btrfsprim.UUID
 }
 
-func maybeSet[K, V comparable](m map[K]V, k K, v V) error {
+func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	if other, conflict := m[k]; conflict && other != v {
-		return fmt.Errorf("conflict: %v can't have both %v and %v", k, other, v)
+		return fmt.Errorf("conflict: %s %v can't have both %v and %v", name, k, other, v)
 	}
 	m[k] = v
 	return nil
@@ -71,18 +72,29 @@ func buildTreeUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspec
 				return treeUUIDMap{}, nil
 			}
 			for _, item := range nodeRef.Data.BodyLeaf {
-				itemBody, ok := item.Body.(btrfsitem.Root)
-				if !ok {
-					continue
-				}
-				if err := maybeSet(ret.ObjID2UUID, item.Key.ObjectID, itemBody.UUID); err != nil {
-					return treeUUIDMap{}, err
-				}
-				if err := maybeSet(ret.TreeParent, item.Key.ObjectID, itemBody.ParentUUID); err != nil {
-					return treeUUIDMap{}, err
-				}
-				if err := maybeSet(ret.UUID2ObjID, itemBody.UUID, item.Key.ObjectID); err != nil {
-					return treeUUIDMap{}, err
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.Root:
+					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, item.Key.ObjectID, itemBody.UUID); err != nil {
+						return treeUUIDMap{}, err
+					}
+					if itemBody.UUID != (btrfsprim.UUID{}) {
+						if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, itemBody.UUID, item.Key.ObjectID); err != nil {
+							return treeUUIDMap{}, err
+						}
+					}
+					if err := maybeSet("ParentUUID", ret.TreeParent, item.Key.ObjectID, itemBody.ParentUUID); err != nil {
+						return treeUUIDMap{}, err
+					}
+				case btrfsitem.UUIDMap:
+					var uuid btrfsprim.UUID
+					binary.BigEndian.PutUint64(uuid[:8], uint64(item.Key.ObjectID))
+					binary.BigEndian.PutUint64(uuid[8:], uint64(item.Key.Offset))
+					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
+						return treeUUIDMap{}, err
+					}
+					if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, uuid, itemBody.ObjID); err != nil {
+						return treeUUIDMap{}, err
+					}
 				}
 			}
 			treeIDs[nodeRef.Data.Head.Owner] = struct{}{}

@@ -54,19 +54,26 @@ func (fs *RebuiltTrees) WriteAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
 	return fs.inner.WriteAt(p, off)
 }
 
-// btrfstree.NodeSource backend
+// btrfstree.NodeFile
 
 func (fs *RebuiltTrees) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
-	if tree < btrfsprim.FIRST_FREE_OBJECTID {
+	if tree < btrfsprim.FIRST_FREE_OBJECTID || tree > btrfsprim.LAST_FREE_OBJECTID {
+		// no parent
+		return 0, true
+	}
+	parentUUID, ok := fs.uuidMap.TreeParent[tree]
+	if !ok {
+		// could not look up parent info
 		return 0, false
 	}
-	parentUUID := fs.uuidMap.TreeParent[tree]
 	if parentUUID == (btrfsprim.UUID{}) {
-		return 0, false
+		// no parent
+		return 0, true
 	}
 	parentObjID, ok := fs.uuidMap.UUID2ObjID[parentUUID]
 	if !ok {
-		panic(fmt.Errorf("should not happen: could not resolve parentUUID=%v to an ObjID", parentUUID))
+		// could not look up parent info
+		return 0, false
 	}
 	return parentObjID, true
 }

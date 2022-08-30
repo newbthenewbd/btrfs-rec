@@ -13,14 +13,26 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
+type NodeFile interface {
+	diskio.File[btrfsvol.LogicalAddr]
+	Superblock() (*Superblock, error)
+
+	// ParentTree, given a tree ID, returns that tree's parent
+	// tree, if it has one.
+	//
+	//  - non-zero, true : the parent tree ID
+	//
+	//  - 0, true : the tree does not have a parent
+	//
+	//  - any, false : the tree's parent information could not be
+	//    looked up
+	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
+}
+
 // FSReadNode is a utility function to help with implementing the
 // 'NodeSource' interface.
 func FSReadNode(
-	fs interface {
-		diskio.File[btrfsvol.LogicalAddr]
-		Superblock() (*Superblock, error)
-		ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
-	},
+	fs NodeFile,
 	path TreePath,
 ) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	sb, err := fs.Superblock()
@@ -39,6 +51,11 @@ func FSReadNode(
 			var ok bool
 			exp, ok = fs.ParentTree(exp)
 			if !ok {
+				// Failed lookup up parent info; fail open.
+				return nil
+			}
+			if exp == 0 {
+				// End of the line.
 				return fmt.Errorf("expected owner in %v but claims to have owner=%v",
 					treeParents, owner)
 			}

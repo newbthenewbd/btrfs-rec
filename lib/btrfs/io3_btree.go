@@ -58,18 +58,23 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 }
 
 func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
-	ctx := context.TODO()
-	if tree < btrfsprim.FIRST_FREE_OBJECTID {
+	if tree < btrfsprim.FIRST_FREE_OBJECTID || tree > btrfsprim.LAST_FREE_OBJECTID {
+		// no parent
+		return 0, true
+	}
+	fs.populateTreeUUIDs(context.TODO())
+	parentUUID, ok := fs.cacheTreeParent[tree]
+	if !ok {
+		// could not look up parent info
 		return 0, false
 	}
-	fs.populateTreeUUIDs(ctx)
-	parentUUID := fs.cacheTreeParent[tree]
 	if parentUUID == (btrfsprim.UUID{}) {
-		return 0, false
+		// no parent
+		return 0, true
 	}
 	parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
 	if !ok {
-		dlog.Errorf(ctx, "dbg: could not resolve parentUUID=%v to an ObjID", parentUUID)
+		// could not look up parent info
 		return 0, false
 	}
 	return parentObjID, true
