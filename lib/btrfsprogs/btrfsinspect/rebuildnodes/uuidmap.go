@@ -21,7 +21,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type treeUUIDMap struct {
+type uuidMap struct {
 	ObjID2UUID map[btrfsprim.ObjID]btrfsprim.UUID
 	UUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID
 	TreeParent map[btrfsprim.ObjID]btrfsprim.UUID
@@ -35,12 +35,12 @@ func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	return nil
 }
 
-func buildTreeUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (treeUUIDMap, error) {
-	dlog.Infof(ctx, "Building table of tree ObjID←→UUID...")
+func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (uuidMap, error) {
+	dlog.Infof(ctx, "Building table of ObjID←→UUID...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
-		return treeUUIDMap{}, nil
+		return uuidMap{}, nil
 	}
 
 	lastPct := -1
@@ -55,12 +55,12 @@ func buildTreeUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspec
 		}
 	}
 
-	ret := treeUUIDMap{
+	ret := uuidMap{
 		ObjID2UUID: make(map[btrfsprim.ObjID]btrfsprim.UUID),
 		UUID2ObjID: make(map[btrfsprim.UUID]btrfsprim.ObjID),
 		TreeParent: make(map[btrfsprim.ObjID]btrfsprim.UUID),
 	}
-	treeIDs := make(map[btrfsprim.ObjID]struct{})
+	seenTreeIDs := make(map[btrfsprim.ObjID]struct{})
 
 	progress()
 	for _, devResults := range scanResults {
@@ -69,35 +69,35 @@ func buildTreeUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspec
 				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 			})
 			if err != nil {
-				return treeUUIDMap{}, nil
+				return uuidMap{}, nil
 			}
 			for _, item := range nodeRef.Data.BodyLeaf {
 				switch itemBody := item.Body.(type) {
 				case btrfsitem.Root:
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, item.Key.ObjectID, itemBody.UUID); err != nil {
-						return treeUUIDMap{}, err
+						return uuidMap{}, err
 					}
 					if itemBody.UUID != (btrfsprim.UUID{}) {
 						if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, itemBody.UUID, item.Key.ObjectID); err != nil {
-							return treeUUIDMap{}, err
+							return uuidMap{}, err
 						}
 					}
 					if err := maybeSet("ParentUUID", ret.TreeParent, item.Key.ObjectID, itemBody.ParentUUID); err != nil {
-						return treeUUIDMap{}, err
+						return uuidMap{}, err
 					}
 				case btrfsitem.UUIDMap:
 					var uuid btrfsprim.UUID
 					binary.BigEndian.PutUint64(uuid[:8], uint64(item.Key.ObjectID))
 					binary.BigEndian.PutUint64(uuid[8:], uint64(item.Key.Offset))
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
-						return treeUUIDMap{}, err
+						return uuidMap{}, err
 					}
 					if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, uuid, itemBody.ObjID); err != nil {
-						return treeUUIDMap{}, err
+						return uuidMap{}, err
 					}
 				}
 			}
-			treeIDs[nodeRef.Data.Head.Owner] = struct{}{}
+			seenTreeIDs[nodeRef.Data.Head.Owner] = struct{}{}
 			done++
 			progress()
 		}
@@ -105,15 +105,19 @@ func buildTreeUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspec
 	progress()
 
 	missing := make(map[btrfsprim.ObjID]struct{})
-	for treeID := range treeIDs {
+	for treeID := range seenTreeIDs {
 		if _, ok := ret.ObjID2UUID[treeID]; !ok {
+			missing[treeID] = struct{}{}
+			continue
+		}
+		if _, ok := ret.TreeParent[treeID]; !ok && treeID >= btrfsprim.FIRST_FREE_OBJECTID && treeID <= btrfsprim.LAST_FREE_OBJECTID {
 			missing[treeID] = struct{}{}
 		}
 	}
 	if len(missing) > 0 {
-		return treeUUIDMap{}, fmt.Errorf("could not find root items for trees %v", maps.SortedKeys(missing))
+		dlog.Errorf(ctx, "... could not find root items for trees %v", maps.SortedKeys(missing))
 	}
 
-	dlog.Info(ctx, ".. done building table")
+	dlog.Info(ctx, "... done building table")
 	return ret, nil
 }

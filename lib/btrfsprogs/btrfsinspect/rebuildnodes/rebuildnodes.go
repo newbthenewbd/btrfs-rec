@@ -27,7 +27,7 @@ import (
 )
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
-	uuidMap, err := buildTreeUUIDMap(ctx, fs, nodeScanResults)
+	uuidMap, err := buildUUIDMap(ctx, fs, nodeScanResults)
 	if err != nil {
 		return nil, err
 	}

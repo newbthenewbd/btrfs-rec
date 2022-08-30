@@ -17,7 +17,7 @@ import (
 
 type RebuiltTrees struct {
 	inner   *btrfs.FS
-	uuidMap treeUUIDMap
+	uuidMap uuidMap
 	nodes   map[btrfsvol.LogicalAddr]*RebuiltNode
 }
 
