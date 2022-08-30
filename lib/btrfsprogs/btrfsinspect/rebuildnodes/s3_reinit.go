@@ -19,6 +19,8 @@ import (
 )
 
 func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
+	dlog.Info(ctx, "Initializing nodes to re-build...")
+
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
@@ -59,15 +61,17 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		BadNode: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
 			min, max := spanOfTreePath(fs, path)
 			rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
-				Err:    err,
+				Err:    err.Error(),
 				MinKey: min,
 				MaxKey: max,
 				Node: btrfstree.Node{
+					Size:         sb.NodeSize,
+					ChecksumType: sb.ChecksumType,
 					Head: btrfstree.NodeHeader{
 						MetadataUUID:  sb.EffectiveMetadataUUID(),
 						Addr:          path.Node(-1).ToNodeAddr,
 						ChunkTreeUUID: chunkTreeUUID,
-						Owner:         path.Node(-1).FromTree,
+						Owner:         path.Node(-1).FromTree, // FIXME: handle it being a child tree?
 						Generation:    path.Node(-1).FromGeneration,
 						Level:         path.Node(-1).ToNodeLevel,
 					},
@@ -95,7 +99,11 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 			},
 			walkHandler)
 	}
-	progress()
 
+	if done != total {
+		panic("should not happen")
+	}
+
+	dlog.Infof(ctx, "... initialized %d nodes", len(rebuiltNodes))
 	return rebuiltNodes, nil
 }

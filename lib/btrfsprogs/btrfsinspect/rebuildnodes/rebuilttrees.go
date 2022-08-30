@@ -39,6 +39,10 @@ func (fs *RebuiltTrees) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) 
 		return 0, err
 	}
 	if rebuilt, ok := fs.nodes[off]; ok && len(p) == int(sb.NodeSize) {
+		rebuilt.Node.Head.Checksum, err = rebuilt.Node.CalculateChecksum()
+		if err != nil {
+			panic(fmt.Errorf("should not happen: %w", err))
+		}
 		bs, err := rebuilt.Node.MarshalBinary()
 		if err != nil {
 			panic(fmt.Errorf("should not happen: %w", err))
