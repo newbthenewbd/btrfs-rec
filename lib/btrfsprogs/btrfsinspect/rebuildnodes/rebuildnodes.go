@@ -6,10 +6,7 @@ package rebuildnodes
 
 import (
 	"context"
-	"fmt"
-	iofs "io/fs"
 	"math"
-	"sort"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -21,7 +18,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
-	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
@@ -156,163 +152,4 @@ type RebuiltNode struct {
 	Err            error
 	MinKey, MaxKey btrfsprim.Key
 	btrfstree.Node
-}
-
-func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect.ScanDevicesResult, foundRoots map[btrfsvol.LogicalAddr]struct{}) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, err
-	}
-
-	chunkTreeUUID, ok := getChunkTreeUUID(ctx, fs)
-	if !ok {
-		return nil, fmt.Errorf("could not look up chunk tree UUID")
-	}
-
-	lastPct := -1
-	total := countNodes(nodeScanResults)
-	done := 0
-	progress := func() {
-		pct := int(100 * float64(done) / float64(total))
-		if pct != lastPct || done == total {
-			dlog.Infof(ctx, "... %v%% (%v/%v)",
-				pct, done, total)
-			lastPct = pct
-		}
-	}
-
-	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
-	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
-	walkHandler := btrfstree.TreeWalkHandler{
-		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-			addr := path.Node(-1).ToNodeAddr
-			if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
-				// Can happen because of COW subvolumes;
-				// this is really a DAG not a tree.
-				return iofs.SkipDir
-			}
-			visitedNodes[addr] = struct{}{}
-			done++
-			progress()
-			return nil
-		},
-		BadNode: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
-			min, max := spanOfTreePath(fs, path)
-			rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
-				Err:    err,
-				MinKey: min,
-				MaxKey: max,
-				Node: btrfstree.Node{
-					Head: btrfstree.NodeHeader{
-						MetadataUUID:  sb.EffectiveMetadataUUID(),
-						Addr:          path.Node(-1).ToNodeAddr,
-						ChunkTreeUUID: chunkTreeUUID,
-						Owner:         path.Node(-1).FromTree,
-						Generation:    path.Node(-1).FromGeneration,
-						Level:         path.Node(-1).ToNodeLevel,
-					},
-				},
-			}
-			return err
-		},
-	}
-
-	// We use WalkAllTrees instead of just iterating over
-	// nodeScanResults so that we don't need to specifically check
-	// if any of the root nodes referenced directly by the
-	// superblock are dead.
-	progress()
-	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
-		Err: func(err *btrfsutil.WalkError) {
-			// do nothing
-		},
-		TreeWalkHandler: walkHandler,
-	})
-	for foundRoot := range foundRoots {
-		walkFromNode(ctx, fs, foundRoot,
-			func(err *btrfstree.TreeError) {
-				// do nothing
-			},
-			walkHandler)
-	}
-	progress()
-
-	return rebuiltNodes, nil
-}
-
-func reAttachNodes(ctx context.Context, fs _FS, foundRoots map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
-	// Index 'rebuiltNodes' for fast lookups.
-	gaps := make(map[btrfsprim.ObjID]map[uint8][]*RebuiltNode)
-	maxLevel := make(map[btrfsprim.ObjID]uint8)
-	for _, node := range rebuiltNodes {
-		maxLevel[node.Head.Owner] = slices.Max(maxLevel[node.Head.Owner], node.Head.Level)
-
-		if gaps[node.Head.Owner] == nil {
-			gaps[node.Head.Owner] = make(map[uint8][]*RebuiltNode)
-		}
-		gaps[node.Head.Owner][node.Head.Level] = append(gaps[node.Head.Owner][node.Head.Level], node)
-	}
-	for _, byTreeID := range gaps {
-		for _, slice := range byTreeID {
-			sort.Slice(slice, func(i, j int) bool {
-				return slice[i].MinKey.Cmp(slice[j].MinKey) < 0
-			})
-		}
-	}
-
-	// Attach foundRoots to the gaps.
-	sb, _ := fs.Superblock()
-	for foundLAddr := range foundRoots {
-		foundRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, foundLAddr, btrfstree.NodeExpectations{
-			LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: foundLAddr},
-		})
-		if foundRef == nil {
-			return err
-		}
-		foundMinKey, ok := foundRef.Data.MinItem()
-		if !ok {
-			continue
-		}
-		foundMaxKey, ok := foundRef.Data.MaxItem()
-		if !ok {
-			continue
-		}
-		treeGaps := gaps[foundRef.Data.Head.Owner]
-		var attached bool
-		for level := foundRef.Data.Head.Level + 1; treeGaps != nil && level <= maxLevel[foundRef.Data.Head.Owner] && !attached; level++ {
-			parentGen, ok := treeGaps[level]
-			if !ok {
-				continue
-			}
-			parentIdx, ok := slices.Search(parentGen, func(parent *RebuiltNode) int {
-				switch {
-				case foundMinKey.Cmp(parent.MinKey) < 0:
-					// 'parent' is too far right
-					return -1
-				case foundMaxKey.Cmp(parent.MaxKey) > 0:
-					// 'parent' is too far left
-					return 1
-				default:
-					// just right
-					return 0
-				}
-			})
-			if !ok {
-				continue
-			}
-			parent := parentGen[parentIdx]
-			parent.BodyInternal = append(parent.BodyInternal, btrfstree.KeyPointer{
-				Key:        foundMinKey,
-				BlockPtr:   foundLAddr,
-				Generation: foundRef.Data.Head.Generation,
-			})
-			attached = true
-		}
-		if !attached {
-			dlog.Errorf(ctx, "could not find a broken node to attach node to reattach node@%v to",
-				foundRef.Addr)
-		}
-	}
-
-	return nil
 }
