@@ -20,7 +20,7 @@ import (
 )
 
 type RebuiltNode struct {
-	Err            string
+	Errs           containers.Set[string]
 	MinKey, MaxKey btrfsprim.Key
 	InTrees        containers.Set[btrfsprim.ObjID]
 	btrfstree.Node
@@ -56,6 +56,7 @@ func (a RebuiltNode) Merge(b RebuiltNode) (RebuiltNode, error) {
 
 	// take the union
 	a.InTrees.InsertFrom(b.InTrees)
+	a.Errs.InsertFrom(b.Errs)
 
 	return a, nil
 }
@@ -104,7 +105,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, badNodes []badNode) (map[btr
 
 		min, max := spanOfTreePath(fs, path)
 		node := RebuiltNode{
-			Err:     err.Error(),
+			Errs:    containers.Set[string]{err.Error(): struct{}{}},
 			MinKey:  min,
 			MaxKey:  max,
 			InTrees: containers.Set[btrfsprim.ObjID]{path.Node(-1).FromTree: struct{}{}},
