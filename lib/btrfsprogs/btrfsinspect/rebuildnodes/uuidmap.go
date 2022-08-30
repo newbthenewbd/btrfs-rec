@@ -6,7 +6,6 @@ package rebuildnodes
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/datawire/dlib/dlog"
@@ -86,9 +85,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 						return uuidMap{}, err
 					}
 				case btrfsitem.UUIDMap:
-					var uuid btrfsprim.UUID
-					binary.BigEndian.PutUint64(uuid[:8], uint64(item.Key.ObjectID))
-					binary.BigEndian.PutUint64(uuid[8:], uint64(item.Key.Offset))
+					uuid := btrfsitem.KeyToUUID(item.Key)
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
 						return uuidMap{}, err
 					}
@@ -106,7 +103,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 
 	missing := make(map[btrfsprim.ObjID]struct{})
 	for treeID := range seenTreeIDs {
-		if _, ok := ret.ObjID2UUID[treeID]; !ok {
+		if _, ok := ret.ObjID2UUID[treeID]; !ok && treeID != btrfsprim.ROOT_TREE_OBJECTID {
 			missing[treeID] = struct{}{}
 			continue
 		}
@@ -115,7 +112,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		}
 	}
 	if len(missing) > 0 {
-		dlog.Errorf(ctx, "... could not find root items for trees %v", maps.SortedKeys(missing))
+		dlog.Errorf(ctx, "... could not find root items for %d trees: %v", len(missing), maps.SortedKeys(missing))
 	}
 
 	dlog.Info(ctx, "... done building table")

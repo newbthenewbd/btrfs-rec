@@ -5,6 +5,8 @@
 package btrfsitem
 
 import (
+	"encoding/binary"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
@@ -17,4 +19,11 @@ import (
 type UUIDMap struct { // UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
 	ObjID         btrfsprim.ObjID `bin:"off=0, siz=8"`
 	binstruct.End `bin:"off=8"`
+}
+
+func KeyToUUID(key btrfsprim.Key) btrfsprim.UUID {
+	var uuid btrfsprim.UUID
+	binary.LittleEndian.PutUint64(uuid[:8], uint64(key.ObjectID))
+	binary.LittleEndian.PutUint64(uuid[8:], uint64(key.Offset))
+	return uuid
 }

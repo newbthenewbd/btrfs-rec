@@ -260,7 +260,8 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 
 	lastPct := -1
 	total := countNodes(nodeScanResults)
-	progress := func(done int) {
+	done := 0
+	progress := func() {
 		pct := int(100 * float64(done) / float64(total))
 		if pct != lastPct || done == total {
 			dlog.Infof(ctx, "... %v%% (%v/%v)",
@@ -268,21 +269,20 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 			lastPct = pct
 		}
 	}
-	var done int
 
 	rebuiltNodes := make(map[btrfsvol.LogicalAddr]*RebuiltNode)
-	dbg := make(map[btrfsvol.LogicalAddr]btrfstree.TreePath)
+	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	walkHandler := btrfstree.TreeWalkHandler{
 		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-			if other, conflict := dbg[path.Node(-1).ToNodeAddr]; conflict {
-				panic(fmt.Errorf("same node visited twice: %v != %v", other, path))
+			addr := path.Node(-1).ToNodeAddr
+			if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
+				// Can happen because of COW subvolumes;
+				// this is really a DAG not a tree.
+				return iofs.SkipDir
 			}
-			dbg[path.Node(-1).ToNodeAddr] = path.DeepCopy()
+			visitedNodes[addr] = struct{}{}
 			done++
-			if done != len(dbg) {
-				panic(fmt.Errorf("done=%v != len(dbg)=%v", done, len(dbg)))
-			}
-			progress(done)
+			progress()
 			return nil
 		},
 		BadNode: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
@@ -310,6 +310,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 	// nodeScanResults so that we don't need to specifically check
 	// if any of the root nodes referenced directly by the
 	// superblock are dead.
+	progress()
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
@@ -323,6 +324,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 			},
 			walkHandler)
 	}
+	progress()
 
 	return rebuiltNodes, nil
 }
