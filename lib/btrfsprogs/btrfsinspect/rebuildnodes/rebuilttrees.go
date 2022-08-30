@@ -23,7 +23,7 @@ type RebuiltTrees struct {
 
 type _FS interface {
 	diskio.File[btrfsvol.LogicalAddr]
-	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
+	btrfstree.NodeFile
 	btrfstree.NodeSource
 	btrfstree.TreeOperator
 }

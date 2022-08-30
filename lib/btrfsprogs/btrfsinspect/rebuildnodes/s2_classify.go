@@ -74,6 +74,7 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		},
 	}
 
+	progress()
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: walkHandler,
 		Err: func(err *btrfsutil.WalkError) {

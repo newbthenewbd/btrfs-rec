@@ -51,7 +51,7 @@ func FSReadNode(
 			var ok bool
 			exp, ok = fs.ParentTree(exp)
 			if !ok {
-				// Failed lookup up parent info; fail open.
+				// Failed look up parent info; fail open.
 				return nil
 			}
 			if exp == 0 {
