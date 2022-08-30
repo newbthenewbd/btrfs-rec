@@ -7,42 +7,34 @@ package rebuildnodes
 import (
 	"context"
 	"errors"
-	"fmt"
 	iofs "io/fs"
-	"reflect"
 	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
+type badNode struct {
+	Err  string
+	Path btrfstree.TreePath
+}
+
 // classifyNodes returns
 //
 //  1. the set of nodes don't have another node claiming it as a child, and
-//  2. the set of bad-nodes, with reconstructed headers filled in.
+//  2. the list of bad nodes (in no particular order)
 func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDevicesResult) (
 	orphanedNodes map[btrfsvol.LogicalAddr]struct{},
-	rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode,
+	badNodes []badNode,
 	err error,
 ) {
 	dlog.Info(ctx, "Walking trees to identify orphan and broken nodes...")
-
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, nil, err
-	}
-	chunkTreeUUID, ok := getChunkTreeUUID(ctx, fs)
-	if !ok {
-		return nil, nil, fmt.Errorf("could not look up chunk tree UUID")
-	}
 
 	lastPct := -1
 	total := countNodes(scanResults)
@@ -57,7 +49,6 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		}
 	}
 
-	rebuiltNodes = make(map[btrfsvol.LogicalAddr]*RebuiltNode)
 	walkHandler := btrfstree.TreeWalkHandler{
 		PreNode: func(path btrfstree.TreePath) error {
 			addr := path.Node(-1).ToNodeAddr
@@ -75,40 +66,10 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 			return nil
 		},
 		BadNode: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
-			node := btrfstree.Node{
-				Size:         sb.NodeSize,
-				ChecksumType: sb.ChecksumType,
-				Head: btrfstree.NodeHeader{
-					MetadataUUID:  sb.EffectiveMetadataUUID(),
-					Addr:          path.Node(-1).ToNodeAddr,
-					ChunkTreeUUID: chunkTreeUUID,
-					//Owner:         TBD, // see RebuiltNode.InTrees
-					Generation: path.Node(-1).FromGeneration,
-					Level:      path.Node(-1).ToNodeLevel,
-				},
-			}
-			min, max := spanOfTreePath(fs, path)
-			if other, ok := rebuiltNodes[path.Node(-1).ToNodeAddr]; ok {
-				if !reflect.DeepEqual(other.Node, node) {
-					dlog.Errorf(ctx, "... mismatch: %v != %v", node, other.Node)
-					return err
-				}
-				if min.Cmp(other.MinKey) > 0 { // if min > other.MinKey {
-					other.MinKey = min // take the max of the two
-				}
-				if max.Cmp(other.MaxKey) < 0 { // if max < other.MaxKey {
-					other.MaxKey = max // take the min of the two
-				}
-				other.InTrees.Insert(path.Node(-1).FromTree)
-			} else {
-				rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
-					Err:     err.Error(),
-					MinKey:  min,
-					MaxKey:  max,
-					InTrees: containers.Set[btrfsprim.ObjID]{path.Node(-1).FromTree: struct{}{}},
-					Node:    node,
-				}
-			}
+			badNodes = append(badNodes, badNode{
+				Err:  err.Error(),
+				Path: path.DeepCopy(),
+			})
 			return err
 		},
 	}
@@ -161,6 +122,6 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		panic("should not happen")
 	}
 
-	dlog.Infof(ctx, "... identified %d orphaned nodes and re-built %d nodes", len(orphanedNodes), len(rebuiltNodes))
-	return orphanedNodes, rebuiltNodes, nil
+	dlog.Infof(ctx, "... identified %d orphaned nodes and %d bad nodes", len(orphanedNodes), len(badNodes))
+	return orphanedNodes, badNodes, nil
 }

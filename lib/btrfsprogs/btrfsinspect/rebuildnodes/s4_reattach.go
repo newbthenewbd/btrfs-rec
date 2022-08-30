@@ -19,7 +19,7 @@ import (
 )
 
 func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
-	dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
+	dlog.Info(ctx, "Attaching orphaned nodes to rebuilt nodes...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
@@ -105,6 +105,7 @@ func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.Logic
 				BlockPtr:   foundLAddr,
 				Generation: foundRef.Data.Head.Generation,
 			})
+			parent.Head.Generation = slices.Max(parent.Head.Generation, foundRef.Data.Head.Generation)
 			attached = true
 			numAttached++
 		}

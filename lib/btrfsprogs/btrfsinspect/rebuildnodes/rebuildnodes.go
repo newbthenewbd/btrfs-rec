@@ -31,7 +31,12 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		uuidMap: uuidMap,
 	}
 
-	orphanedNodes, rebuiltNodes, err := classifyNodes(ctx, nfs, nodeScanResults)
+	orphanedNodes, badNodes, err := classifyNodes(ctx, nfs, nodeScanResults)
+	if err != nil {
+		return nil, err
+	}
+
+	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, badNodes)
 	if err != nil {
 		return nil, err
 	}
@@ -137,11 +142,4 @@ func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 		},
 	})
 	return ret, retOK
-}
-
-type RebuiltNode struct {
-	Err            string
-	MinKey, MaxKey btrfsprim.Key
-	InTrees        containers.Set[btrfsprim.ObjID]
-	btrfstree.Node
 }

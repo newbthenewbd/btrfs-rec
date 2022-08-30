@@ -46,14 +46,23 @@ func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
 }
 
 func (o *Set[T]) Insert(v T) {
-	if o == nil {
+	if *o == nil {
 		*o = Set[T]{}
 	}
 	(*o)[v] = struct{}{}
 }
 
+func (o *Set[T]) InsertFrom(p Set[T]) {
+	if *o == nil {
+		*o = Set[T]{}
+	}
+	for v := range p {
+		(*o)[v] = struct{}{}
+	}
+}
+
 func (o *Set[T]) Delete(v T) {
-	if o == nil {
+	if *o == nil {
 		return
 	}
 	delete(*o, v)
