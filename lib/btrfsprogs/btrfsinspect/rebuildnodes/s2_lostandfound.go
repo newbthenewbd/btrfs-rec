@@ -35,18 +35,19 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 		}
 	}
 
-	attachedNodes := make(map[btrfsvol.LogicalAddr]struct{})
+	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		TreeWalkHandler: btrfstree.TreeWalkHandler{
+			// Don't use `PreNode` because we don't want to run this on bad nodes.
 			Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 				addr := path.Node(-1).ToNodeAddr
-				if _, alreadyVisited := attachedNodes[addr]; alreadyVisited {
+				if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
 					// Can happen because of COW subvolumes;
 					// this is really a DAG not a tree.
 					return iofs.SkipDir
 				}
-				attachedNodes[addr] = struct{}{}
-				progress(len(attachedNodes))
+				visitedNodes[addr] = struct{}{}
+				progress(len(visitedNodes))
 				return nil
 			},
 		},
@@ -61,17 +62,17 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 	orphanedNodes := make(map[btrfsvol.LogicalAddr]int)
 	for _, devResults := range nodeScanResults {
 		for laddr := range devResults.FoundNodes {
-			if _, attached := attachedNodes[laddr]; !attached {
+			if _, attached := visitedNodes[laddr]; !attached {
 				orphanedNodes[laddr] = 0
 			}
 		}
 	}
-	if len(attachedNodes)+len(orphanedNodes) != total {
+	if len(visitedNodes)+len(orphanedNodes) != total {
 		panic("should not happen")
 	}
 	dlog.Infof(ctx,
 		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
-		len(attachedNodes), len(orphanedNodes), len(attachedNodes)+len(orphanedNodes))
+		len(visitedNodes), len(orphanedNodes), len(visitedNodes)+len(orphanedNodes))
 
 	// 'orphanedRoots' is a subset of 'orphanedNodes'; start with
 	// it as the complete orphanedNodes, and then remove entries.
@@ -79,10 +80,7 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 	for node := range orphanedNodes {
 		orphanedRoots[node] = struct{}{}
 	}
-	done := len(attachedNodes)
 	for potentialRoot := range orphanedNodes {
-		done++
-		progress(done)
 		if orphanedNodes[potentialRoot] > 1 {
 			continue
 		}
@@ -91,23 +89,25 @@ func lostAndFoundNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 				// do nothing
 			},
 			btrfstree.TreeWalkHandler{
-				PreNode: func(path btrfstree.TreePath) error {
-					nodeAddr := path.Node(-1).ToNodeAddr
-					if nodeAddr != potentialRoot {
-						delete(orphanedRoots, nodeAddr)
+				// Don't use `PreNode` because we don't want to run this on bad
+				// nodes (it'd screw up `len(visitedNodes)`).
+				Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+					addr := path.Node(-1).ToNodeAddr
+					if addr != potentialRoot {
+						delete(orphanedRoots, addr)
 					}
-					visitCnt, ok := orphanedNodes[nodeAddr]
-					if visitCnt > 0 || !ok {
+					if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
 						return iofs.SkipDir
 					}
-					orphanedNodes[nodeAddr] = visitCnt + 1
+					visitedNodes[addr] = struct{}{}
+					progress(len(visitedNodes))
 					return nil
 				},
 			},
 		)
 	}
 
-	if done != total {
+	if len(visitedNodes) != total {
 		panic("should not happen")
 	}
 

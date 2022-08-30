@@ -8,13 +8,16 @@ import (
 	"context"
 	"fmt"
 	iofs "io/fs"
+	"reflect"
 
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
@@ -33,8 +36,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 
 	lastPct := -1
 	total := countNodes(nodeScanResults)
-	done := 0
-	progress := func() {
+	progress := func(done int) {
 		pct := int(100 * float64(done) / float64(total))
 		if pct != lastPct || done == total {
 			dlog.Infof(ctx, "... %v%% (%v/%v)",
@@ -54,28 +56,43 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 				return iofs.SkipDir
 			}
 			visitedNodes[addr] = struct{}{}
-			done++
-			progress()
+			progress(len(visitedNodes))
 			return nil
 		},
-		BadNode: func(path btrfstree.TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
-			min, max := spanOfTreePath(fs, path)
-			rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
-				Err:    err.Error(),
-				MinKey: min,
-				MaxKey: max,
-				Node: btrfstree.Node{
-					Size:         sb.NodeSize,
-					ChecksumType: sb.ChecksumType,
-					Head: btrfstree.NodeHeader{
-						MetadataUUID:  sb.EffectiveMetadataUUID(),
-						Addr:          path.Node(-1).ToNodeAddr,
-						ChunkTreeUUID: chunkTreeUUID,
-						Owner:         path.Node(-1).FromTree, // FIXME: handle it being a child tree?
-						Generation:    path.Node(-1).FromGeneration,
-						Level:         path.Node(-1).ToNodeLevel,
-					},
+		BadNode: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
+			node := btrfstree.Node{
+				Size:         sb.NodeSize,
+				ChecksumType: sb.ChecksumType,
+				Head: btrfstree.NodeHeader{
+					MetadataUUID:  sb.EffectiveMetadataUUID(),
+					Addr:          path.Node(-1).ToNodeAddr,
+					ChunkTreeUUID: chunkTreeUUID,
+					//Owner:         TBD, // see RebuiltNode.InTrees
+					Generation: path.Node(-1).FromGeneration,
+					Level:      path.Node(-1).ToNodeLevel,
 				},
+			}
+			min, max := spanOfTreePath(fs, path)
+			if other, ok := rebuiltNodes[path.Node(-1).ToNodeAddr]; ok {
+				if !reflect.DeepEqual(other.Node, node) {
+					dlog.Errorf(ctx, "... mismatch: %v != %v", node, other.Node)
+					return err
+				}
+				if min.Cmp(other.MinKey) > 0 { // if min > other.MinKey {
+					other.MinKey = min // take the max of the two
+				}
+				if max.Cmp(other.MaxKey) < 0 { // if max < other.MaxKey {
+					other.MaxKey = max // take the min of the two
+				}
+				other.InTrees.Insert(path.Node(-1).FromTree)
+			} else {
+				rebuiltNodes[path.Node(-1).ToNodeAddr] = &RebuiltNode{
+					Err:     err.Error(),
+					MinKey:  min,
+					MaxKey:  max,
+					InTrees: containers.Set[btrfsprim.ObjID]{path.Node(-1).FromTree: struct{}{}},
+					Node:    node,
+				}
 			}
 			return err
 		},
@@ -85,7 +102,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 	// nodeScanResults so that we don't need to specifically check
 	// if any of the root nodes referenced directly by the
 	// superblock are dead.
-	progress()
+	progress(len(visitedNodes))
 	btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
@@ -100,7 +117,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, nodeScanResults btrfsinspect
 			walkHandler)
 	}
 
-	if done != total {
+	if len(visitedNodes) != total {
 		panic("should not happen")
 	}
 

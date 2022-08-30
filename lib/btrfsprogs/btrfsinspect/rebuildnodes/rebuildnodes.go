@@ -41,11 +41,9 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		return nil, err
 	}
 
-	dlog.Info(ctx, "Attaching lost+found nodes to rebuilt nodes...")
 	if err := reAttachNodes(ctx, nfs, foundRoots, rebuiltNodes); err != nil {
 		return nil, err
 	}
-	dlog.Info(ctx, "... done attaching")
 
 	return rebuiltNodes, nil
 }
@@ -149,5 +147,6 @@ func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 type RebuiltNode struct {
 	Err            string
 	MinKey, MaxKey btrfsprim.Key
+	InTrees        containers.Set[btrfsprim.ObjID]
 	btrfstree.Node
 }
