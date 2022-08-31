@@ -74,8 +74,8 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, badNodes []badNode) (map[btr
 	}
 
 	sort.Slice(badNodes, func(i, j int) bool {
-		iGen := badNodes[i].Path.Node(-1).FromGeneration
-		jGen := badNodes[j].Path.Node(-1).FromGeneration
+		iGen := badNodes[i].Path.Node(-1).ToNodeGeneration
+		jGen := badNodes[j].Path.Node(-1).ToNodeGeneration
 		switch {
 		case iGen < jGen:
 			return true
@@ -117,7 +117,7 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, badNodes []badNode) (map[btr
 					Addr:          path.Node(-1).ToNodeAddr,
 					ChunkTreeUUID: chunkTreeUUID,
 					//Owner:      TBD, // see RebuiltNode.InTrees
-					Generation: path.Node(-1).FromGeneration,
+					Generation: path.Node(-1).ToNodeGeneration,
 					Level:      path.Node(-1).ToNodeLevel,
 				},
 			},

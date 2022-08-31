@@ -114,11 +114,11 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 // interface.
 func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{{
-		FromTree:       rootInfo.TreeID,
-		FromGeneration: rootInfo.Generation,
-		FromItemIdx:    -1,
-		ToNodeAddr:     rootInfo.RootNode,
-		ToNodeLevel:    rootInfo.Level,
+		FromTree:         rootInfo.TreeID,
+		FromItemIdx:      -1,
+		ToNodeAddr:       rootInfo.RootNode,
+		ToNodeGeneration: rootInfo.Generation,
+		ToNodeLevel:      rootInfo.Level,
 	}}
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
@@ -171,11 +171,11 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 	if node != nil {
 		for i, item := range node.Data.BodyInternal {
 			itemPath := append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    i,
-				ToNodeAddr:     item.BlockPtr,
-				ToNodeLevel:    node.Data.Head.Level - 1,
+				FromTree:         node.Data.Head.Owner,
+				FromItemIdx:      i,
+				ToNodeAddr:       item.BlockPtr,
+				ToNodeGeneration: item.Generation,
+				ToNodeLevel:      node.Data.Head.Level - 1,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
@@ -197,9 +197,8 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 		}
 		for i, item := range node.Data.BodyLeaf {
 			itemPath := append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    i,
+				FromTree:    node.Data.Head.Owner,
+				FromItemIdx: i,
 			})
 			if errBody, isErr := item.Body.(btrfsitem.Error); isErr {
 				if cbs.BadItem == nil {
@@ -236,11 +235,11 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 
 func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
 	path := TreePath{{
-		FromTree:       treeRoot.TreeID,
-		FromGeneration: treeRoot.Generation,
-		FromItemIdx:    -1,
-		ToNodeAddr:     treeRoot.RootNode,
-		ToNodeLevel:    treeRoot.Level,
+		FromTree:         treeRoot.TreeID,
+		FromItemIdx:      -1,
+		ToNodeAddr:       treeRoot.RootNode,
+		ToNodeGeneration: treeRoot.Generation,
+		ToNodeLevel:      treeRoot.Level,
 	}}
 	for {
 		if path.Node(-1).ToNodeAddr == 0 {
@@ -269,11 +268,11 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    lastGood,
-				ToNodeAddr:     node.Data.BodyInternal[lastGood].BlockPtr,
-				ToNodeLevel:    node.Data.Head.Level - 1,
+				FromTree:         node.Data.Head.Owner,
+				FromItemIdx:      lastGood,
+				ToNodeAddr:       node.Data.BodyInternal[lastGood].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInternal[lastGood].Generation,
+				ToNodeLevel:      node.Data.Head.Level - 1,
 			})
 		} else {
 			// leaf node
@@ -295,9 +294,8 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				return TreePath{}, nil, iofs.ErrNotExist
 			}
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    idx,
+				FromTree:    node.Data.Head.Owner,
+				FromItemIdx: idx,
 			})
 			return path, node, nil
 		}
@@ -336,17 +334,16 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.Logical
 		}
 		if node.Data.Head.Level > 0 {
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    len(node.Data.BodyInternal) - 1,
-				ToNodeAddr:     node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				ToNodeLevel:    node.Data.Head.Level - 1,
+				FromTree:         node.Data.Head.Owner,
+				FromItemIdx:      len(node.Data.BodyInternal) - 1,
+				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
+				ToNodeLevel:      node.Data.Head.Level - 1,
 			})
 		} else {
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    len(node.Data.BodyLeaf) - 1,
+				FromTree:    node.Data.Head.Owner,
+				FromItemIdx: len(node.Data.BodyLeaf) - 1,
 			})
 		}
 	}
@@ -407,17 +404,16 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 		}
 		if node.Data.Head.Level > 0 {
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    0,
-				ToNodeAddr:     node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				ToNodeLevel:    node.Data.Head.Level - 1,
+				FromTree:         node.Data.Head.Owner,
+				FromItemIdx:      0,
+				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
+				ToNodeLevel:      node.Data.Head.Level - 1,
 			})
 		} else {
 			path = append(path, TreePathElem{
-				FromTree:       node.Data.Head.Owner,
-				FromGeneration: node.Data.Head.Generation,
-				FromItemIdx:    0,
+				FromTree:    node.Data.Head.Owner,
+				FromItemIdx: 0,
 			})
 		}
 	}

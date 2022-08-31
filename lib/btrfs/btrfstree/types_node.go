@@ -383,9 +383,9 @@ var ErrNotANode = errors.New("does not look like a node")
 type NodeExpectations struct {
 	LAddr containers.Optional[btrfsvol.LogicalAddr]
 	// Things knowable from the parent.
-	Level         containers.Optional[uint8]
-	MaxGeneration containers.Optional[btrfsprim.Generation]
-	Owner         func(btrfsprim.ObjID) error
+	Level      containers.Optional[uint8]
+	Generation containers.Optional[btrfsprim.Generation]
+	Owner      func(btrfsprim.ObjID) error
 }
 
 type NodeError[Addr ~int64] struct {
@@ -481,10 +481,10 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected level=%v but claims to be level=%v",
 			addr, exp.Level.Val, nodeRef.Data.Head.Level)
 	}
-	if exp.MaxGeneration.OK && nodeRef.Data.Head.Generation > exp.MaxGeneration.Val {
+	if exp.Generation.OK && nodeRef.Data.Head.Generation != exp.Generation.Val {
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
-			Err: fmt.Errorf("expected generation<=%v but claims to be generation=%v",
-				exp.MaxGeneration.Val, nodeRef.Data.Head.Generation)}
+			Err: fmt.Errorf("expected generation=%v but claims to be generation=%v",
+				exp.Generation.Val, nodeRef.Data.Head.Generation)}
 	}
 	if exp.Owner != nil {
 		if err := exp.Owner(nodeRef.Data.Head.Owner); err != nil {
