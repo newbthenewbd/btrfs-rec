@@ -6,9 +6,7 @@ package rebuildnodes
 
 import (
 	"context"
-	"errors"
 	iofs "io/fs"
-	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -79,9 +77,6 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		TreeWalkHandler: walkHandler,
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
-			if !errors.Is(err, btrfstree.ErrNotANode) && !strings.Contains(err.Error(), "read: could not map logical address") {
-				dlog.Errorf(ctx, "dbg walk err: %v", err)
-			}
 		},
 	})
 

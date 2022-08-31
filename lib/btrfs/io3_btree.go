@@ -7,8 +7,6 @@ package btrfs
 import (
 	"context"
 
-	"github.com/datawire/dlib/dlog"
-
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -39,7 +37,6 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 		fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
 			func(err *btrfstree.TreeError) {
 				// do nothing
-				dlog.Errorf(ctx, "dbg err: %v", err)
 			},
 			btrfstree.TreeWalkHandler{
 				Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {

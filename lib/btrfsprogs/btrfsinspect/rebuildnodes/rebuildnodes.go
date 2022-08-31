@@ -8,8 +8,6 @@ import (
 	"context"
 	"math"
 
-	"github.com/datawire/dlib/dlog"
-
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -138,7 +136,6 @@ func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 		},
 		Err: func(err *btrfsutil.WalkError) {
 			// do nothing
-			dlog.Errorf(ctx, "dbg err: %v", err)
 		},
 	})
 	return ret, retOK
