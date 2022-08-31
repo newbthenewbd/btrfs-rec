@@ -388,10 +388,37 @@ type NodeExpectations struct {
 	Owner         func(btrfsprim.ObjID) error
 }
 
+type NodeError[Addr ~int64] struct {
+	Op       string
+	NodeAddr Addr
+	Err      error
+}
+
+func (e *NodeError[Addr]) Error() string {
+	return fmt.Sprintf("%s: node@%v: %v", e.Op, e.NodeAddr, e.Err)
+}
+func (e *NodeError[Addr]) Unwrap() error { return e.Err }
+
+type IOError struct {
+	Err error
+}
+
+func (e *IOError) Error() string { return "i/o error: " + e.Err.Error() }
+func (e *IOError) Unwrap() error { return e.Err }
+
+// It is possible that both a non-nil diskio.Ref and an error are
+// returned.  The error returned (if non-nil) is always of type
+// *NodeError[Addr].  Notable errors that may be inside of the
+// NodeError are ErrNotANode and *IOError.
 func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
+	if int(sb.NodeSize) < binstruct.StaticSize(NodeHeader{}) {
+		return nil, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+			Err: fmt.Errorf("superblock.NodeSize=%v is too small to contain even a node header (%v bytes)",
+				sb.NodeSize, binstruct.StaticSize(NodeHeader{}))}
+	}
 	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
-		return nil, err
+		return nil, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: &IOError{Err: err}}
 	}
 
 	// parse (early)
@@ -405,23 +432,27 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		},
 	}
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+		// If there are enough bytes there (and we checked
+		// that above), then it shouldn't be possible for this
+		// unmarshal to fail.
+		panic(fmt.Errorf("should not happen: %w", err))
 	}
 
 	// sanity checking (that prevents the main parse)
 
 	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, ErrNotANode)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: ErrNotANode}
 	}
 
 	stored := nodeRef.Data.Head.Checksum
 	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(btrfssum.CSum{}):])
 	if err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 	if stored != calced {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
-			addr, stored, calced)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+			Err: fmt.Errorf("looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
+				stored, calced)}
 	}
 
 	// parse (main)
@@ -436,26 +467,28 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	// isn't useful.
 
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 
 	// sanity checking (that doesn't prevent parsing)
 
 	if exp.LAddr.OK && nodeRef.Data.Head.Addr != exp.LAddr.Val {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: read from laddr=%v but claims to be at laddr=%v",
-			addr, exp.LAddr.Val, nodeRef.Data.Head.Addr)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+			Err: fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
+				exp.LAddr.Val, nodeRef.Data.Head.Addr)}
 	}
 	if exp.Level.OK && nodeRef.Data.Head.Level != exp.Level.Val {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected level=%v but claims to be level=%v",
 			addr, exp.Level.Val, nodeRef.Data.Head.Level)
 	}
 	if exp.MaxGeneration.OK && nodeRef.Data.Head.Generation > exp.MaxGeneration.Val {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected generation<=%v but claims to be generation=%v",
-			addr, exp.MaxGeneration.Val, nodeRef.Data.Head.Generation)
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+			Err: fmt.Errorf("expected generation<=%v but claims to be generation=%v",
+				exp.MaxGeneration.Val, nodeRef.Data.Head.Generation)}
 	}
 	if exp.Owner != nil {
 		if err := exp.Owner(nodeRef.Data.Head.Owner); err != nil {
-			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+			return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 		}
 	}
 
