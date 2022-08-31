@@ -408,7 +408,7 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
 
-	// sanity checking
+	// sanity checking (that prevents the main parse)
 
 	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, ErrNotANode)
@@ -423,6 +423,23 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
 			addr, stored, calced)
 	}
+
+	// parse (main)
+	//
+	// If the above sanity checks passed, then this is at least
+	// node data *that got written by the filesystem*.  If it's
+	// invalid (the remaining sanity checks don't pass), it's
+	// because of something the running filesystem code did; the
+	// bits are probably useful to poke at, so parse them.
+	// Whereas if the above check didn't pass, then this is just
+	// garbage data that is was never a valid node, so parsing it
+	// isn't useful.
+
+	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
+		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
+	}
+
+	// sanity checking (that doesn't prevent parsing)
 
 	if exp.LAddr.OK && nodeRef.Data.Head.Addr != exp.LAddr.Val {
 		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: read from laddr=%v but claims to be at laddr=%v",
@@ -440,12 +457,6 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		if err := exp.Owner(nodeRef.Data.Head.Owner); err != nil {
 			return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 		}
-	}
-
-	// parse (main)
-
-	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: %w", addr, err)
 	}
 
 	// return
