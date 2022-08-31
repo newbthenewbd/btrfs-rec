@@ -6,6 +6,7 @@ package rebuildnodes
 
 import (
 	"context"
+	"errors"
 	iofs "io/fs"
 
 	"github.com/datawire/dlib/dlog"
@@ -47,6 +48,32 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		}
 	}
 
+	var potentialRoot btrfsvol.LogicalAddr // zero for non-lost nodes, non-zero for lost nodes
+	nodeHandler := func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
+		if err != nil && (errors.Is(err, btrfstree.ErrNotANode) || errors.As(err, new(*btrfstree.IOError))) {
+			badNodes = append(badNodes, badNode{
+				Err:  err.Error(),
+				Path: path.DeepCopy(),
+			})
+			return err
+		}
+		addr := path.Node(-1).ToNodeAddr
+		visitedNodes[addr] = struct{}{}
+		if potentialRoot != 0 {
+			// lost node
+			if addr != potentialRoot {
+				delete(orphanedNodes, addr)
+			}
+			// TODO: Compare `nodeRef.Data.Head.Owner` and `path.Node(-1).FromTree` to
+			// maybe reconstruct a missing root item.  This is a sort of catch-22; we
+			// trust this data less because lost nodes may be discarded and not just
+			// lost, but non-lost nodes will never have a missing root item, so lost
+			// nodes are all we have to work with on this.
+		}
+		progress()
+		return nil
+	}
+
 	walkHandler := btrfstree.TreeWalkHandler{
 		PreNode: func(path btrfstree.TreePath) error {
 			addr := path.Node(-1).ToNodeAddr
@@ -57,18 +84,11 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 			}
 			return nil
 		},
-		Node: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-			addr := path.Node(-1).ToNodeAddr
-			visitedNodes[addr] = struct{}{}
-			progress()
-			return nil
+		Node: func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
+			return nodeHandler(path, nodeRef, nil)
 		},
-		BadNode: func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
-			badNodes = append(badNodes, badNode{
-				Err:  err.Error(),
-				Path: path.DeepCopy(),
-			})
-			return err
+		BadNode: func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
+			return nodeHandler(path, nodeRef, err)
 		},
 	}
 
@@ -96,16 +116,7 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 	dlog.Infof(ctx,
 		"... (finished processing %v attached nodes, proceeding to process %v lost nodes, for a total of %v)",
 		len(visitedNodes), len(orphanedNodes), len(visitedNodes)+len(orphanedNodes))
-	for _, potentialRoot := range maps.SortedKeys(orphanedNodes) {
-		walkHandler.Node = func(path btrfstree.TreePath, _ *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-			addr := path.Node(-1).ToNodeAddr
-			if addr != potentialRoot {
-				delete(orphanedNodes, addr)
-			}
-			visitedNodes[addr] = struct{}{}
-			progress()
-			return nil
-		}
+	for _, potentialRoot = range maps.SortedKeys(orphanedNodes) {
 		walkFromNode(ctx, fs, potentialRoot,
 			func(err *btrfstree.TreeError) {
 				// do nothing

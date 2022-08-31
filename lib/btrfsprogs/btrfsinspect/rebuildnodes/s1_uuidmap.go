@@ -24,6 +24,22 @@ type uuidMap struct {
 	ObjID2UUID map[btrfsprim.ObjID]btrfsprim.UUID
 	UUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID
 	TreeParent map[btrfsprim.ObjID]btrfsprim.UUID
+
+	SeenTrees map[btrfsprim.ObjID]struct{}
+}
+
+func (m uuidMap) missingRootItems() map[btrfsprim.ObjID]struct{} {
+	missing := make(map[btrfsprim.ObjID]struct{})
+	for treeID := range m.SeenTrees {
+		if _, ok := m.ObjID2UUID[treeID]; !ok && treeID != btrfsprim.ROOT_TREE_OBJECTID {
+			missing[treeID] = struct{}{}
+			continue
+		}
+		if _, ok := m.TreeParent[treeID]; !ok && treeID >= btrfsprim.FIRST_FREE_OBJECTID && treeID <= btrfsprim.LAST_FREE_OBJECTID {
+			missing[treeID] = struct{}{}
+		}
+	}
+	return missing
 }
 
 func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
@@ -58,8 +74,9 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		ObjID2UUID: make(map[btrfsprim.ObjID]btrfsprim.UUID),
 		UUID2ObjID: make(map[btrfsprim.UUID]btrfsprim.ObjID),
 		TreeParent: make(map[btrfsprim.ObjID]btrfsprim.UUID),
+
+		SeenTrees: make(map[btrfsprim.ObjID]struct{}),
 	}
-	seenTreeIDs := make(map[btrfsprim.ObjID]struct{})
 
 	progress()
 	for _, devResults := range scanResults {
@@ -94,7 +111,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 					}
 				}
 			}
-			seenTreeIDs[nodeRef.Data.Head.Owner] = struct{}{}
+			ret.SeenTrees[nodeRef.Data.Head.Owner] = struct{}{}
 			done++
 			progress()
 		}
@@ -104,16 +121,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		panic("should not happen")
 	}
 
-	missing := make(map[btrfsprim.ObjID]struct{})
-	for treeID := range seenTreeIDs {
-		if _, ok := ret.ObjID2UUID[treeID]; !ok && treeID != btrfsprim.ROOT_TREE_OBJECTID {
-			missing[treeID] = struct{}{}
-			continue
-		}
-		if _, ok := ret.TreeParent[treeID]; !ok && treeID >= btrfsprim.FIRST_FREE_OBJECTID && treeID <= btrfsprim.LAST_FREE_OBJECTID {
-			missing[treeID] = struct{}{}
-		}
-	}
+	missing := ret.missingRootItems()
 	if len(missing) > 0 {
 		dlog.Errorf(ctx, "... could not find root items for %d trees: %v", len(missing), maps.SortedKeys(missing))
 	}
