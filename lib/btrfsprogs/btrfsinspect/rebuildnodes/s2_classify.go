@@ -11,10 +11,12 @@ import (
 
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
@@ -28,9 +30,11 @@ type badNode struct {
 //
 //  1. the set of nodes don't have another node claiming it as a child, and
 //  2. the list of bad nodes (in no particular order)
+//  3. tree ancestors thing
 func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDevicesResult) (
 	orphanedNodes map[btrfsvol.LogicalAddr]struct{},
 	badNodes []badNode,
+	treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID],
 	err error,
 ) {
 	dlog.Info(ctx, "Walking trees to identify orphan and broken nodes...")
@@ -48,6 +52,8 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 		}
 	}
 
+	treeAncestors = make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID])
+
 	var potentialRoot btrfsvol.LogicalAddr // zero for non-lost nodes, non-zero for lost nodes
 	nodeHandler := func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], err error) error {
 		if err != nil && (errors.Is(err, btrfstree.ErrNotANode) || errors.As(err, new(*btrfstree.IOError))) {
@@ -64,11 +70,12 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 			if addr != potentialRoot {
 				delete(orphanedNodes, addr)
 			}
-			// TODO: Compare `nodeRef.Data.Head.Owner` and `path.Node(-1).FromTree` to
-			// maybe reconstruct a missing root item.  This is a sort of catch-22; we
-			// trust this data less because lost nodes may be discarded and not just
-			// lost, but non-lost nodes will never have a missing root item, so lost
-			// nodes are all we have to work with on this.
+		}
+		if err == nil && nodeRef.Data.Head.Owner != path.Node(-1).FromTree {
+			if treeAncestors[path.Node(-1).FromTree] == nil {
+				treeAncestors[path.Node(-1).FromTree] = make(containers.Set[btrfsprim.ObjID])
+			}
+			treeAncestors[path.Node(-1).FromTree].Insert(nodeRef.Data.Head.Owner)
 		}
 		progress()
 		return nil
@@ -130,5 +137,5 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 	}
 
 	dlog.Infof(ctx, "... identified %d orphaned nodes and %d bad nodes", len(orphanedNodes), len(badNodes))
-	return orphanedNodes, badNodes, nil
+	return orphanedNodes, badNodes, treeAncestors, nil
 }

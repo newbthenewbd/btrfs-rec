@@ -42,6 +42,103 @@ func (m uuidMap) missingRootItems() map[btrfsprim.ObjID]struct{} {
 	return missing
 }
 
+// ParentTree implements btrfstree.NodeFile.
+func (m uuidMap) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
+	if tree < btrfsprim.FIRST_FREE_OBJECTID || tree > btrfsprim.LAST_FREE_OBJECTID {
+		// no parent
+		return 0, true
+	}
+	parentUUID, ok := m.TreeParent[tree]
+	if !ok {
+		// could not look up parent info
+		return 0, false
+	}
+	if parentUUID == (btrfsprim.UUID{}) {
+		// no parent
+		return 0, true
+	}
+	parentObjID, ok := m.UUID2ObjID[parentUUID]
+	if !ok {
+		// could not look up parent info
+		return 0, false
+	}
+	return parentObjID, true
+}
+
+func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]) {
+	if missing := m.missingRootItems(); len(missing) == 0 {
+		return
+	} else {
+		dlog.Infof(ctx, "Rebuilding %d root items...", len(missing))
+	}
+
+	var fullAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]
+	var getFullAncestors func(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID]
+	getFullAncestors = func(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID] {
+		if memoized := fullAncestors[child]; memoized != nil {
+			return memoized
+		}
+		ret := make(containers.Set[btrfsprim.ObjID])
+		fullAncestors[child] = ret
+
+		// Try to use 'm' if possible.
+		knownAncestors := make(containers.Set[btrfsprim.ObjID])
+		if parent, ok := m.ParentTree(child); ok {
+			if parent == 0 {
+				return ret
+			}
+			knownAncestors.Insert(parent)
+		} else {
+			knownAncestors.InsertFrom(treeAncestors[child])
+		}
+
+		for _, ancestor := range maps.SortedKeys(knownAncestors) {
+			ret.Insert(ancestor)
+			ret.InsertFrom(getFullAncestors(ancestor))
+		}
+		return ret
+	}
+
+	for pass := 1; true; pass++ {
+		dlog.Infof(ctx, "... pass %v", pass)
+		added := 0
+		fullAncestors = make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID])
+		for _, missingRoot := range maps.SortedKeys(m.missingRootItems()) {
+			if _, ok := m.TreeParent[missingRoot]; ok {
+				// This one is incomplete because it doesn't have a UUID, not
+				// because it doesn't have a parent.
+				continue
+			}
+			dlog.Infof(ctx, "... rebuilding %v", missingRoot)
+			potentialParents := make(containers.Set[btrfsprim.ObjID])
+			potentialParents.InsertFrom(getFullAncestors(missingRoot))
+			for ancestor := range getFullAncestors(missingRoot) {
+				potentialParents.DeleteFrom(getFullAncestors(ancestor))
+			}
+			if len(potentialParents) == 1 {
+				parent := potentialParents.TakeOne()
+				dlog.Infof(ctx, "... ... the parent of %v is %v", missingRoot, parent)
+				parentUUID, ok := m.ObjID2UUID[parent]
+				if !ok {
+					dlog.Errorf(ctx, "... ... but can't synthesize a root item because UUID of %v is unknown", parent)
+					continue
+				}
+				m.TreeParent[missingRoot] = parentUUID
+				added++
+			}
+		}
+		if added == 0 {
+			break
+		}
+	}
+
+	if missing := m.missingRootItems(); len(missing) > 0 {
+		dlog.Errorf(ctx, "... could not rebuild root items for %d trees: %v", len(missing), maps.SortedKeys(missing))
+	} else {
+		dlog.Info(ctx, "... rebuilt all root items")
+	}
+}
+
 func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	if other, conflict := m[k]; conflict && other != v {
 		return fmt.Errorf("conflict: %s %v can't have both %v and %v", name, k, other, v)

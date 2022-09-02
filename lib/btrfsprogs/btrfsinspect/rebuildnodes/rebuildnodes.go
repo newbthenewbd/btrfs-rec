@@ -29,10 +29,12 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		uuidMap: uuidMap,
 	}
 
-	orphanedNodes, badNodes, err := classifyNodes(ctx, nfs, nodeScanResults)
+	orphanedNodes, badNodes, treeAncestors, err := classifyNodes(ctx, nfs, nodeScanResults)
 	if err != nil {
 		return nil, err
 	}
+
+	uuidMap.considerAncestors(ctx, treeAncestors)
 
 	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, badNodes)
 	if err != nil {

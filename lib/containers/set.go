@@ -45,27 +45,38 @@ func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
 	})
 }
 
-func (o *Set[T]) Insert(v T) {
-	if *o == nil {
-		*o = Set[T]{}
-	}
-	(*o)[v] = struct{}{}
+func (o Set[T]) Insert(v T) {
+	o[v] = struct{}{}
 }
 
-func (o *Set[T]) InsertFrom(p Set[T]) {
-	if *o == nil {
-		*o = Set[T]{}
-	}
+func (o Set[T]) InsertFrom(p Set[T]) {
 	for v := range p {
-		(*o)[v] = struct{}{}
+		o[v] = struct{}{}
 	}
 }
 
-func (o *Set[T]) Delete(v T) {
-	if *o == nil {
+func (o Set[T]) Delete(v T) {
+	if o == nil {
 		return
 	}
-	delete(*o, v)
+	delete(o, v)
+}
+
+func (o Set[T]) DeleteFrom(p Set[T]) {
+	if o == nil {
+		return
+	}
+	for v := range p {
+		delete(o, v)
+	}
+}
+
+func (o Set[T]) TakeOne() T {
+	for v := range o {
+		return v
+	}
+	var zero T
+	return zero
 }
 
 func (small Set[T]) HasIntersection(big Set[T]) bool {
