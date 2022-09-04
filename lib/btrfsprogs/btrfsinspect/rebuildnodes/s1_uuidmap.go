@@ -81,7 +81,7 @@ func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsp
 		ret := make(containers.Set[btrfsprim.ObjID])
 		fullAncestors[child] = ret
 
-		// Try to use 'm' if possible.
+		// Try to use 'm' instead of 'treeAncestors' if possible.
 		knownAncestors := make(containers.Set[btrfsprim.ObjID])
 		if parent, ok := m.ParentTree(child); ok {
 			if parent == 0 {
@@ -99,36 +99,27 @@ func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsp
 		return ret
 	}
 
-	for pass := 1; true; pass++ {
-		dlog.Infof(ctx, "... pass %v", pass)
-		added := 0
-		fullAncestors = make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID])
-		for _, missingRoot := range maps.SortedKeys(m.missingRootItems()) {
-			if _, ok := m.TreeParent[missingRoot]; ok {
-				// This one is incomplete because it doesn't have a UUID, not
-				// because it doesn't have a parent.
+	fullAncestors = make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID])
+	for _, missingRoot := range maps.SortedKeys(m.missingRootItems()) {
+		if _, ok := m.TreeParent[missingRoot]; ok {
+			// This one is incomplete because it doesn't have a UUID, not
+			// because it doesn't have a parent.
+			continue
+		}
+		potentialParents := make(containers.Set[btrfsprim.ObjID])
+		potentialParents.InsertFrom(getFullAncestors(missingRoot))
+		for ancestor := range getFullAncestors(missingRoot) {
+			potentialParents.DeleteFrom(getFullAncestors(ancestor))
+		}
+		if len(potentialParents) == 1 {
+			parent := potentialParents.TakeOne()
+			dlog.Infof(ctx, "... the parent of %v is %v", missingRoot, parent)
+			parentUUID, ok := m.ObjID2UUID[parent]
+			if !ok {
+				dlog.Errorf(ctx, "... but can't synthesize a root item because UUID of %v is unknown", parent)
 				continue
 			}
-			dlog.Infof(ctx, "... rebuilding %v", missingRoot)
-			potentialParents := make(containers.Set[btrfsprim.ObjID])
-			potentialParents.InsertFrom(getFullAncestors(missingRoot))
-			for ancestor := range getFullAncestors(missingRoot) {
-				potentialParents.DeleteFrom(getFullAncestors(ancestor))
-			}
-			if len(potentialParents) == 1 {
-				parent := potentialParents.TakeOne()
-				dlog.Infof(ctx, "... ... the parent of %v is %v", missingRoot, parent)
-				parentUUID, ok := m.ObjID2UUID[parent]
-				if !ok {
-					dlog.Errorf(ctx, "... ... but can't synthesize a root item because UUID of %v is unknown", parent)
-					continue
-				}
-				m.TreeParent[missingRoot] = parentUUID
-				added++
-			}
-		}
-		if added == 0 {
-			break
+			m.TreeParent[missingRoot] = parentUUID
 		}
 	}
 
