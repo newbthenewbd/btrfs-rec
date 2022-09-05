@@ -65,6 +65,46 @@ func (m uuidMap) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
 	return parentObjID, true
 }
 
+type fullAncestorLister struct {
+	uuidMap       uuidMap
+	treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]
+
+	memos map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]
+}
+
+func newFullAncestorLister(uuidMap uuidMap, treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]) fullAncestorLister {
+	return fullAncestorLister{
+		uuidMap:       uuidMap,
+		treeAncestors: treeAncestors,
+		memos:         make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]),
+	}
+}
+
+func (fa fullAncestorLister) GetFullAncestors(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID] {
+	if memoized := fa.memos[child]; memoized != nil {
+		return memoized
+	}
+	ret := make(containers.Set[btrfsprim.ObjID])
+	fa.memos[child] = ret
+
+	// Try to use '.uuidMap' instead of '.treeAncestors' if possible.
+	knownAncestors := make(containers.Set[btrfsprim.ObjID])
+	if parent, ok := fa.uuidMap.ParentTree(child); ok {
+		if parent == 0 {
+			return ret
+		}
+		knownAncestors.Insert(parent)
+	} else {
+		knownAncestors.InsertFrom(fa.treeAncestors[child])
+	}
+
+	for _, ancestor := range maps.SortedKeys(knownAncestors) {
+		ret.Insert(ancestor)
+		ret.InsertFrom(fa.GetFullAncestors(ancestor))
+	}
+	return ret
+}
+
 func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]) {
 	if missing := m.missingRootItems(); len(missing) == 0 {
 		return
@@ -72,34 +112,8 @@ func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsp
 		dlog.Infof(ctx, "Rebuilding %d root items...", len(missing))
 	}
 
-	var fullAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]
-	var getFullAncestors func(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID]
-	getFullAncestors = func(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID] {
-		if memoized := fullAncestors[child]; memoized != nil {
-			return memoized
-		}
-		ret := make(containers.Set[btrfsprim.ObjID])
-		fullAncestors[child] = ret
+	fa := newFullAncestorLister(m, treeAncestors)
 
-		// Try to use 'm' instead of 'treeAncestors' if possible.
-		knownAncestors := make(containers.Set[btrfsprim.ObjID])
-		if parent, ok := m.ParentTree(child); ok {
-			if parent == 0 {
-				return ret
-			}
-			knownAncestors.Insert(parent)
-		} else {
-			knownAncestors.InsertFrom(treeAncestors[child])
-		}
-
-		for _, ancestor := range maps.SortedKeys(knownAncestors) {
-			ret.Insert(ancestor)
-			ret.InsertFrom(getFullAncestors(ancestor))
-		}
-		return ret
-	}
-
-	fullAncestors = make(map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID])
 	for _, missingRoot := range maps.SortedKeys(m.missingRootItems()) {
 		if _, ok := m.TreeParent[missingRoot]; ok {
 			// This one is incomplete because it doesn't have a UUID, not
@@ -107,9 +121,9 @@ func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsp
 			continue
 		}
 		potentialParents := make(containers.Set[btrfsprim.ObjID])
-		potentialParents.InsertFrom(getFullAncestors(missingRoot))
-		for ancestor := range getFullAncestors(missingRoot) {
-			potentialParents.DeleteFrom(getFullAncestors(ancestor))
+		potentialParents.InsertFrom(fa.GetFullAncestors(missingRoot))
+		for ancestor := range fa.GetFullAncestors(missingRoot) {
+			potentialParents.DeleteFrom(fa.GetFullAncestors(ancestor))
 		}
 		if len(potentialParents) == 1 {
 			parent := potentialParents.TakeOne()
@@ -166,6 +180,13 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		SeenTrees: make(containers.Set[btrfsprim.ObjID]),
 	}
 
+	// These 4 trees are mentioned directly in the superblock, so
+	// they are always seen.
+	ret.SeenTrees.Insert(btrfsprim.ROOT_TREE_OBJECTID)
+	ret.SeenTrees.Insert(btrfsprim.CHUNK_TREE_OBJECTID)
+	ret.SeenTrees.Insert(btrfsprim.TREE_LOG_OBJECTID)
+	ret.SeenTrees.Insert(btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
+
 	progress()
 	for _, devResults := range scanResults {
 		for laddr := range devResults.FoundNodes {
@@ -189,6 +210,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 					if err := maybeSet("ParentUUID", ret.TreeParent, item.Key.ObjectID, itemBody.ParentUUID); err != nil {
 						return uuidMap{}, err
 					}
+					ret.SeenTrees.Insert(item.Key.ObjectID)
 				case btrfsitem.UUIDMap:
 					uuid := btrfsitem.KeyToUUID(item.Key)
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
