@@ -67,5 +67,6 @@ func FSReadNode(
 		Level:      containers.Optional[uint8]{OK: true, Val: path.Node(-1).ToNodeLevel},
 		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: path.Node(-1).ToNodeGeneration},
 		Owner:      checkOwner,
+		MinItem:    containers.Optional[btrfsprim.Key]{OK: true, Val: path.Node(-1).ToKey},
 	})
 }

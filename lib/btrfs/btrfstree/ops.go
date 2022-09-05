@@ -176,6 +176,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 				ToNodeAddr:       item.BlockPtr,
 				ToNodeGeneration: item.Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToKey:            item.Key,
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
@@ -199,6 +200,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 			itemPath := append(path, TreePathElem{
 				FromTree:    node.Data.Head.Owner,
 				FromItemIdx: i,
+				ToKey:       item.Key,
 			})
 			if errBody, isErr := item.Body.(btrfsitem.Error); isErr {
 				if cbs.BadItem == nil {
@@ -273,6 +275,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				ToNodeAddr:       node.Data.BodyInternal[lastGood].BlockPtr,
 				ToNodeGeneration: node.Data.BodyInternal[lastGood].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToKey:            node.Data.BodyInternal[lastGood].Key,
 			})
 		} else {
 			// leaf node
@@ -296,6 +299,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			path = append(path, TreePathElem{
 				FromTree:    node.Data.Head.Owner,
 				FromItemIdx: idx,
+				ToKey:       node.Data.BodyLeaf[idx].Key,
 			})
 			return path, node, nil
 		}
@@ -339,11 +343,13 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.Logical
 				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
 				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToKey:            node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Key,
 			})
 		} else {
 			path = append(path, TreePathElem{
 				FromTree:    node.Data.Head.Owner,
 				FromItemIdx: len(node.Data.BodyLeaf) - 1,
+				ToKey:       node.Data.BodyLeaf[len(node.Data.BodyLeaf)-1].Key,
 			})
 		}
 	}
@@ -409,11 +415,13 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
 				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToKey:            node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Key,
 			})
 		} else {
 			path = append(path, TreePathElem{
 				FromTree:    node.Data.Head.Owner,
 				FromItemIdx: 0,
+				ToKey:       node.Data.BodyInternal[0].Key,
 			})
 		}
 	}

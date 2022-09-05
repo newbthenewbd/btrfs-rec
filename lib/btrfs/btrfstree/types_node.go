@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/datawire/dlib/derror"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -386,6 +388,9 @@ type NodeExpectations struct {
 	Level      containers.Optional[uint8]
 	Generation containers.Optional[btrfsprim.Generation]
 	Owner      func(btrfsprim.ObjID) error
+	MinItem    containers.Optional[btrfsprim.Key]
+	// Things knowable from the structure of the tree.
+	MaxItem containers.Optional[btrfsprim.Key]
 }
 
 type NodeError[Addr ~int64] struct {
@@ -472,24 +477,38 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 
 	// sanity checking (that doesn't prevent parsing)
 
+	var errs derror.MultiError
 	if exp.LAddr.OK && nodeRef.Data.Head.Addr != exp.LAddr.Val {
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
-			Err: fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
-				exp.LAddr.Val, nodeRef.Data.Head.Addr)}
+		errs = append(errs, fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
+			exp.LAddr.Val, nodeRef.Data.Head.Addr))
 	}
 	if exp.Level.OK && nodeRef.Data.Head.Level != exp.Level.Val {
-		return nodeRef, fmt.Errorf("btrfs.ReadNode: node@%v: expected level=%v but claims to be level=%v",
-			addr, exp.Level.Val, nodeRef.Data.Head.Level)
+		errs = append(errs, fmt.Errorf("expected level=%v but claims to be level=%v",
+			exp.Level.Val, nodeRef.Data.Head.Level))
 	}
 	if exp.Generation.OK && nodeRef.Data.Head.Generation != exp.Generation.Val {
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
-			Err: fmt.Errorf("expected generation=%v but claims to be generation=%v",
-				exp.Generation.Val, nodeRef.Data.Head.Generation)}
+		errs = append(errs, fmt.Errorf("expected generation=%v but claims to be generation=%v",
+			exp.Generation.Val, nodeRef.Data.Head.Generation))
 	}
 	if exp.Owner != nil {
 		if err := exp.Owner(nodeRef.Data.Head.Owner); err != nil {
-			return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
+			errs = append(errs, err)
 		}
+	}
+	if nodeRef.Data.Head.NumItems == 0 {
+		errs = append(errs, fmt.Errorf("has no items"))
+	} else {
+		if minItem, _ := nodeRef.Data.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Cmp(minItem) > 0 {
+			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
+				exp.MinItem, minItem))
+		}
+		if maxItem, _ := nodeRef.Data.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Cmp(maxItem) < 0 {
+			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
+				exp.MaxItem, maxItem))
+		}
+	}
+	if len(errs) > 0 {
+		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: errs}
 	}
 
 	// return
