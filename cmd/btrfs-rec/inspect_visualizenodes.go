@@ -5,6 +5,9 @@
 package main
 
 import (
+	"bufio"
+	"os"
+
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
@@ -16,8 +19,8 @@ import (
 func init() {
 	inspectors = append(inspectors, subcommand{
 		Command: cobra.Command{
-			Use:  "visualize-nodes NODESCAN.json OUTPUT_DIR",
-			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(2)),
+			Use:  "visualize-nodes NODESCAN.json",
+			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) (err error) {
 			ctx := cmd.Context()
@@ -29,7 +32,13 @@ func init() {
 			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			return rebuildnodes.VisualizeNodes(ctx, args[1], fs, nodeScanResults)
+			buffer := bufio.NewWriter(os.Stdout)
+			defer func() {
+				if _err := buffer.Flush(); err == nil && _err != nil {
+					err = _err
+				}
+			}()
+			return rebuildnodes.VisualizeNodes(ctx, buffer, fs, nodeScanResults)
 		},
 	})
 }

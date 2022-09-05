@@ -5,14 +5,13 @@
 package rebuildnodes
 
 import (
-	"bufio"
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	iofs "io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/datawire/dlib/dlog"
@@ -57,7 +56,7 @@ func getCliqueID(cliques map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID], t
 	return maps.SortedKeys(*clique)[0]
 }
 
-func VisualizeNodes(ctx context.Context, dir string, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) error {
+func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) error {
 	uuidMap, err := buildUUIDMap(ctx, fs, nodeScanResults)
 	if err != nil {
 		return err
@@ -200,31 +199,17 @@ func VisualizeNodes(ctx context.Context, dir string, fs *btrfs.FS, nodeScanResul
 
 	////////////////////////////////////////////////////////////////////////////////////////////
 
-	dlog.Infof(ctx, "Writing graphviz output to %q...", dir)
+	dlog.Info(ctx, "Writing graphviz output...")
 
 	cliqueIDs := maps.SortedKeys(edges)
 
-	if err := os.MkdirAll(dir, 0777); err != nil {
-		return err
-	}
+	zw := zip.NewWriter(out)
 	for _, cliqueID := range cliqueIDs {
 		if err := func() (err error) {
-			maybeSetErr := func(_err error) {
-				if err == nil && _err != nil {
-					err = _err
-				}
-			}
-			fh, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%d.dot", cliqueID)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+			buf, err := zw.Create(fmt.Sprintf("%d.dot", cliqueID))
 			if err != nil {
 				return err
 			}
-			defer func() {
-				maybeSetErr(fh.Close())
-			}()
-			buf := bufio.NewWriter(fh)
-			defer func() {
-				maybeSetErr(buf.Flush())
-			}()
 
 			if _, err := fmt.Fprintf(buf, "digraph clique%d {\n", cliqueID); err != nil {
 				return err
@@ -256,6 +241,9 @@ func VisualizeNodes(ctx context.Context, dir string, fs *btrfs.FS, nodeScanResul
 		}(); err != nil {
 			return err
 		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
 	}
 
 	dlog.Info(ctx, "... done writing")
