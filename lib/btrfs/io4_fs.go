@@ -248,13 +248,13 @@ func (ret *Dir) populate() {
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
 	}
-	entriesWithIndexes := make(map[string]struct{})
+	entriesWithIndexes := make(containers.Set[string])
 	nextIndex := uint64(2)
 	for index, entry := range ret.ChildrenByIndex {
 		if index+1 > nextIndex {
 			nextIndex = index + 1
 		}
-		entriesWithIndexes[string(entry.Name)] = struct{}{}
+		entriesWithIndexes.Insert(string(entry.Name))
 		if other, exists := ret.ChildrenByName[string(entry.Name)]; !exists {
 			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-name direntry for %q", entry.Name))
 			ret.ChildrenByName[string(entry.Name)] = entry
@@ -264,7 +264,7 @@ func (ret *Dir) populate() {
 		}
 	}
 	for _, name := range maps.SortedKeys(ret.ChildrenByName) {
-		if _, exists := entriesWithIndexes[name]; !exists {
+		if !entriesWithIndexes.Has(name) {
 			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-index direntry for %q", name))
 			ret.ChildrenByIndex[nextIndex] = ret.ChildrenByName[name]
 			nextIndex++

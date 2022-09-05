@@ -119,10 +119,10 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 		edges.Insert(edge.String())
 
 		// Return
-		if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
+		if visitedNodes.Has(addr) {
 			return iofs.SkipDir
 		}
-		visitedNodes[addr] = struct{}{}
+		visitedNodes.Insert(addr)
 		return err
 	}
 

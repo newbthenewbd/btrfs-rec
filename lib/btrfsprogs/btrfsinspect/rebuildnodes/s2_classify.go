@@ -32,7 +32,7 @@ type badNode struct {
 //  2. the list of bad nodes (in no particular order)
 //  3. tree ancestors thing
 func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDevicesResult) (
-	orphanedNodes map[btrfsvol.LogicalAddr]struct{},
+	orphanedNodes containers.Set[btrfsvol.LogicalAddr],
 	badNodes []badNode,
 	treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID],
 	err error,
@@ -41,7 +41,7 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 
 	lastPct := -1
 	total := countNodes(scanResults)
-	visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
+	visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
 	progress := func() {
 		done := len(visitedNodes)
 		pct := int(100 * float64(done) / float64(total))
@@ -64,7 +64,7 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 			return err
 		}
 		addr := path.Node(-1).ToNodeAddr
-		visitedNodes[addr] = struct{}{}
+		visitedNodes.Insert(addr)
 		if potentialRoot != 0 {
 			// lost node
 			if addr != potentialRoot {
@@ -84,7 +84,7 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 	walkHandler := btrfstree.TreeWalkHandler{
 		PreNode: func(path btrfstree.TreePath) error {
 			addr := path.Node(-1).ToNodeAddr
-			if _, alreadyVisited := visitedNodes[addr]; alreadyVisited {
+			if visitedNodes.Has(addr) {
 				// Can happen because of COW subvolumes;
 				// this is really a DAG not a tree.
 				return iofs.SkipDir
@@ -109,11 +109,11 @@ func classifyNodes(ctx context.Context, fs _FS, scanResults btrfsinspect.ScanDev
 
 	// Start with 'orphanedRoots' as a complete set of all orphaned nodes, and then delete
 	// non-root entries from it.
-	orphanedNodes = make(map[btrfsvol.LogicalAddr]struct{})
+	orphanedNodes = make(containers.Set[btrfsvol.LogicalAddr])
 	for _, devResults := range scanResults {
 		for laddr := range devResults.FoundNodes {
-			if _, attached := visitedNodes[laddr]; !attached {
-				orphanedNodes[laddr] = struct{}{}
+			if !visitedNodes.Has(laddr) {
+				orphanedNodes.Insert(laddr)
 			}
 		}
 	}

@@ -112,7 +112,7 @@ type subvolume struct {
 	fileHandles containers.SyncMap[fuseops.HandleID, *fileState]
 
 	subvolMu sync.Mutex
-	subvols  map[string]struct{}
+	subvols  containers.Set[string]
 	grp      *dgroup.Group
 }
 
@@ -176,11 +176,11 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 					continue
 				}
 				if sv.subvols == nil {
-					sv.subvols = make(map[string]struct{})
+					sv.subvols = make(containers.Set[string])
 				}
 				subMountpoint := filepath.Join(abspath, string(entry.Name))
-				if _, alreadyMounted := sv.subvols[subMountpoint]; !alreadyMounted {
-					sv.subvols[subMountpoint] = struct{}{}
+				if !sv.subvols.Has(subMountpoint) {
+					sv.subvols.Insert(subMountpoint)
 					workerName := fmt.Sprintf("%d-%s", val.Inode, filepath.Base(subMountpoint))
 					sv.grp.Go(workerName, func(ctx context.Context) error {
 						subSv := &subvolume{

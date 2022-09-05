@@ -13,6 +13,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
+// Set[T] is an unordered set of T.
+//
+// Despite Set[T] being unordered, T is required to be an ordered type
+// in order that a Set[T] have a deterministic JSON representation.
 type Set[T constraints.Ordered] map[T]struct{}
 
 var (
@@ -43,6 +47,14 @@ func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
 		(*o)[val] = struct{}{}
 		return nil
 	})
+}
+
+func NewSet[T constraints.Ordered](values ...T) Set[T] {
+	ret := make(Set[T], len(values))
+	for _, value := range values {
+		ret.Insert(value)
+	}
+	return ret
 }
 
 func (o Set[T]) Insert(v T) {
@@ -79,7 +91,12 @@ func (o Set[T]) TakeOne() T {
 	return zero
 }
 
-func (small Set[T]) HasIntersection(big Set[T]) bool {
+func (o Set[T]) Has(v T) bool {
+	_, has := o[v]
+	return has
+}
+
+func (small Set[T]) HasAny(big Set[T]) bool {
 	if len(big) < len(small) {
 		small, big = big, small
 	}

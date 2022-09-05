@@ -31,7 +31,7 @@ func (a RebuiltNode) ContainsWholeRegion(min, max btrfsprim.Key) int {
 	}
 }
 
-func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.LogicalAddr]struct{}, rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
+func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes containers.Set[btrfsvol.LogicalAddr], rebuiltNodes map[btrfsvol.LogicalAddr]*RebuiltNode) error {
 	dlog.Info(ctx, "Attaching orphaned nodes to rebuilt nodes...")
 
 	sb, err := fs.Superblock()
@@ -91,12 +91,12 @@ func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.Logic
 		trees := make(containers.Set[btrfsprim.ObjID])
 		tree := foundRef.Data.Head.Owner
 		for {
-			trees[tree] = struct{}{}
+			trees.Insert(tree)
 			var ok bool
 			tree, ok = fs.ParentTree(tree)
 			if !ok {
 				// error; accept anything
-				trees[0] = struct{}{}
+				trees.Insert(0)
 				break
 			}
 			if tree == 0 {
@@ -113,7 +113,7 @@ func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes map[btrfsvol.Logic
 				if parent.Node.Head.Generation < foundRef.Data.Head.Generation {
 					continue
 				}
-				if !trees.HasIntersection(parent.InTrees) {
+				if !trees.HasAny(parent.InTrees) {
 					continue
 				}
 				parent.BodyInternal = append(parent.BodyInternal, btrfstree.KeyPointer{

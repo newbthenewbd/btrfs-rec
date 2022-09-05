@@ -105,10 +105,14 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, badNodes []badNode) (map[btr
 
 		min, max := spanOfTreePath(fs, path)
 		node := RebuiltNode{
-			Errs:    containers.Set[string]{badNode.Err: struct{}{}},
-			MinKey:  min,
-			MaxKey:  max,
-			InTrees: containers.Set[btrfsprim.ObjID]{path.Node(-1).FromTree: struct{}{}},
+			Errs: containers.NewSet[string](
+				badNode.Err,
+			),
+			MinKey: min,
+			MaxKey: max,
+			InTrees: containers.NewSet[btrfsprim.ObjID](
+				path.Node(-1).FromTree,
+			),
 			Node: btrfstree.Node{
 				Size:         sb.NodeSize,
 				ChecksumType: sb.ChecksumType,

@@ -49,7 +49,7 @@ func (node *RBNode[V]) asciiArt(w io.Writer, u, m, l string) {
 	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")
 }
 
-func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet map[K]struct{}, tree *RBTree[NativeOrdered[K], V]) {
+func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K], tree *RBTree[NativeOrdered[K], V]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
@@ -142,7 +142,7 @@ func FuzzRBTree(f *testing.F) {
 				return NativeOrdered[uint8]{Val: x}
 			},
 		}
-		set := make(map[uint8]struct{})
+		set := make(Set[uint8])
 		checkRBTree(t, set, tree)
 		t.Logf("\n%s\n", tree.ASCIIArt())
 		for _, b := range dat {
@@ -151,7 +151,7 @@ func FuzzRBTree(f *testing.F) {
 			if ins {
 				t.Logf("Insert(%v)", val)
 				tree.Insert(val)
-				set[val] = struct{}{}
+				set.Insert(val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
 				node := tree.Lookup(NativeOrdered[uint8]{Val: val})
 				require.NotNil(t, node)

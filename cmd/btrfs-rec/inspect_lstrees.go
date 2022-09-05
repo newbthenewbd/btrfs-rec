@@ -64,7 +64,7 @@ func init() {
 				fmt.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))
 				table.Flush()
 			}
-			visitedNodes := make(map[btrfsvol.LogicalAddr]struct{})
+			visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
 			btrfsutil.WalkAllTrees(cmd.Context(), fs, btrfsutil.WalkAllTreesHandler{
 				PreTree: func(name string, treeID btrfsprim.ObjID) {
 					treeErrCnt = 0
@@ -76,7 +76,7 @@ func init() {
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
 					Node: func(_ btrfstree.TreePath, ref *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-						visitedNodes[ref.Addr] = struct{}{}
+						visitedNodes.Insert(ref.Addr)
 						return nil
 					},
 					Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
@@ -102,10 +102,10 @@ func init() {
 				sb, _ := fs.Superblock()
 				for _, devResults := range scanResults {
 					for laddr := range devResults.FoundNodes {
-						if _, visited := visitedNodes[laddr]; visited {
+						if visitedNodes.Has(laddr) {
 							continue
 						}
-						visitedNodes[laddr] = struct{}{}
+						visitedNodes.Insert(laddr)
 						node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
 							LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 						})

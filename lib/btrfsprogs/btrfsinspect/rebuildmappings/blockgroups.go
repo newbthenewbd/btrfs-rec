@@ -21,7 +21,7 @@ type BlockGroup struct {
 
 func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	// Dedup
-	bgsSet := make(map[BlockGroup]struct{})
+	bgsSet := make(map[BlockGroup]struct{}) // Can't use containers.Set because BlockGroup isn't ordered
 	for _, devResults := range scanResults {
 		for _, bg := range devResults.FoundBlockGroups {
 			bgsSet[BlockGroup{

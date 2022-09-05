@@ -21,14 +21,14 @@ import (
 func TestEncodeRebuiltNodes(t *testing.T) {
 	dat := map[btrfsvol.LogicalAddr]*rebuildnodes.RebuiltNode{
 		100007133184: {
-			Errs: containers.Set[string]{
-				"btrfs.ReadNode: node@0x0000001748e3c000: expected generation\u003c=6596014 but claims to be generation=6596025": struct{}{},
-			},
+			Errs: containers.NewSet[string](
+				"btrfs.ReadNode: node@0x0000001748e3c000: expected generation\u003c=6596014 but claims to be generation=6596025",
+			),
 			MinKey: btrfsprim.Key{},
 			MaxKey: btrfsprim.Key{},
-			InTrees: containers.Set[btrfsprim.ObjID]{
-				257: struct{}{},
-			},
+			InTrees: containers.NewSet[btrfsprim.ObjID](
+				257,
+			),
 			Node: btrfstree.Node{},
 		},
 	}

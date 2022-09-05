@@ -25,18 +25,18 @@ type uuidMap struct {
 	UUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID
 	TreeParent map[btrfsprim.ObjID]btrfsprim.UUID
 
-	SeenTrees map[btrfsprim.ObjID]struct{}
+	SeenTrees containers.Set[btrfsprim.ObjID]
 }
 
-func (m uuidMap) missingRootItems() map[btrfsprim.ObjID]struct{} {
-	missing := make(map[btrfsprim.ObjID]struct{})
+func (m uuidMap) missingRootItems() containers.Set[btrfsprim.ObjID] {
+	missing := make(containers.Set[btrfsprim.ObjID])
 	for treeID := range m.SeenTrees {
 		if _, ok := m.ObjID2UUID[treeID]; !ok && treeID != btrfsprim.ROOT_TREE_OBJECTID {
-			missing[treeID] = struct{}{}
+			missing.Insert(treeID)
 			continue
 		}
 		if _, ok := m.TreeParent[treeID]; !ok && treeID >= btrfsprim.FIRST_FREE_OBJECTID && treeID <= btrfsprim.LAST_FREE_OBJECTID {
-			missing[treeID] = struct{}{}
+			missing.Insert(treeID)
 		}
 	}
 	return missing
@@ -163,7 +163,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		UUID2ObjID: make(map[btrfsprim.UUID]btrfsprim.ObjID),
 		TreeParent: make(map[btrfsprim.ObjID]btrfsprim.UUID),
 
-		SeenTrees: make(map[btrfsprim.ObjID]struct{}),
+		SeenTrees: make(containers.Set[btrfsprim.ObjID]),
 	}
 
 	progress()
@@ -199,7 +199,7 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 					}
 				}
 			}
-			ret.SeenTrees[nodeRef.Data.Head.Owner] = struct{}{}
+			ret.SeenTrees.Insert(nodeRef.Data.Head.Owner)
 			done++
 			progress()
 		}
