@@ -90,22 +90,12 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 
 		// Node
 		var treeID btrfsprim.ObjID
-		var cliqueID btrfsprim.ObjID
 		var nodeStr string
 		if err != nil && (errors.Is(err, btrfstree.ErrNotANode) || errors.As(err, new(*btrfstree.IOError))) {
 			treeID = 0
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						panic(fmt.Errorf("path=%#v (%s): %v", path, path, r))
-					}
-				}()
-				cliqueID = getCliqueID(cliques, path.Node(-1).FromTree)
-			}()
 			nodeStr = fmt.Sprintf(`n%d [shape=star color=red label="%v"]`, addr, addr)
 		} else {
 			treeID = nodeRef.Data.Head.Owner
-			cliqueID = getCliqueID(cliques, treeID)
 			var buf strings.Builder
 			fmt.Fprintf(&buf, `n%d [shape=record label="%v\ngen=%v\nlvl=%v|{`,
 				addr,
@@ -156,6 +146,13 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 			fmt.Fprintf(&edge, `\n\n%s" color=red]`, html.EscapeString(err.Error()))
 		} else {
 			edge.WriteString(`"]`)
+		}
+		cliqueID := getCliqueID(cliques, path[0].FromTree)
+		if treeID != 0 && getCliqueID(cliques, treeID) != cliqueID {
+			panic(fmt.Errorf("tree %v is not in clique %v", treeID, maps.SortedKeys(*cliques[cliqueID])))
+		}
+		if !cliques[cliqueID].Has(cliqueID) {
+			panic(fmt.Errorf("clique %v does not contain supposed-member %v", maps.SortedKeys(*cliques[cliqueID]), cliqueID))
 		}
 		if _, ok := edges[cliqueID]; !ok {
 			edges[cliqueID] = make(containers.Set[string])
@@ -211,7 +208,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 				return err
 			}
 
-			if _, err := fmt.Fprintf(buf, "digraph clique%d {\n", cliqueID); err != nil {
+			if _, err := fmt.Fprintf(buf, "strict digraph clique%d {\n", cliqueID); err != nil {
 				return err
 			}
 			clique := cliques[cliqueID]

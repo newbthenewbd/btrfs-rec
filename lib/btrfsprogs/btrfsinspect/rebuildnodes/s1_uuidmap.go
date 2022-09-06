@@ -81,11 +81,18 @@ func newFullAncestorLister(uuidMap uuidMap, treeAncestors map[btrfsprim.ObjID]co
 }
 
 func (fa fullAncestorLister) GetFullAncestors(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID] {
-	if memoized := fa.memos[child]; memoized != nil {
+	if memoized, ok := fa.memos[child]; ok {
+		if memoized == nil {
+			panic(fmt.Errorf("loop involving tree %v", child))
+		}
 		return memoized
 	}
+	fa.memos[child] = nil
+
 	ret := make(containers.Set[btrfsprim.ObjID])
-	fa.memos[child] = ret
+	defer func() {
+		fa.memos[child] = ret
+	}()
 
 	// Try to use '.uuidMap' instead of '.treeAncestors' if possible.
 	knownAncestors := make(containers.Set[btrfsprim.ObjID])
