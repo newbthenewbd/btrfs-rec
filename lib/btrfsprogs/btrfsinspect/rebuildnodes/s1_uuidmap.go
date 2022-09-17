@@ -159,12 +159,37 @@ func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	return nil
 }
 
-func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (uuidMap, error) {
+type nodeData struct {
+	Level      uint8                // 0+1=1
+	Generation btrfsprim.Generation // 1+8=9
+	Owner      btrfsprim.ObjID      // 9+8=17
+	MinItem    btrfsprim.Key        // 17+17=34
+	MaxItem    btrfsprim.Key        // 34+17=51
+}
+
+type kpData struct {
+	From, To   btrfsvol.LogicalAddr // 0+(2*8)=16
+	Key        btrfsprim.Key        // 16+17=33
+	Generation btrfsprim.Generation // 33+8=41
+}
+
+type nodeGraph struct {
+	Nodes     map[btrfsvol.LogicalAddr]nodeData
+	EdgesFrom map[btrfsvol.LogicalAddr][]*kpData
+	EdgesTo   map[btrfsvol.LogicalAddr][]*kpData
+}
+
+type scanResult struct {
+	uuidMap
+	nodeGraph
+}
+
+func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (*scanResult, error) {
 	dlog.Infof(ctx, "Building table of ObjID←→UUID...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
-		return uuidMap{}, nil
+		return nil, err
 	}
 
 	lastPct := -1
@@ -179,12 +204,19 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 		}
 	}
 
-	ret := uuidMap{
-		ObjID2UUID: make(map[btrfsprim.ObjID]btrfsprim.UUID),
-		UUID2ObjID: make(map[btrfsprim.UUID]btrfsprim.ObjID),
-		TreeParent: make(map[btrfsprim.ObjID]btrfsprim.UUID),
+	ret := &scanResult{
+		uuidMap: uuidMap{
+			ObjID2UUID: make(map[btrfsprim.ObjID]btrfsprim.UUID),
+			UUID2ObjID: make(map[btrfsprim.UUID]btrfsprim.ObjID),
+			TreeParent: make(map[btrfsprim.ObjID]btrfsprim.UUID),
 
-		SeenTrees: make(containers.Set[btrfsprim.ObjID]),
+			SeenTrees: make(containers.Set[btrfsprim.ObjID]),
+		},
+		nodeGraph: nodeGraph{
+			Nodes:     make(map[btrfsvol.LogicalAddr]nodeData),
+			EdgesFrom: make(map[btrfsvol.LogicalAddr][]*kpData),
+			EdgesTo:   make(map[btrfsvol.LogicalAddr][]*kpData),
+		},
 	}
 
 	// These 4 trees are mentioned directly in the superblock, so
@@ -201,34 +233,56 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 			})
 			if err != nil {
-				return uuidMap{}, nil
+				return nil, err
 			}
+
+			// UUID map rebuilding
 			for _, item := range nodeRef.Data.BodyLeaf {
 				switch itemBody := item.Body.(type) {
 				case btrfsitem.Root:
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, item.Key.ObjectID, itemBody.UUID); err != nil {
-						return uuidMap{}, err
+						return nil, err
 					}
 					if itemBody.UUID != (btrfsprim.UUID{}) {
 						if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, itemBody.UUID, item.Key.ObjectID); err != nil {
-							return uuidMap{}, err
+							return nil, err
 						}
 					}
 					if err := maybeSet("ParentUUID", ret.TreeParent, item.Key.ObjectID, itemBody.ParentUUID); err != nil {
-						return uuidMap{}, err
+						return nil, err
 					}
 					ret.SeenTrees.Insert(item.Key.ObjectID)
 				case btrfsitem.UUIDMap:
 					uuid := btrfsitem.KeyToUUID(item.Key)
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
-						return uuidMap{}, err
+						return nil, err
 					}
 					if err := maybeSet("UUID2ObjID", ret.UUID2ObjID, uuid, itemBody.ObjID); err != nil {
-						return uuidMap{}, err
+						return nil, err
 					}
 				}
 			}
 			ret.SeenTrees.Insert(nodeRef.Data.Head.Owner)
+
+			// graph building
+			ret.Nodes[laddr] = nodeData{
+				Level:      nodeRef.Data.Head.Level,
+				Generation: nodeRef.Data.Head.Generation,
+				Owner:      nodeRef.Data.Head.Owner,
+				MinItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MinItem(); return k }(),
+				MaxItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MaxItem(); return k }(),
+			}
+			for _, kp := range nodeRef.Data.BodyInternal {
+				dat := &kpData{
+					From:       laddr,
+					To:         kp.BlockPtr,
+					Key:        kp.Key,
+					Generation: kp.Generation,
+				}
+				ret.EdgesFrom[laddr] = append(ret.EdgesFrom[laddr], dat)
+				ret.EdgesTo[laddr] = append(ret.EdgesTo[laddr], dat)
+			}
+
 			done++
 			progress()
 		}
@@ -245,4 +299,12 @@ func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sc
 
 	dlog.Info(ctx, "... done building table")
 	return ret, nil
+}
+
+func buildUUIDMap(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (uuidMap, error) {
+	ret, err := ScanDevices(ctx, fs, scanResults)
+	if err != nil {
+		return uuidMap{}, err
+	}
+	return ret.uuidMap, nil
 }
