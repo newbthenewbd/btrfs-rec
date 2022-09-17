@@ -6,7 +6,6 @@ package rebuildnodes
 
 import (
 	"context"
-	"math"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -46,24 +45,6 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	return rebuiltNodes, nil
-}
-
-var maxKey = btrfsprim.Key{
-	ObjectID: math.MaxUint64,
-	ItemType: math.MaxUint8,
-	Offset:   math.MaxUint64,
-}
-
-func keyMm(key btrfsprim.Key) btrfsprim.Key {
-	switch {
-	case key.Offset > 0:
-		key.Offset--
-	case key.ItemType > 0:
-		key.ItemType--
-	case key.ObjectID > 0:
-		key.ObjectID--
-	}
-	return key
 }
 
 func spanOfTreePath(fs _FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.Key) {
@@ -113,14 +94,6 @@ func walkFromNode(ctx context.Context, fs _FS, nodeAddr btrfsvol.LogicalAddr, er
 		Generation: nodeRef.Data.Head.Generation,
 	}
 	btrfstree.TreeOperatorImpl{NodeSource: fs}.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
-}
-
-func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
-	var cnt int
-	for _, devResults := range nodeScanResults {
-		cnt += len(devResults.FoundNodes)
-	}
-	return cnt
 }
 
 func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {

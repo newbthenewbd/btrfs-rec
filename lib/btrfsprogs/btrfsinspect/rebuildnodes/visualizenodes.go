@@ -27,10 +27,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func ptrTo[T any](x T) *T {
-	return &x
-}
-
 func getCliques(uuidMap uuidMap, treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]) map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID] {
 	cliques := make(map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID])
 	lister := newFullAncestorLister(uuidMap, treeAncestors)
