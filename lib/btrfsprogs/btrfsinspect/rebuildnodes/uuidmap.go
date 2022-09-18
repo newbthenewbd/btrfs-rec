@@ -7,6 +7,7 @@ package rebuildnodes
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -75,14 +76,36 @@ func newFullAncestorLister(uuidMap uuidMap, treeAncestors map[btrfsprim.ObjID]co
 	}
 }
 
+type loopError []btrfsprim.ObjID
+
+func (le loopError) Error() string {
+	var buf strings.Builder
+	buf.WriteString("loop: ")
+	for i, treeID := range le {
+		if i > 0 {
+			buf.WriteString("->")
+		}
+		fmt.Fprintf(&buf, "%d", treeID)
+	}
+	return buf.String()
+}
+
 func (fa fullAncestorLister) GetFullAncestors(child btrfsprim.ObjID) containers.Set[btrfsprim.ObjID] {
 	if memoized, ok := fa.memos[child]; ok {
 		if memoized == nil {
-			panic(fmt.Errorf("loop involving tree %v", child))
+			panic(loopError{child})
 		}
 		return memoized
 	}
 	fa.memos[child] = nil
+	defer func() {
+		if r := recover(); r != nil {
+			if le, ok := r.(loopError); ok {
+				r = append(loopError{child}, le...)
+			}
+			panic(r)
+		}
+	}()
 
 	ret := make(containers.Set[btrfsprim.ObjID])
 	defer func() {
@@ -124,7 +147,7 @@ func (m uuidMap) considerAncestors(ctx context.Context, treeAncestors map[btrfsp
 		}
 		potentialParents := make(containers.Set[btrfsprim.ObjID])
 		potentialParents.InsertFrom(fa.GetFullAncestors(missingRoot))
-		for ancestor := range fa.GetFullAncestors(missingRoot) {
+		for _, ancestor := range maps.SortedKeys(fa.GetFullAncestors(missingRoot)) {
 			potentialParents.DeleteFrom(fa.GetFullAncestors(ancestor))
 		}
 		if len(potentialParents) == 1 {

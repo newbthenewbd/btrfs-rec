@@ -54,7 +54,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 	}
 
 	dlog.Info(ctx, "Walking trees to rebuild root items...")
-	treeAncestors := getTreeAncestors(*scanData)
+	treeAncestors := getTreeAncestors(ctx, *scanData)
 	scanData.considerAncestors(ctx, treeAncestors)
 
 	////////////////////////////////////////////////////////////////////////////////////////////
@@ -152,24 +152,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 			if !ok {
 				err = scanData.BadNodes[kp.ToNode]
 			} else {
-				var errs derror.MultiError
-				if toNode.Level != kp.ToLevel {
-					errs = append(errs, fmt.Errorf("node.level=%v != kp.level=%v",
-						toNode.Level, kp.ToLevel))
-				}
-				if toNode.Generation != kp.ToGeneration {
-					errs = append(errs, fmt.Errorf("node.generation=%v != kp.generation=%v",
-						toNode.Generation, kp.ToGeneration))
-				}
-				if toNode.NumItems == 0 {
-					errs = append(errs, fmt.Errorf("node.num_items=0"))
-				} else if toNode.MinItem != kp.ToKey {
-					errs = append(errs, fmt.Errorf("node.items[0].key=%v != kp.key=%v",
-						toNode.MinItem, kp.ToKey))
-				}
-				if len(errs) > 0 {
-					err = errs
-				}
+				err = checkNodeExpectations(*kp, toNode)
 			}
 			if err != nil {
 				fmt.Fprintf(&buf, `\n\n%s" color=red]`, html.EscapeString(err.Error()))
@@ -239,5 +222,27 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 
 	dlog.Info(ctx, "... done writing")
 
+	return nil
+}
+
+func checkNodeExpectations(kp kpData, toNode nodeData) error {
+	var errs derror.MultiError
+	if toNode.Level != kp.ToLevel {
+		errs = append(errs, fmt.Errorf("node.level=%v != kp.level=%v",
+			toNode.Level, kp.ToLevel))
+	}
+	if toNode.Generation != kp.ToGeneration {
+		errs = append(errs, fmt.Errorf("node.generation=%v != kp.generation=%v",
+			toNode.Generation, kp.ToGeneration))
+	}
+	if toNode.NumItems == 0 {
+		errs = append(errs, fmt.Errorf("node.num_items=0"))
+	} else if toNode.MinItem != kp.ToKey {
+		errs = append(errs, fmt.Errorf("node.items[0].key=%v != kp.key=%v",
+			toNode.MinItem, kp.ToKey))
+	}
+	if len(errs) > 0 {
+		return errs
+	}
 	return nil
 }

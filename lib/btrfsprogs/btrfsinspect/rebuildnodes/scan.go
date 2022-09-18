@@ -40,6 +40,15 @@ type kpData struct {
 	ToGeneration btrfsprim.Generation
 }
 
+func (kp kpData) String() string {
+	return fmt.Sprintf(`{t:%v,n:%v}[%d]->{n:%v,l:%v,g:%v,k:(%d,%v,%d)}`,
+		kp.FromTree, kp.FromNode, kp.FromItem,
+		kp.ToNode, kp.ToLevel, kp.ToGeneration,
+		kp.ToKey.ObjectID,
+		kp.ToKey.ItemType,
+		kp.ToKey.Offset)
+}
+
 type nodeGraph struct {
 	Nodes     map[btrfsvol.LogicalAddr]nodeData
 	BadNodes  map[btrfsvol.LogicalAddr]error
@@ -170,6 +179,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 				Level:      nodeRef.Data.Head.Level,
 				Generation: nodeRef.Data.Head.Generation,
 				Owner:      nodeRef.Data.Head.Owner,
+				NumItems:   nodeRef.Data.Head.NumItems,
 				MinItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MinItem(); return k }(),
 				MaxItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MaxItem(); return k }(),
 			}
