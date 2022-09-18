@@ -58,12 +58,25 @@ type nodeGraph struct {
 
 func (g nodeGraph) insertEdge(kp kpData) {
 	ptr := &kp
+	if kp.ToNode == 0 {
+		panic("kp.ToNode should not be zero")
+	}
 	g.EdgesFrom[kp.FromNode] = append(g.EdgesFrom[kp.FromNode], ptr)
 	g.EdgesTo[kp.ToNode] = append(g.EdgesTo[kp.ToNode], ptr)
 }
 
 func (g nodeGraph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
-	treeInfo, _ := btrfstree.LookupTreeRoot(nil, sb, treeID)
+	treeInfo, err := btrfstree.LookupTreeRoot(nil, sb, treeID)
+	if err != nil {
+		// This shouldn't ever happen for treeIDs that are
+		// mentioned directly in the superblock; which are the
+		// only trees for which we should call
+		// .insertTreeRoot().
+		panic(fmt.Errorf("LookupTreeRoot(%v): %w", treeID, err))
+	}
+	if treeInfo.RootNode == 0 {
+		return
+	}
 	g.insertEdge(kpData{
 		FromTree:     treeID,
 		ToNode:       treeInfo.RootNode,

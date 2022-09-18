@@ -22,13 +22,30 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func getCliques(uuidMap uuidMap, treeAncestors map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]) map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID] {
+func getCliques(scanData scanResult) map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID] {
 	cliques := make(map[btrfsprim.ObjID]*containers.Set[btrfsprim.ObjID])
-	lister := newFullAncestorLister(uuidMap, treeAncestors)
-	for _, treeID := range maps.SortedKeys(uuidMap.SeenTrees) {
+
+	// UUID map
+	lister := newFullAncestorLister(scanData.uuidMap, map[btrfsprim.ObjID]containers.Set[btrfsprim.ObjID]{})
+	for _, treeID := range maps.SortedKeys(scanData.uuidMap.SeenTrees) {
 		clique := ptrTo(make(containers.Set[btrfsprim.ObjID]))
 		clique.Insert(treeID)
 		clique.InsertFrom(lister.GetFullAncestors(treeID))
+		for _, id := range maps.SortedKeys(*clique) {
+			if existingClique, ok := cliques[id]; ok {
+				clique.InsertFrom(*existingClique)
+			}
+			cliques[id] = clique
+		}
+	}
+
+	// node graph
+	for _, laddr := range maps.SortedKeys(scanData.nodeGraph.Nodes) {
+		clique := ptrTo(make(containers.Set[btrfsprim.ObjID]))
+		clique.Insert(scanData.nodeGraph.Nodes[laddr].Owner)
+		for _, edge := range scanData.nodeGraph.EdgesTo[laddr] {
+			clique.Insert(edge.FromTree)
+		}
 		for _, id := range maps.SortedKeys(*clique) {
 			if existingClique, ok := cliques[id]; ok {
 				clique.InsertFrom(*existingClique)
@@ -53,44 +70,56 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 		return err
 	}
 
-	dlog.Info(ctx, "Walking trees to rebuild root items...")
-	treeAncestors := getTreeAncestors(ctx, *scanData)
-	scanData.considerAncestors(ctx, treeAncestors)
+	////////////////////////////////////////////////////////////////////////////////////////////
+
+	dlog.Info(ctx, "Building cliques...")
+	cliques := getCliques(*scanData)
+	cliqueIDs := make(containers.Set[btrfsprim.ObjID])
+	for treeID := range cliques {
+		cliqueIDs.Insert(getCliqueID(cliques, treeID))
+	}
+	dlog.Infof(ctx, "... built %d cliques of %d trees", len(cliqueIDs), len(cliques))
 
 	////////////////////////////////////////////////////////////////////////////////////////////
 
-	cliques := getCliques(scanData.uuidMap, treeAncestors)
-
-	dlog.Info(ctx, "Building graphviz graph...")
+	dlog.Info(ctx, "Building graphviz graphs...")
 
 	type graph struct {
 		nodes    map[btrfsprim.ObjID]containers.Set[string] // keyed by treeID
 		badNodes containers.Set[string]
 		edges    containers.Set[string]
 	}
-	graphs := make(map[btrfsprim.ObjID]graph) // keyed by cliqueID
+	graphs := make(map[btrfsprim.ObjID]graph, len(cliques)) // keyed by cliqueID
+	for cliqueID := range cliqueIDs {
+		graphs[cliqueID] = graph{
+			nodes:    make(map[btrfsprim.ObjID]containers.Set[string]),
+			badNodes: make(containers.Set[string]),
+			edges:    make(containers.Set[string]),
+		}
+	}
+
+	dlog.Infof(ctx, "... processing %d nodes...", len(scanData.Nodes))
 
 	for _, laddr := range maps.SortedKeys(scanData.Nodes) {
 		nodeData := scanData.Nodes[laddr]
 		cliqueID := getCliqueID(cliques, nodeData.Owner)
 		graph, ok := graphs[cliqueID]
 		if !ok {
-			graph.nodes = make(map[btrfsprim.ObjID]containers.Set[string])
-			graph.badNodes = make(containers.Set[string])
-			graph.edges = make(containers.Set[string])
+			panic(cliqueID)
 		}
 		if graph.nodes[nodeData.Owner] == nil {
 			graph.nodes[nodeData.Owner] = make(containers.Set[string])
 		}
 
 		var buf strings.Builder
-		fmt.Fprintf(&buf, `n%d [shape=record label="%v\ngen=%v\nlvl=%v|{`,
+		fmt.Fprintf(&buf, `n%d [shape=record label="{laddr=%v\lgen=%v\llvl=%v\litems=%v\l|{`,
 			laddr,
 			laddr,
 			nodeData.Generation,
-			nodeData.Level)
-		if nodeData.NumItems == 0 {
-			buf.WriteString("(no items)")
+			nodeData.Level,
+			nodeData.NumItems)
+		if nodeData.Level == 0 {
+			buf.WriteString("leaf")
 		} else {
 			for i := uint32(0); i < nodeData.NumItems; i++ {
 				if i == 0 {
@@ -100,7 +129,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 				}
 			}
 		}
-		buf.WriteString(`}"]`)
+		buf.WriteString(`}}"]`)
 		graph.nodes[nodeData.Owner].Insert(buf.String())
 
 		if len(scanData.EdgesTo[laddr]) == 0 {
@@ -109,6 +138,8 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 
 		graphs[cliqueID] = graph
 	}
+
+	dlog.Infof(ctx, "... processing %d bad nodes...", len(scanData.BadNodes))
 
 	for _, laddr := range maps.SortedKeys(scanData.BadNodes) {
 		cliqueIDs := make(containers.Set[btrfsprim.ObjID])
@@ -121,43 +152,54 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 		}
 
 		cliqueID := cliqueIDs.TakeOne()
-		graph := graphs[cliqueID]
+		graph, ok := graphs[cliqueID]
+		if !ok {
+			panic(cliqueID)
+		}
 		graph.badNodes.Insert(fmt.Sprintf(`n%d [shape=star color=red label="%v"]`, laddr, laddr))
 		graphs[cliqueID] = graph
 	}
 
+	numEdges := 0
+	for _, kps := range scanData.EdgesFrom {
+		numEdges += (len(kps))
+	}
+	dlog.Infof(ctx, "... processing %d keypointers...", numEdges)
+
 	for _, laddr := range maps.SortedKeys(scanData.EdgesFrom) {
 		for _, kp := range scanData.EdgesFrom[laddr] {
 			cliqueID := getCliqueID(cliques, kp.FromTree)
-			graph := graphs[cliqueID]
+			graph, ok := graphs[cliqueID]
+			if !ok {
+				panic(cliqueID)
+			}
 
 			var buf strings.Builder
 			if kp.FromNode == 0 {
-				graph.nodes[kp.FromTree].Insert(fmt.Sprintf(`t%d [label="%s"]`, kp.FromTree, html.EscapeString(kp.FromTree.String())))
+				if graph.nodes[kp.FromTree] == nil {
+					graph.nodes[kp.FromTree] = make(containers.Set[string])
+				}
+				graph.nodes[kp.FromTree].Insert(fmt.Sprintf(`t%d [label="root of %s"]`, kp.FromTree, html.EscapeString(kp.FromTree.String())))
 				fmt.Fprintf(&buf, "t%d", kp.FromTree)
 			} else {
-				fmt.Fprintf(&buf, "n%d", kp.FromNode)
+				fmt.Fprintf(&buf, "n%d:p%d", kp.FromNode, kp.FromItem)
 			}
-			fmt.Fprintf(&buf, ` -> n%d [label="%d: key=(%d,%v,%d) gen=%v`,
-				// dst node
-				kp.ToNode,
-				// label
-				kp.FromItem,
-				kp.ToKey.ObjectID,
-				kp.ToKey.ItemType,
-				kp.ToKey.Offset,
-				kp.ToGeneration)
-			toNode, ok := scanData.Nodes[kp.ToNode]
+			fmt.Fprintf(&buf, ` -> n%d`, kp.ToNode)
+
 			var err error
+			toNode, ok := scanData.Nodes[kp.ToNode]
 			if !ok {
 				err = scanData.BadNodes[kp.ToNode]
 			} else {
 				err = checkNodeExpectations(*kp, toNode)
 			}
 			if err != nil {
-				fmt.Fprintf(&buf, `\n\n%s" color=red]`, html.EscapeString(err.Error()))
-			} else {
-				buf.WriteString(`"]`)
+				fmt.Fprintf(&buf, ` [label="key=(%d,%v,%d) gen=%v\l\l%s" color=red]`,
+					kp.ToKey.ObjectID,
+					kp.ToKey.ItemType,
+					kp.ToKey.Offset,
+					kp.ToGeneration,
+					strings.ReplaceAll(strings.ReplaceAll(html.EscapeString(err.Error())+"\n", "\n", `\l`), `\n`, `\l`))
 			}
 
 			graph.edges.Insert(buf.String())
@@ -181,7 +223,9 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 			if _, err := fmt.Fprintf(buf, "strict digraph clique%d {\n", cliqueID); err != nil {
 				return err
 			}
-
+			if _, err := fmt.Fprintf(buf, "rankdir=LR;\n  nodesep=0.1;\n  ranksep=25;\n  splines=line;\n"); err != nil {
+				return err
+			}
 			for _, treeID := range maps.SortedKeys(graph.nodes) {
 				nodes := graph.nodes[treeID]
 
@@ -198,7 +242,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 				}
 			}
 			for _, node := range maps.SortedKeys(graph.badNodes) {
-				if _, err := fmt.Fprintf(buf, "   %s;\n", node); err != nil {
+				if _, err := fmt.Fprintf(buf, "  %s;\n", node); err != nil {
 					return err
 				}
 			}
