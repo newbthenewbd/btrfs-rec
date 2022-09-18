@@ -156,7 +156,8 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 		if !ok {
 			panic(cliqueID)
 		}
-		graph.badNodes.Insert(fmt.Sprintf(`n%d [shape=star color=red label="%v"]`, laddr, laddr))
+		graph.badNodes.Insert(fmt.Sprintf(`n%d [shape=star color=red label="%v\l\lerr=%s"]`,
+			laddr, laddr, gvEscape(scanData.BadNodes[laddr].Error()+"\n")))
 		graphs[cliqueID] = graph
 	}
 
@@ -179,7 +180,7 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 				if graph.nodes[kp.FromTree] == nil {
 					graph.nodes[kp.FromTree] = make(containers.Set[string])
 				}
-				graph.nodes[kp.FromTree].Insert(fmt.Sprintf(`t%d [label="root of %s"]`, kp.FromTree, html.EscapeString(kp.FromTree.String())))
+				graph.nodes[kp.FromTree].Insert(fmt.Sprintf(`t%d [label="root of %s"]`, kp.FromTree, gvEscape(kp.FromTree.String())))
 				fmt.Fprintf(&buf, "t%d", kp.FromTree)
 			} else {
 				fmt.Fprintf(&buf, "n%d:p%d", kp.FromNode, kp.FromItem)
@@ -194,12 +195,12 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 				err = checkNodeExpectations(*kp, toNode)
 			}
 			if err != nil {
-				fmt.Fprintf(&buf, ` [label="key=(%d,%v,%d) gen=%v\l\l%s" color=red]`,
+				fmt.Fprintf(&buf, ` [label="key=(%d,%v,%d) gen=%v\l\lerr=%s" color=red]`,
 					kp.ToKey.ObjectID,
 					kp.ToKey.ItemType,
 					kp.ToKey.Offset,
 					kp.ToGeneration,
-					strings.ReplaceAll(strings.ReplaceAll(html.EscapeString(err.Error())+"\n", "\n", `\l`), `\n`, `\l`))
+					gvEscape(err.Error()+"\n"))
 			}
 
 			graph.edges.Insert(buf.String())
@@ -269,21 +270,28 @@ func VisualizeNodes(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanRe
 	return nil
 }
 
+func gvEscape(str string) string {
+	str = html.EscapeString(str)
+	str = strings.ReplaceAll(str, "\n", `\l`)
+	str = strings.ReplaceAll(str, `\n`, `\l`)
+	return str
+}
+
 func checkNodeExpectations(kp kpData, toNode nodeData) error {
 	var errs derror.MultiError
 	if toNode.Level != kp.ToLevel {
-		errs = append(errs, fmt.Errorf("node.level=%v != kp.level=%v",
-			toNode.Level, kp.ToLevel))
+		errs = append(errs, fmt.Errorf("kp.level=%v != node.level=%v",
+			kp.ToLevel, toNode.Level))
 	}
 	if toNode.Generation != kp.ToGeneration {
-		errs = append(errs, fmt.Errorf("node.generation=%v != kp.generation=%v",
-			toNode.Generation, kp.ToGeneration))
+		errs = append(errs, fmt.Errorf("kp.generation=%v != node.generation=%v",
+			kp.ToGeneration, toNode.Generation))
 	}
 	if toNode.NumItems == 0 {
 		errs = append(errs, fmt.Errorf("node.num_items=0"))
-	} else if toNode.MinItem != kp.ToKey {
-		errs = append(errs, fmt.Errorf("node.items[0].key=%v != kp.key=%v",
-			toNode.MinItem, kp.ToKey))
+	} else if kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem != kp.ToKey {
+		errs = append(errs, fmt.Errorf("kp.key=%v != node.items[0].key=%v",
+			kp.ToKey, toNode.MinItem))
 	}
 	if len(errs) > 0 {
 		return errs
