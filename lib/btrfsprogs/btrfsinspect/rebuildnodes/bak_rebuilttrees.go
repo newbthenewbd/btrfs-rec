@@ -4,6 +4,7 @@
 
 package rebuildnodes
 
+/*
 import (
 	"context"
 	"fmt"
@@ -85,3 +86,4 @@ func (fs *RebuiltTrees) TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim
 func (fs *RebuiltTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]btrfstree.Item, error) {
 	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, fn)
 }
+*/

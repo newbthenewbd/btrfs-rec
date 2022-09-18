@@ -4,6 +4,7 @@
 
 package rebuildnodes
 
+/*
 import (
 	"context"
 	"sort"
@@ -157,3 +158,4 @@ func reAttachNodes(ctx context.Context, fs _FS, orphanedNodes containers.Set[btr
 		numAttached, int(100*float64(numAttached)/float64(len(orphanedNodes))))
 	return nil
 }
+*/

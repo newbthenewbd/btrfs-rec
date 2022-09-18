@@ -6,6 +6,7 @@ package rebuildnodes
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -20,23 +21,46 @@ import (
 )
 
 type nodeData struct {
-	Level      uint8                // 0+1=1
-	Generation btrfsprim.Generation // 1+8=9
-	Owner      btrfsprim.ObjID      // 9+8=17
-	MinItem    btrfsprim.Key        // 17+17=34
-	MaxItem    btrfsprim.Key        // 34+17=51
+	Level      uint8
+	Generation btrfsprim.Generation
+	Owner      btrfsprim.ObjID
+	NumItems   uint32
+	MinItem    btrfsprim.Key
+	MaxItem    btrfsprim.Key
 }
 
 type kpData struct {
-	From, To   btrfsvol.LogicalAddr // 0+(2*8)=16
-	Key        btrfsprim.Key        // 16+17=33
-	Generation btrfsprim.Generation // 33+8=41
+	FromTree btrfsprim.ObjID
+	FromNode btrfsvol.LogicalAddr
+	FromItem int
+
+	ToNode       btrfsvol.LogicalAddr
+	ToLevel      uint8
+	ToKey        btrfsprim.Key
+	ToGeneration btrfsprim.Generation
 }
 
 type nodeGraph struct {
 	Nodes     map[btrfsvol.LogicalAddr]nodeData
+	BadNodes  map[btrfsvol.LogicalAddr]error
 	EdgesFrom map[btrfsvol.LogicalAddr][]*kpData
 	EdgesTo   map[btrfsvol.LogicalAddr][]*kpData
+}
+
+func (g nodeGraph) insertEdge(kp kpData) {
+	ptr := &kp
+	g.EdgesFrom[kp.FromNode] = append(g.EdgesFrom[kp.FromNode], ptr)
+	g.EdgesTo[kp.ToNode] = append(g.EdgesTo[kp.ToNode], ptr)
+}
+
+func (g nodeGraph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
+	treeInfo, _ := btrfstree.LookupTreeRoot(nil, sb, treeID)
+	g.insertEdge(kpData{
+		FromTree:     treeID,
+		ToNode:       treeInfo.RootNode,
+		ToLevel:      treeInfo.Level,
+		ToGeneration: treeInfo.Generation,
+	})
 }
 
 type scanResult struct {
@@ -45,7 +69,7 @@ type scanResult struct {
 }
 
 func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (*scanResult, error) {
-	dlog.Infof(ctx, "Building table of ObjID←→UUID...")
+	dlog.Infof(ctx, "Reading node data from FS...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
@@ -74,6 +98,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		},
 		nodeGraph: nodeGraph{
 			Nodes:     make(map[btrfsvol.LogicalAddr]nodeData),
+			BadNodes:  make(map[btrfsvol.LogicalAddr]error),
 			EdgesFrom: make(map[btrfsvol.LogicalAddr][]*kpData),
 			EdgesTo:   make(map[btrfsvol.LogicalAddr][]*kpData),
 		},
@@ -81,10 +106,19 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 
 	// These 4 trees are mentioned directly in the superblock, so
 	// they are always seen.
+	//
+	// 1
 	ret.SeenTrees.Insert(btrfsprim.ROOT_TREE_OBJECTID)
+	ret.insertTreeRoot(*sb, btrfsprim.ROOT_TREE_OBJECTID)
+	// 2
 	ret.SeenTrees.Insert(btrfsprim.CHUNK_TREE_OBJECTID)
+	ret.insertTreeRoot(*sb, btrfsprim.CHUNK_TREE_OBJECTID)
+	// 3
 	ret.SeenTrees.Insert(btrfsprim.TREE_LOG_OBJECTID)
+	ret.insertTreeRoot(*sb, btrfsprim.TREE_LOG_OBJECTID)
+	// 4
 	ret.SeenTrees.Insert(btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
+	ret.insertTreeRoot(*sb, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
 
 	progress()
 	for _, devResults := range scanResults {
@@ -112,6 +146,13 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 						return nil, err
 					}
 					ret.SeenTrees.Insert(item.Key.ObjectID)
+					// graph building
+					ret.insertEdge(kpData{
+						FromTree:     item.Key.ObjectID,
+						ToNode:       itemBody.ByteNr,
+						ToLevel:      itemBody.Level,
+						ToGeneration: itemBody.Generation,
+					})
 				case btrfsitem.UUIDMap:
 					uuid := btrfsitem.KeyToUUID(item.Key)
 					if err := maybeSet("ObjID2UUID", ret.ObjID2UUID, itemBody.ObjID, uuid); err != nil {
@@ -132,15 +173,16 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 				MinItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MinItem(); return k }(),
 				MaxItem:    func() btrfsprim.Key { k, _ := nodeRef.Data.MaxItem(); return k }(),
 			}
-			for _, kp := range nodeRef.Data.BodyInternal {
-				dat := &kpData{
-					From:       laddr,
-					To:         kp.BlockPtr,
-					Key:        kp.Key,
-					Generation: kp.Generation,
-				}
-				ret.EdgesFrom[laddr] = append(ret.EdgesFrom[laddr], dat)
-				ret.EdgesTo[laddr] = append(ret.EdgesTo[laddr], dat)
+			for i, kp := range nodeRef.Data.BodyInternal {
+				ret.insertEdge(kpData{
+					FromTree:     nodeRef.Data.Head.Owner,
+					FromNode:     laddr,
+					FromItem:     i,
+					ToNode:       kp.BlockPtr,
+					ToLevel:      nodeRef.Data.Head.Level - 1,
+					ToKey:        kp.Key,
+					ToGeneration: kp.Generation,
+				})
 			}
 
 			done++
@@ -157,6 +199,26 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		dlog.Errorf(ctx, "... could not find root items for %d trees: %v", len(missing), maps.SortedKeys(missing))
 	}
 
-	dlog.Info(ctx, "... done building table")
+	dlog.Info(ctx, "... done reading node data")
+
+	dlog.Infof(ctx, "Checking keypointers for dead-ends...")
+	total = len(ret.EdgesTo)
+	done = 0
+	progress()
+	for laddr := range ret.EdgesTo {
+		if _, ok := ret.Nodes[laddr]; !ok {
+			_, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
+				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+			})
+			if err == nil {
+				return nil, fmt.Errorf("node@%v exists but was not in node scan results", laddr)
+			}
+			ret.BadNodes[laddr] = err
+		}
+		done++
+		progress()
+	}
+	dlog.Info(ctx, "... done checking keypointers")
+
 	return ret, nil
 }

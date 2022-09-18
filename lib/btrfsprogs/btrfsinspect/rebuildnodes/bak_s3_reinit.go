@@ -4,17 +4,13 @@
 
 package rebuildnodes
 
+/*
 import (
-	"context"
 	"fmt"
 	"reflect"
-	"sort"
-
-	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
@@ -140,3 +136,4 @@ func reInitBrokenNodes(ctx context.Context, fs _FS, badNodes []badNode) (map[btr
 	dlog.Infof(ctx, "... initialized %d nodes", len(rebuiltNodes))
 	return rebuiltNodes, nil
 }
+*/

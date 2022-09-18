@@ -4,8 +4,10 @@
 
 package rebuildnodes
 
+/*
 import (
 	"context"
+	"errors"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -13,38 +15,37 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]*RebuiltNode, error) {
-	uuidMap, err := buildUUIDMap(ctx, fs, nodeScanResults)
-	if err != nil {
-		return nil, err
-	}
+		uuidMap, err := buildUUIDMap(ctx, fs, nodeScanResults)
+		if err != nil {
+			return nil, err
+		}
 
-	nfs := &RebuiltTrees{
-		inner:   fs,
-		uuidMap: uuidMap,
-	}
+		nfs := &RebuiltTrees{
+			inner:   fs,
+			uuidMap: uuidMap,
+		}
 
-	orphanedNodes, badNodes, treeAncestors, err := classifyNodes(ctx, nfs, nodeScanResults)
-	if err != nil {
-		return nil, err
-	}
+		orphanedNodes, badNodes, treeAncestors, err := classifyNodes(ctx, nfs, nodeScanResults)
+		if err != nil {
+			return nil, err
+		}
 
-	uuidMap.considerAncestors(ctx, treeAncestors)
+		uuidMap.considerAncestors(ctx, treeAncestors)
 
-	rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, badNodes)
-	if err != nil {
-		return nil, err
-	}
+		rebuiltNodes, err := reInitBrokenNodes(ctx, nfs, badNodes)
+		if err != nil {
+			return nil, err
+		}
 
-	if err := reAttachNodes(ctx, nfs, orphanedNodes, rebuiltNodes); err != nil {
-		return nil, err
-	}
+		if err := reAttachNodes(ctx, nfs, orphanedNodes, rebuiltNodes); err != nil {
+			return nil, err
+		}
 
-	return rebuiltNodes, nil
+		return rebuiltNodes, nil
 }
 
 func spanOfTreePath(fs _FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.Key) {
@@ -79,23 +80,6 @@ func spanOfTreePath(fs _FS, path btrfstree.TreePath) (btrfsprim.Key, btrfsprim.K
 	return low, high
 }
 
-func walkFromNode(ctx context.Context, fs _FS, nodeAddr btrfsvol.LogicalAddr, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	sb, _ := fs.Superblock()
-	nodeRef, _ := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, nodeAddr, btrfstree.NodeExpectations{
-		LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeAddr},
-	})
-	if nodeRef == nil {
-		return
-	}
-	treeInfo := btrfstree.TreeRoot{
-		TreeID:     nodeRef.Data.Head.Owner,
-		RootNode:   nodeAddr,
-		Level:      nodeRef.Data.Head.Level,
-		Generation: nodeRef.Data.Head.Generation,
-	}
-	btrfstree.TreeOperatorImpl{NodeSource: fs}.RawTreeWalk(ctx, treeInfo, errHandle, cbs)
-}
-
 func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	var ret btrfsprim.UUID
@@ -115,3 +99,4 @@ func getChunkTreeUUID(ctx context.Context, fs _FS) (btrfsprim.UUID, bool) {
 	})
 	return ret, retOK
 }
+*/

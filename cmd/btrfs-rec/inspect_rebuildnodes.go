@@ -4,6 +4,7 @@
 
 package main
 
+/*
 import (
 	"bufio"
 	"io"
@@ -65,3 +66,4 @@ func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsvol.LogicalAddr]*rebuildn
 		ForceTrailingNewlines: true,
 	}, rebuiltNodes)
 }
+*/

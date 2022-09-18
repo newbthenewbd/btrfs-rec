@@ -4,6 +4,7 @@
 
 package rebuildnodes_test
 
+/*
 import (
 	"strings"
 	"testing"
@@ -78,3 +79,4 @@ func TestEncodeRebuiltNodes(t *testing.T) {
 }
 `, buf.String())
 }
+*/

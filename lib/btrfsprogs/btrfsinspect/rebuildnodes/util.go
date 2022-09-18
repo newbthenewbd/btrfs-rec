@@ -6,9 +6,7 @@ package rebuildnodes
 
 import (
 	"fmt"
-	"math"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
@@ -24,6 +22,7 @@ func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	return nil
 }
 
+/*
 var maxKey = btrfsprim.Key{
 	ObjectID: math.MaxUint64,
 	ItemType: math.MaxUint8,
@@ -41,6 +40,7 @@ func keyMm(key btrfsprim.Key) btrfsprim.Key {
 	}
 	return key
 }
+*/
 
 func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
 	var cnt int
