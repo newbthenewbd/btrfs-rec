@@ -26,6 +26,9 @@ gen $b.gen/1.mappings.json \
 gen $b.gen/2.nodes.zip \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/1.mappings.json \
     inspect visualize-nodes $b.gen/0.scandevices.json
+gen $b.gen/2.loops.txt \
+    ./btrfs-rec --pv=$b.img --mappings=$b.gen/1.mappings.json \
+    inspect show-loops $b.gen/0.scandevices.json
 # gen $b.gen/2.nodes.json \
 #     ./btrfs-rec --pv=$b.img --mappings=$b.gen/1.mappings.json \
 #     inspect rebuild-nodes $b.gen/0.scandevices.json
