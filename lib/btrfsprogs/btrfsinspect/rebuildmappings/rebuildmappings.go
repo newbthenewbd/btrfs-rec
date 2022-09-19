@@ -159,6 +159,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 
 	dlog.Info(ctx, "report:")
 	p := message.NewPrinter(message.MatchLanguage("en"))
+
 	unmappedPhysicalRegions := ListUnmappedPhysicalRegions(fs)
 	var unmappedPhysical btrfsvol.AddrDelta
 	var numUnmappedPhysical int
@@ -169,17 +170,36 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 		}
 	}
 	dlog.Info(ctx, p.Sprintf("... %d KiB of unmapped physical space (across %d regions)", int(unmappedPhysical/1024), numUnmappedPhysical))
+
 	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
 	var unmappedLogical btrfsvol.AddrDelta
 	for _, region := range unmappedLogicalRegions {
 		unmappedLogical += region.Size()
 	}
 	dlog.Info(ctx, p.Sprintf("... %d KiB of unmapped summed logical space (across %d regions)", int(unmappedLogical/1024), len(unmappedLogicalRegions)))
+
 	var unmappedBlockGroups btrfsvol.AddrDelta
 	for _, bg := range bgs {
 		unmappedBlockGroups += bg.Size
 	}
 	dlog.Info(ctx, p.Sprintf("... %d KiB of unmapped block groups (across %d groups)", int(unmappedBlockGroups/1024), len(bgs)))
+
+	dlog.Info(ctx, "detailed report:")
+	for _, devID := range maps.SortedKeys(unmappedPhysicalRegions) {
+		for _, region := range unmappedPhysicalRegions[devID] {
+			dlog.Infof(ctx, "... unmapped physical region: dev=%v beg=%v end=%v (size=%v)",
+				devID, region.Beg, region.End, region.End.Sub(region.Beg))
+		}
+	}
+	for _, region := range unmappedLogicalRegions {
+		dlog.Infof(ctx, "... umapped summed logical region:  beg=%v end=%v (size=%v)",
+			region.Addr, region.Addr.Add(region.Size()), region.Size())
+	}
+	for _, laddr := range maps.SortedKeys(bgs) {
+		bg := bgs[laddr]
+		dlog.Infof(ctx, "... umapped block group:            beg=%v end=%v (size=%v) flags=%v",
+			bg.LAddr, bg.LAddr.Add(bg.Size), bg.Size, bg.Flags)
+	}
 
 	return nil
 }

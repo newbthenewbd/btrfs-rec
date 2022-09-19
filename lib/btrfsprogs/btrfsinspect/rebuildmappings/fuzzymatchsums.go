@@ -129,7 +129,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		}
 		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... ... done searcihng")
+	dlog.Info(ctx, "... ... done searching")
 
 	return nil
 }
