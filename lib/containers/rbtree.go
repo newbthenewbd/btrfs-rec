@@ -34,8 +34,9 @@ func (node *RBNode[V]) getColor() Color {
 }
 
 type RBTree[K Ordered[K], V any] struct {
-	KeyFn func(V) K
-	root  *RBNode[V]
+	KeyFn  func(V) K
+	AttrFn func(*RBNode[V])
+	root   *RBNode[V]
 }
 
 func (t *RBTree[K, V]) Walk(fn func(*RBNode[V]) error) error {
@@ -235,6 +236,16 @@ func (t *RBTree[K, V]) parentChild(node *RBNode[V]) **RBNode[V] {
 	}
 }
 
+func (t *RBTree[K, V]) updateAttr(node *RBNode[V]) {
+	if t.AttrFn == nil {
+		return
+	}
+	for node != nil {
+		t.AttrFn(node)
+		node = node.Parent
+	}
+}
+
 func (t *RBTree[K, V]) leftRotate(x *RBNode[V]) {
 	//        p                        p
 	//        |                        |
@@ -266,6 +277,8 @@ func (t *RBTree[K, V]) leftRotate(x *RBNode[V]) {
 		b.Parent = x
 	}
 	x.Right = b
+
+	t.updateAttr(x)
 }
 
 func (t *RBTree[K, V]) rightRotate(y *RBNode[V]) {
@@ -298,6 +311,8 @@ func (t *RBTree[K, V]) rightRotate(y *RBNode[V]) {
 		b.Parent = y
 	}
 	y.Left = b
+
+	t.updateAttr(y)
 }
 
 func (t *RBTree[K, V]) Insert(val V) {
@@ -322,6 +337,7 @@ func (t *RBTree[K, V]) Insert(val V) {
 	} else {
 		parent.Right = node
 	}
+	t.updateAttr(node)
 
 	// Re-balance
 	//
@@ -381,6 +397,8 @@ func (t *RBTree[K, V]) Delete(key K) {
 
 	// This is closely based on the algorithm presented in CLRS
 	// 3e.
+
+	// phase 1
 
 	var nodeToRebalance *RBNode[V]
 	var nodeToRebalanceParent *RBNode[V] // in case 'nodeToRebalance' is nil, which it can be
@@ -460,6 +478,9 @@ func (t *RBTree[K, V]) Delete(key K) {
 		needsRebalance = next.Color == Black
 		next.Color = nodeToDelete.Color
 	}
+	t.updateAttr(nodeToRebalanceParent)
+
+	// phase 2
 
 	if needsRebalance {
 		node := nodeToRebalance
