@@ -85,10 +85,14 @@ type TreePathElem struct {
 	// ToNodeAddr, or 0 if this is a leaf item and nothing is
 	// being pointed at.
 	ToNodeLevel uint8
-	// ToKey is btrfprim.Key{} this is the root node being pointed
-	// to, the KeyPointer.Key if this is a non-root node being
-	// pointed to, or the key of the leaf item being bointed to.
-	ToKey btrfsprim.Key
+	// ToKey is either
+	//  - btrfprim.Key{} if this is the root node being pointed
+	//    to,
+	//  - the KeyPointer.Key if this is a non-root node being
+	//    pointed to, or
+	//  - the key of the leaf item being pointed to.
+	ToKey    btrfsprim.Key
+	ToMaxKey btrfsprim.Key
 }
 
 func (elem TreePathElem) writeNodeTo(w io.Writer) {

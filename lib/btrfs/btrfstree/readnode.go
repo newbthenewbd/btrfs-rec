@@ -68,5 +68,6 @@ func FSReadNode(
 		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: path.Node(-1).ToNodeGeneration},
 		Owner:      checkOwner,
 		MinItem:    containers.Optional[btrfsprim.Key]{OK: true, Val: path.Node(-1).ToKey},
+		MaxItem:    containers.Optional[btrfsprim.Key]{OK: true, Val: path.Node(-1).ToMaxKey},
 	})
 }
