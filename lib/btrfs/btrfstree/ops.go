@@ -412,10 +412,10 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
 				FromItemIdx:      0,
-				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
+				ToNodeAddr:       node.Data.BodyInternal[0].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInternal[0].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Key,
+				ToKey:            node.Data.BodyInternal[0].Key,
 			})
 		} else {
 			path = append(path, TreePathElem{
