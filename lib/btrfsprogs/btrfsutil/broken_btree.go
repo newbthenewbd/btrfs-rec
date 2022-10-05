@@ -31,28 +31,33 @@ var maxKey = btrfsprim.Key{
 type treeIndex struct {
 	TreeRootErr error
 	Items       *containers.RBTree[btrfsprim.Key, treeIndexValue]
-	Errors      *containers.IntervalTree[btrfsprim.Key, *btrfstree.TreeError]
+	Errors      *containers.IntervalTree[btrfsprim.Key, treeIndexError]
+}
+
+type treeIndexError struct {
+	Path SkinnyPath
+	Err  error
 }
 
 type treeIndexValue struct {
+	Path     SkinnyPath
 	Key      btrfsprim.Key
 	ItemSize uint32
-	Path     btrfstree.TreePath
 }
 
-func newTreeIndex() treeIndex {
+func newTreeIndex(arena *SkinnyPathArena) treeIndex {
 	return treeIndex{
 		Items: &containers.RBTree[btrfsprim.Key, treeIndexValue]{
 			KeyFn: func(iv treeIndexValue) btrfsprim.Key {
 				return iv.Key
 			},
 		},
-		Errors: &containers.IntervalTree[btrfsprim.Key, *btrfstree.TreeError]{
-			MinFn: func(err *btrfstree.TreeError) btrfsprim.Key {
-				return err.Path.Node(-1).ToKey
+		Errors: &containers.IntervalTree[btrfsprim.Key, treeIndexError]{
+			MinFn: func(err treeIndexError) btrfsprim.Key {
+				return arena.Inflate(err.Path).Node(-1).ToKey
 			},
-			MaxFn: func(err *btrfstree.TreeError) btrfsprim.Key {
-				return err.Path.Node(-1).ToMaxKey
+			MaxFn: func(err treeIndexError) btrfsprim.Key {
+				return arena.Inflate(err.Path).Node(-1).ToMaxKey
 			},
 		},
 	}
@@ -61,6 +66,8 @@ func newTreeIndex() treeIndex {
 type brokenTrees struct {
 	ctx   context.Context
 	inner *btrfs.FS
+
+	arena SkinnyPathArena
 
 	// btrfsprim.ROOT_TREE_OBJECTID
 	rootTreeMu    sync.Mutex
@@ -130,7 +137,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 			treeRoot, err = btrfstree.LookupTreeRoot(bt, *sb, treeID)
 		}
 	}
-	cacheEntry := newTreeIndex()
+	cacheEntry := newTreeIndex(&bt.arena)
 	if err != nil {
 		cacheEntry.TreeRootErr = err
 	} else {
@@ -144,7 +151,10 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 					// indicates a bug in my item parser than a problem with the filesystem.
 					panic(fmt.Errorf("TODO: error parsing item: %w", err))
 				}
-				cacheEntry.Errors.Insert(err) // TODO
+				cacheEntry.Errors.Insert(treeIndexError{
+					Path: bt.arena.Deflate(err.Path),
+					Err:  err.Err,
+				})
 			},
 			btrfstree.TreeWalkHandler{
 				Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
@@ -155,9 +165,9 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 						panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
 					}
 					cacheEntry.Items.Insert(treeIndexValue{
+						Path:     bt.arena.Deflate(path),
 						Key:      item.Key,
 						ItemSize: item.BodySize,
-						Path:     path.DeepCopy(), // TODO
 					})
 					return nil
 				},
@@ -193,17 +203,21 @@ func (bt *brokenTrees) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key,
 		return btrfstree.Item{}, iofs.ErrNotExist
 	}
 
-	node, err := bt.inner.ReadNode(indexItem.Value.Path.Parent())
+	itemPath := bt.arena.Inflate(indexItem.Value.Path)
+	node, err := bt.inner.ReadNode(itemPath.Parent())
 	if err != nil {
 		return btrfstree.Item{}, err
 	}
 
-	item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).FromItemIdx]
+	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
 
 	if errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(errs) > 0 {
 		err := make(derror.MultiError, len(errs))
 		for i := range errs {
-			err[i] = errs[i]
+			err[i] = &btrfstree.TreeError{
+				Path: bt.arena.Inflate(errs[i].Path),
+				Err:  errs[i].Err,
+			}
 		}
 		return item, err
 	}
@@ -226,20 +240,24 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 	ret := make([]btrfstree.Item, len(indexItems))
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
 	for i := range indexItems {
-		if node == nil || node.Addr != indexItems[i].Path.Node(-2).ToNodeAddr {
+		itemPath := bt.arena.Inflate(indexItems[i].Path)
+		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
 			var err error
-			node, err = bt.inner.ReadNode(indexItems[i].Path.Parent())
+			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
 				return nil, err
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[indexItems[i].Path.Node(-1).FromItemIdx]
+		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
 	}
 
 	if errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(errs) > 0 {
 		err := make(derror.MultiError, len(errs))
 		for i := range errs {
-			err[i] = errs[i]
+			err[i] = &btrfstree.TreeError{
+				Path: bt.arena.Inflate(errs[i].Path),
+				Err:  errs[i].Err,
+			}
 		}
 		return ret, err
 	}
@@ -268,17 +286,18 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 			return bt.ctx.Err()
 		}
 		if cbs.Item != nil {
-			if node == nil || node.Addr != indexItem.Value.Path.Node(-2).ToNodeAddr {
+			itemPath := bt.arena.Inflate(indexItem.Value.Path)
+			if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
 				var err error
-				node, err = bt.inner.ReadNode(indexItem.Value.Path.Parent())
+				node, err = bt.inner.ReadNode(itemPath.Parent())
 				if err != nil {
-					errHandle(&btrfstree.TreeError{Path: indexItem.Value.Path, Err: err})
+					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 					return nil
 				}
 			}
-			item := node.Data.BodyLeaf[indexItem.Value.Path.Node(-1).FromItemIdx]
-			if err := cbs.Item(indexItem.Value.Path, item); err != nil {
-				errHandle(&btrfstree.TreeError{Path: indexItem.Value.Path, Err: err})
+			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+			if err := cbs.Item(itemPath, item); err != nil {
+				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 			}
 		}
 		return nil
