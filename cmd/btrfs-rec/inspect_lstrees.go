@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	var nodescanFilename string
+	var scandevicesFilename string
 	cmd := subcommand{
 		Command: cobra.Command{
 			Use:   "ls-trees",
@@ -37,8 +37,8 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
-			if nodescanFilename != "" {
-				scanResultsBytes, err := os.ReadFile(nodescanFilename)
+			if scandevicesFilename != "" {
+				scanResultsBytes, err := os.ReadFile(scandevicesFilename)
 				if err != nil {
 					return err
 				}
@@ -95,7 +95,7 @@ func init() {
 				},
 			})
 
-			if nodescanFilename != "" {
+			if scandevicesFilename != "" {
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
 				fmt.Printf("lost+found\n")
@@ -125,8 +125,8 @@ func init() {
 			return nil
 		},
 	}
-	cmd.Command.Flags().StringVar(&nodescanFilename, "nodescan", "", "Output of scan-for-nodes to use for a lost+found tree")
-	if err := cmd.Command.MarkFlagFilename("nodescan"); err != nil {
+	cmd.Command.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'scandevices' to use for a lost+found tree")
+	if err := cmd.Command.MarkFlagFilename("scandevices"); err != nil {
 		panic(err)
 	}
 	inspectors = append(inspectors, cmd)

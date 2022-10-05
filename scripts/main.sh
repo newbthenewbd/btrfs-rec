@@ -38,4 +38,4 @@ gen $b.gen/3.ls-files.txt \
     inspect ls-files
 gen $b.gen/3.ls-trees.txt \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/1.mappings.json \
-    inspect ls-trees
+    inspect ls-trees --scandevices=$b.gen/0.scandevices.json
