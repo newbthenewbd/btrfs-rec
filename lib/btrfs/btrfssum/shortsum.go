@@ -28,6 +28,12 @@ var (
 	_ lowmemjson.Decodable = (*ShortSum)(nil)
 )
 
+func (sum ShortSum) ToFullSum() CSum {
+	var ret CSum
+	copy(ret[:], sum)
+	return ret
+}
+
 func (sum ShortSum) EncodeJSON(w io.Writer) error {
 	const hextable = "0123456789abcdef"
 	var buf [2]byte

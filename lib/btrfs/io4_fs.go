@@ -16,6 +16,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
@@ -366,8 +367,8 @@ func (ret *File) populate() {
 func (file *File) ReadAt(dat []byte, off int64) (int, error) {
 	// These stateless maybe-short-reads each do an O(n) extent
 	// lookup, so reading a file is O(n^2), but we expect n to be
-	// small, so whatev.  Turn file.Extents it in to an rbtree if
-	// it becomes a problem.
+	// small, so whatev.  Turn file.Extents in to an rbtree if it
+	// becomes a problem.
 	done := 0
 	for done < len(dat) {
 		n, err := file.maybeShortReadAt(dat[done:], off+int64(done))
@@ -394,15 +395,51 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 			continue
 		}
 		offsetWithinExt := off - extent.OffsetWithinFile
-		readSize := slices.Min(int64(len(dat)), extLen-offsetWithinExt)
+		readSize := slices.Min(int64(len(dat)), extLen-offsetWithinExt, btrfssum.BlockSize)
 		switch extent.Type {
 		case btrfsitem.FILE_EXTENT_INLINE:
 			return copy(dat, extent.BodyInline[offsetWithinExt:offsetWithinExt+readSize]), nil
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			return file.SV.FS.ReadAt(dat[:readSize],
-				extent.BodyExtent.DiskByteNr.
-					Add(extent.BodyExtent.Offset).
-					Add(btrfsvol.AddrDelta(offsetWithinExt)))
+			sb, err := file.SV.FS.Superblock()
+			if err != nil {
+				return 0, err
+			}
+			var beg btrfsvol.LogicalAddr = extent.BodyExtent.DiskByteNr.
+				Add(extent.BodyExtent.Offset).
+				Add(btrfsvol.AddrDelta(offsetWithinExt))
+			var block [btrfssum.BlockSize]byte
+			blockBeg := (beg / btrfssum.BlockSize) * btrfssum.BlockSize
+			n, err := file.SV.FS.ReadAt(block[:], blockBeg)
+			if n > int(beg-blockBeg) {
+				n = copy(dat[:readSize], block[beg-blockBeg:])
+			} else {
+				n = 0
+			}
+			if err != nil {
+				return 0, err
+			}
+
+			sumRun, err := LookupCSum(file.SV.FS, sb.ChecksumType, blockBeg)
+			if err != nil {
+				return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
+			}
+			_expSum, ok := sumRun.SumForAddr(blockBeg)
+			if !ok {
+				panic(fmt.Errorf("run from LookupCSum(fs, typ, %v) did not contain %v: %#v",
+					blockBeg, blockBeg, sumRun))
+			}
+			expSum := _expSum.ToFullSum()
+
+			actSum, err := sb.ChecksumType.Sum(block[:])
+			if err != nil {
+				return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
+			}
+
+			if actSum != expSum {
+				return 0, fmt.Errorf("checksum@%v: actual sum %v != expected sum %v",
+					blockBeg, actSum, expSum)
+			}
+			return n, nil
 		}
 	}
 	if file.InodeItem != nil && off >= file.InodeItem.Size {

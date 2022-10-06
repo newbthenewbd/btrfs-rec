@@ -21,7 +21,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 )
 
 type ScanDevicesResult map[btrfsvol.DeviceID]ScanOneDeviceResult
@@ -126,7 +125,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 		pos := btrfsvol.PhysicalAddr(i * btrfssum.BlockSize)
 		progress(pos)
 
-		sum, err := btrfsutil.ChecksumPhysical(dev, alg, pos)
+		sum, err := btrfs.ChecksumPhysical(dev, alg, pos)
 		if err != nil {
 			return result, err
 		}
