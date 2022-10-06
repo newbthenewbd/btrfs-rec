@@ -67,7 +67,7 @@ type brokenTrees struct {
 	ctx   context.Context
 	inner *btrfs.FS
 
-	arena SkinnyPathArena
+	arena *SkinnyPathArena
 
 	// btrfsprim.ROOT_TREE_OBJECTID
 	rootTreeMu    sync.Mutex
@@ -110,6 +110,7 @@ func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) interface {
 
 func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 	var treeRoot *btrfstree.TreeRoot
+	var sb *btrfstree.Superblock
 	var err error
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
@@ -117,7 +118,6 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 		if bt.rootTreeIndex != nil {
 			return *bt.rootTreeIndex
 		}
-		var sb *btrfstree.Superblock
 		sb, err = bt.inner.Superblock()
 		if err == nil {
 			treeRoot, err = btrfstree.LookupTreeRoot(bt.inner, *sb, treeID)
@@ -131,13 +131,22 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 		if cacheEntry, exists := bt.treeIndexes[treeID]; exists {
 			return cacheEntry
 		}
-		var sb *btrfstree.Superblock
 		sb, err = bt.inner.Superblock()
 		if err == nil {
 			treeRoot, err = btrfstree.LookupTreeRoot(bt, *sb, treeID)
 		}
 	}
-	cacheEntry := newTreeIndex(&bt.arena)
+	if bt.arena == nil {
+		var _sb btrfstree.Superblock
+		if sb != nil {
+			_sb = *sb
+		}
+		bt.arena = &SkinnyPathArena{
+			FS: bt.inner,
+			SB: _sb,
+		}
+	}
+	cacheEntry := newTreeIndex(bt.arena)
 	if err != nil {
 		cacheEntry.TreeRootErr = err
 	} else {

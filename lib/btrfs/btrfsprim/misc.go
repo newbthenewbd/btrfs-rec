@@ -6,6 +6,7 @@ package btrfsprim
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
@@ -23,6 +24,24 @@ type Key struct {
 
 func (k Key) String() string {
 	return fmt.Sprintf("{%v %v %v}", k.ObjectID, k.ItemType, k.Offset)
+}
+
+var MaxKey = Key{
+	ObjectID: math.MaxUint64,
+	ItemType: math.MaxUint8,
+	Offset:   math.MaxUint64,
+}
+
+func (key Key) Mm() Key {
+	switch {
+	case key.Offset > 0:
+		key.Offset--
+	case key.ItemType > 0:
+		key.ItemType--
+	case key.ObjectID > 0:
+		key.ObjectID--
+	}
+	return key
 }
 
 func (a Key) Cmp(b Key) int {

@@ -20,24 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-var maxKey = btrfsprim.Key{
-	ObjectID: math.MaxUint64,
-	ItemType: math.MaxUint8,
-	Offset:   math.MaxUint64,
-}
-
-func keyMm(key btrfsprim.Key) btrfsprim.Key {
-	switch {
-	case key.Offset > 0:
-		key.Offset--
-	case key.ItemType > 0:
-		key.ItemType--
-	case key.ObjectID > 0:
-		key.ObjectID--
-	}
-	return key
-}
-
 // TreeOperator is an interface for performing basic btree operations.
 type TreeOperator interface {
 	// TreeWalk walks a tree, triggering callbacks for every node,
@@ -118,11 +100,11 @@ type TreeOperatorImpl struct {
 func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	sb, err := fs.Superblock()
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: maxKey}}, Err: err})
+		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 	}
 	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: maxKey}}, Err: err})
+		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 		return
 	}
 	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
@@ -137,7 +119,7 @@ func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, e
 		ToNodeAddr:       rootInfo.RootNode,
 		ToNodeGeneration: rootInfo.Generation,
 		ToNodeLevel:      rootInfo.Level,
-		ToMaxKey:         maxKey,
+		ToMaxKey:         btrfsprim.MaxKey,
 	}}
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
@@ -191,7 +173,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 		for i, item := range node.Data.BodyInternal {
 			toMaxKey := path.Node(-1).ToMaxKey
 			if i+1 < len(node.Data.BodyInternal) {
-				toMaxKey = keyMm(node.Data.BodyInternal[i+1].Key)
+				toMaxKey = node.Data.BodyInternal[i+1].Key.Mm()
 			}
 			itemPath := append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
@@ -267,7 +249,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 		ToNodeAddr:       treeRoot.RootNode,
 		ToNodeGeneration: treeRoot.Generation,
 		ToNodeLevel:      treeRoot.Level,
-		ToMaxKey:         maxKey,
+		ToMaxKey:         btrfsprim.MaxKey,
 	}}
 	for {
 		if path.Node(-1).ToNodeAddr == 0 {
@@ -297,7 +279,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			}
 			toMaxKey := path.Node(-1).ToMaxKey
 			if lastGood+1 < len(node.Data.BodyInternal) {
-				toMaxKey = keyMm(node.Data.BodyInternal[lastGood+1].Key)
+				toMaxKey = node.Data.BodyInternal[lastGood+1].Key.Mm()
 			}
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
@@ -445,7 +427,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 		if node.Data.Head.Level > 0 {
 			toMaxKey := path.Node(-1).ToMaxKey
 			if len(node.Data.BodyInternal) > 1 {
-				toMaxKey = keyMm(node.Data.BodyInternal[1].Key)
+				toMaxKey = node.Data.BodyInternal[1].Key.Mm()
 			}
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,

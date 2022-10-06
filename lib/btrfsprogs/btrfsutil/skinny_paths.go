@@ -9,95 +9,139 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) {
-	if other, conflict := m[k]; conflict && other != v {
-		panic(fmt.Errorf("conflict: %s %v can't have both %v and %v", name, k, other, v))
-	}
-	m[k] = v
-}
-
-type skinnyKP struct {
-	src, dst btrfsvol.LogicalAddr
-}
-
 type skinnyItem struct {
-	node btrfsvol.LogicalAddr
-	item int
-}
-
-type SkinnyPathArena struct {
-	fatKPs   map[skinnyKP]btrfstree.TreePathElem
-	fatItems map[skinnyItem]btrfstree.TreePathElem
+	Node btrfsvol.LogicalAddr
+	Item int
 }
 
 type SkinnyPath struct {
-	Nodes []btrfsvol.LogicalAddr
-	Item  int
+	Root  btrfsvol.LogicalAddr
+	Items []int
+}
+
+type SkinnyPathArena struct {
+	FS diskio.File[btrfsvol.LogicalAddr]
+	SB btrfstree.Superblock
+
+	fatRoots map[btrfsvol.LogicalAddr]btrfstree.TreePathElem
+	fatItems *containers.LRUCache[skinnyItem, btrfstree.TreePathElem]
 }
 
 func (a *SkinnyPathArena) init() {
-	if a.fatKPs == nil {
-		a.fatKPs = make(map[skinnyKP]btrfstree.TreePathElem)
-		a.fatItems = make(map[skinnyItem]btrfstree.TreePathElem)
+	if a.fatRoots == nil {
+		a.fatRoots = make(map[btrfsvol.LogicalAddr]btrfstree.TreePathElem)
+		// This cache size is sorta arbitrary.  At first I figured
+		// "let's allow 1GB of cached items", and figured 67bytes per
+		// item, that's about 16M items.  But with overhead of the
+		// LRUCache, it's actually a lot higher than that.  So then I
+		// cut it to .5M, and that cut my total memory use to ~8GB,
+		// which is a good number for me.
+		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](512 * 1024)
 	}
+}
+
+func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfstree.TreePathElem, error) {
+	if itemIdx < 0 {
+		panic("should not happen")
+	}
+
+	a.init()
+
+	ret, ok := a.fatItems.Get(skinnyItem{
+		Node: parent.Node(-1).ToNodeAddr,
+		Item: itemIdx,
+	})
+	if ok {
+		return ret, nil
+	}
+
+	node, err := btrfstree.ReadNode(a.FS, a.SB, parent.Node(-1).ToNodeAddr, btrfstree.NodeExpectations{})
+	if err != nil {
+		return btrfstree.TreePathElem{}, err
+	}
+	if node.Data.Head.Level > 0 {
+		if itemIdx >= len(node.Data.BodyInternal) {
+			panic("should not happen")
+		}
+		for i, item := range node.Data.BodyInternal {
+			toMaxKey := parent.Node(-1).ToMaxKey
+			if i+1 < len(node.Data.BodyInternal) {
+				toMaxKey = node.Data.BodyInternal[i+1].Key.Mm()
+			}
+			elem := btrfstree.TreePathElem{
+				FromTree:         node.Data.Head.Owner,
+				FromItemIdx:      i,
+				ToNodeAddr:       item.BlockPtr,
+				ToNodeGeneration: item.Generation,
+				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToKey:            item.Key,
+				ToMaxKey:         toMaxKey,
+			}
+			a.fatItems.Add(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
+			if i == itemIdx {
+				ret = elem
+			}
+		}
+	} else {
+		if itemIdx >= len(node.Data.BodyLeaf) {
+			panic("should not happen")
+		}
+		for i, item := range node.Data.BodyLeaf {
+			elem := btrfstree.TreePathElem{
+				FromTree:    node.Data.Head.Owner,
+				FromItemIdx: i,
+				ToKey:       item.Key,
+				ToMaxKey:    item.Key,
+			}
+			a.fatItems.Add(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
+			if i == itemIdx {
+				ret = elem
+			}
+		}
+	}
+
+	return ret, nil
 }
 
 func (a *SkinnyPathArena) Deflate(fat btrfstree.TreePath) SkinnyPath {
 	a.init()
 
 	var ret SkinnyPath
-	ret.Item = -1
 
 	var prevNode btrfsvol.LogicalAddr
-	for _, elem := range fat {
-		if elem.ToNodeAddr > 0 {
-			maybeSet("SkinnyPathArena.fatKPs", a.fatKPs, skinnyKP{
-				src: prevNode,
-				dst: elem.ToNodeAddr,
-			}, elem)
-			ret.Nodes = append(ret.Nodes, elem.ToNodeAddr)
+	for i, elem := range fat {
+		if i == 0 {
+			a.fatRoots[elem.ToNodeAddr] = elem
+			ret.Root = elem.ToNodeAddr
 		} else {
-			maybeSet("SkinnyPathArena.fatItems", a.fatItems, skinnyItem{
-				node: prevNode,
-				item: elem.FromItemIdx,
-			}, elem)
-			ret.Item = elem.FromItemIdx
+			a.fatItems.Add(skinnyItem{Node: prevNode, Item: elem.FromItemIdx}, elem)
+			ret.Items = append(ret.Items, elem.FromItemIdx)
 		}
 		prevNode = elem.ToNodeAddr
 	}
-
 	return ret
 }
 
 func (a *SkinnyPathArena) Inflate(skinny SkinnyPath) btrfstree.TreePath {
 	a.init()
 
-	var ret btrfstree.TreePath
+	ret := make(btrfstree.TreePath, 0, 1+len(skinny.Items))
 
-	var prevNode btrfsvol.LogicalAddr
-	for _, node := range skinny.Nodes {
-		elem, ok := a.fatKPs[skinnyKP{
-			src: prevNode,
-			dst: node,
-		}]
-		if !ok {
-			panic(fmt.Errorf("SkinnyPathArena.Inflate: no stored TreePathElem for %v->%v",
-				prevNode, node))
-		}
-		ret = append(ret, elem)
-		prevNode = node
+	root, ok := a.fatRoots[skinny.Root]
+	if !ok {
+		panic(fmt.Errorf("SkinnyPathArena.Inflate: no stored TreePathElem for root->%v",
+			skinny.Root))
 	}
+	ret = append(ret, root)
 
-	if skinny.Item >= 0 {
-		elem, ok := a.fatItems[skinnyItem{
-			node: prevNode,
-			item: skinny.Item,
-		}]
-		if !ok {
-			panic(fmt.Errorf("SkinnyPathArena.Inflate: no stored TreePathElem for %v[%d]",
-				prevNode, skinny.Item))
+	for _, itemIdx := range skinny.Items {
+		elem, err := a.getItem(ret, itemIdx)
+		if err != nil {
+			panic(err)
 		}
 		ret = append(ret, elem)
 	}
