@@ -200,37 +200,49 @@ func (bt *brokenTrees) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (bt
 	return item, err
 }
 
+func (bt *brokenTrees) addErrs(index treeIndex, fn func(btrfsprim.Key, uint32) int, err error) error {
+	var errs derror.MultiError
+	if _errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(_errs) > 0 {
+		errs = make(derror.MultiError, len(_errs))
+		for i := range _errs {
+			errs[i] = &btrfstree.TreeError{
+				Path: bt.arena.Inflate(_errs[i].Path),
+				Err:  _errs[i].Err,
+			}
+		}
+	}
+	if len(errs) == 0 {
+		return err
+	}
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
+
 func (bt *brokenTrees) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) (btrfstree.Item, error) {
 	index := bt.treeIndex(treeID)
 	if index.TreeRootErr != nil {
 		return btrfstree.Item{}, index.TreeRootErr
 	}
+
 	indexItem := index.Items.Search(func(indexItem treeIndexValue) int {
 		return fn(indexItem.Key, indexItem.ItemSize)
 	})
 	if indexItem == nil {
-		return btrfstree.Item{}, iofs.ErrNotExist
+		return btrfstree.Item{}, bt.addErrs(index, fn, iofs.ErrNotExist)
 	}
 
 	itemPath := bt.arena.Inflate(indexItem.Value.Path)
 	node, err := bt.inner.ReadNode(itemPath.Parent())
 	if err != nil {
-		return btrfstree.Item{}, err
+		return btrfstree.Item{}, bt.addErrs(index, fn, err)
 	}
 
 	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
 
-	if errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(errs) > 0 {
-		err := make(derror.MultiError, len(errs))
-		for i := range errs {
-			err[i] = &btrfstree.TreeError{
-				Path: bt.arena.Inflate(errs[i].Path),
-				Err:  errs[i].Err,
-			}
-		}
-		return item, err
-	}
-
+	// Since we were only asked to return 1 item, it isn't
+	// necessary to augment this `nil` with bt.addErrs().
 	return item, nil
 }
 
@@ -239,11 +251,12 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 	if index.TreeRootErr != nil {
 		return nil, index.TreeRootErr
 	}
+
 	indexItems := index.Items.SearchRange(func(indexItem treeIndexValue) int {
 		return fn(indexItem.Key, indexItem.ItemSize)
 	})
 	if len(indexItems) == 0 {
-		return nil, iofs.ErrNotExist
+		return nil, bt.addErrs(index, fn, iofs.ErrNotExist)
 	}
 
 	ret := make([]btrfstree.Item, len(indexItems))
@@ -254,24 +267,13 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 			var err error
 			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
-				return nil, err
+				return nil, bt.addErrs(index, fn, err)
 			}
 		}
 		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
 	}
 
-	if errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(errs) > 0 {
-		err := make(derror.MultiError, len(errs))
-		for i := range errs {
-			err[i] = &btrfstree.TreeError{
-				Path: bt.arena.Inflate(errs[i].Path),
-				Err:  errs[i].Err,
-			}
-		}
-		return ret, err
-	}
-
-	return ret, nil
+	return ret, bt.addErrs(index, fn, nil)
 }
 
 func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
