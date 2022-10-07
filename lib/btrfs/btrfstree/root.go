@@ -21,6 +21,19 @@ type TreeRoot struct {
 	Generation btrfsprim.Generation
 }
 
+func RootItemSearchFn(treeID btrfsprim.ObjID) func(btrfsprim.Key, uint32) int {
+	return func(key btrfsprim.Key, _ uint32) int {
+		if key.ObjectID == treeID && key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+			return 0
+		}
+		return btrfsprim.Key{
+			ObjectID: treeID,
+			ItemType: btrfsitem.ROOT_ITEM_KEY,
+			Offset:   0,
+		}.Cmp(key)
+	}
+}
+
 // LookupTreeRoot is a utility function to help with implementing the 'Trees'
 // interface.
 func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
@@ -54,16 +67,7 @@ func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*Tr
 			Generation: sb.BlockGroupRootGeneration,
 		}, nil
 	default:
-		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, func(key btrfsprim.Key, _ uint32) int {
-			if key.ObjectID == treeID && key.ItemType == btrfsitem.ROOT_ITEM_KEY {
-				return 0
-			}
-			return btrfsprim.Key{
-				ObjectID: treeID,
-				ItemType: btrfsitem.ROOT_ITEM_KEY,
-				Offset:   0,
-			}.Cmp(key)
-		})
+		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, RootItemSearchFn(treeID))
 		if err != nil {
 			return nil, err
 		}

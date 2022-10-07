@@ -80,11 +80,7 @@ type Subvolume struct {
 
 func (sv *Subvolume) init() {
 	sv.rootOnce.Do(func() {
-		root, err := sv.FS.TreeLookup(btrfsprim.ROOT_TREE_OBJECTID, btrfsprim.Key{
-			ObjectID: sv.TreeID,
-			ItemType: btrfsitem.ROOT_ITEM_KEY,
-			Offset:   0,
-		})
+		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.RootItemSearchFn(sv.TreeID))
 		if err != nil {
 			sv.rootErr = err
 			return
