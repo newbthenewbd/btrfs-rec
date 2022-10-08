@@ -13,14 +13,18 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
+	var skipFileSums bool
+	cmd := subcommand{
 		Command: cobra.Command{
 			Use:   "mount MOUNTPOINT",
 			Short: "Mount the filesystem read-only",
 			Args:  cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
-			return btrfsinspect.MountRO(cmd.Context(), fs, args[0])
+			return btrfsinspect.MountRO(cmd.Context(), fs, args[0], skipFileSums)
 		},
-	})
+	}
+	cmd.Command.Flags().BoolVar(&skipFileSums, "skip-filesums", false,
+		"ignore checksum failures on file contents; allow such files to be read")
+	inspectors = append(inspectors, cmd)
 }

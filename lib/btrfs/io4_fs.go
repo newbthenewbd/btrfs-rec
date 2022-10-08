@@ -66,7 +66,8 @@ type Subvolume struct {
 		Superblock() (*btrfstree.Superblock, error)
 		ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
 	}
-	TreeID btrfsprim.ObjID
+	TreeID      btrfsprim.ObjID
+	NoChecksums bool
 
 	rootOnce sync.Once
 	rootVal  btrfsitem.Root
@@ -414,26 +415,27 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 			if err != nil {
 				return 0, err
 			}
+			if !file.SV.NoChecksums {
+				sumRun, err := LookupCSum(file.SV.FS, sb.ChecksumType, blockBeg)
+				if err != nil {
+					return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
+				}
+				_expSum, ok := sumRun.SumForAddr(blockBeg)
+				if !ok {
+					panic(fmt.Errorf("run from LookupCSum(fs, typ, %v) did not contain %v: %#v",
+						blockBeg, blockBeg, sumRun))
+				}
+				expSum := _expSum.ToFullSum()
 
-			sumRun, err := LookupCSum(file.SV.FS, sb.ChecksumType, blockBeg)
-			if err != nil {
-				return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
-			}
-			_expSum, ok := sumRun.SumForAddr(blockBeg)
-			if !ok {
-				panic(fmt.Errorf("run from LookupCSum(fs, typ, %v) did not contain %v: %#v",
-					blockBeg, blockBeg, sumRun))
-			}
-			expSum := _expSum.ToFullSum()
+				actSum, err := sb.ChecksumType.Sum(block[:])
+				if err != nil {
+					return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
+				}
 
-			actSum, err := sb.ChecksumType.Sum(block[:])
-			if err != nil {
-				return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
-			}
-
-			if actSum != expSum {
-				return 0, fmt.Errorf("checksum@%v: actual sum %v != expected sum %v",
-					blockBeg, actSum, expSum)
+				if actSum != expSum {
+					return 0, fmt.Errorf("checksum@%v: actual sum %v != expected sum %v",
+						blockBeg, actSum, expSum)
+				}
 			}
 			return n, nil
 		}

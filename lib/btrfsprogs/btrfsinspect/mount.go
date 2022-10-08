@@ -30,7 +30,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
+func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string, noChecksums bool) error {
 	pvs := fs.LV.PhysicalVolumes()
 	if len(pvs) < 1 {
 		return errors.New("no devices")
@@ -43,8 +43,9 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string) error {
 
 	rootSubvol := &subvolume{
 		Subvolume: btrfs.Subvolume{
-			FS:     btrfsutil.NewBrokenTrees(ctx, fs),
-			TreeID: btrfsprim.FS_TREE_OBJECTID,
+			FS:          btrfsutil.NewBrokenTrees(ctx, fs),
+			TreeID:      btrfsprim.FS_TREE_OBJECTID,
+			NoChecksums: noChecksums,
 		},
 		DeviceName: deviceName,
 		Mountpoint: mountpoint,
@@ -185,8 +186,9 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 					sv.grp.Go(workerName, func(ctx context.Context) error {
 						subSv := &subvolume{
 							Subvolume: btrfs.Subvolume{
-								FS:     sv.FS,
-								TreeID: entry.Location.ObjectID,
+								FS:          sv.FS,
+								TreeID:      entry.Location.ObjectID,
+								NoChecksums: sv.NoChecksums,
 							},
 							DeviceName: sv.DeviceName,
 							Mountpoint: filepath.Join(sv.Mountpoint, subMountpoint[1:]),
