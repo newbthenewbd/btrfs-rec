@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	iofs "io/fs"
-	"math"
 	"sync"
 
 	"github.com/datawire/dlib/derror"
@@ -21,12 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
-
-var maxKey = btrfsprim.Key{
-	ObjectID: math.MaxUint64,
-	ItemType: math.MaxUint8,
-	Offset:   math.MaxUint64,
-}
 
 type treeIndex struct {
 	TreeRootErr error
@@ -282,7 +275,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 		errHandle(&btrfstree.TreeError{
 			Path: btrfstree.TreePath{{
 				FromTree: treeID,
-				ToMaxKey: maxKey,
+				ToMaxKey: btrfsprim.MaxKey,
 			}},
 			Err: index.TreeRootErr,
 		})
