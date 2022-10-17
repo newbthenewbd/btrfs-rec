@@ -94,6 +94,7 @@ func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) interface {
 	btrfstree.TreeOperator
 	Superblock() (*btrfstree.Superblock, error)
 	ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+	Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error)
 } {
 	return &brokenTrees{
 		ctx:   ctx,
@@ -314,4 +315,9 @@ func (bt *brokenTrees) Superblock() (*btrfstree.Superblock, error) {
 
 func (bt *brokenTrees) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
+}
+
+func (bt *brokenTrees) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error) {
+	// TODO
+	return nil, nil
 }
