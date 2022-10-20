@@ -39,8 +39,10 @@ func (a *SkinnyPathArena) init() {
 		// item, that's about 16M items.  But with overhead of the
 		// LRUCache, it's actually a lot higher than that.  So then I
 		// cut it to .5M, and that cut my total memory use to ~8GB,
-		// which is a good number for me.
-		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](512 * 1024)
+		// which is a good number for me.  Then I tought it to do a
+		// better job of recovering trees, and so the memory grew, and I
+		// cut it to 64K.  Then to 8K.  Then grew it to 128K.
+		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](128 * 1024)
 	}
 }
 
