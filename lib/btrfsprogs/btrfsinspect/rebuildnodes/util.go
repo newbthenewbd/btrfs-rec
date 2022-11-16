@@ -10,10 +10,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
-func ptrTo[T any](x T) *T {
-	return &x
-}
-
 func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
 	if other, conflict := m[k]; conflict && other != v {
 		return fmt.Errorf("conflict: %s %v can't have both %v and %v", name, k, other, v)

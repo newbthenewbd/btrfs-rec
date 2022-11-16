@@ -10,9 +10,11 @@ import (
 	"io"
 	"strings"
 
+	"github.com/datawire/dlib/derror"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
@@ -151,4 +153,26 @@ func loopRender(out io.Writer, scanData scanResult, stack ...btrfsvol.LogicalAdd
 	for _, line := range lines {
 		fmt.Fprintln(out, "    "+line)
 	}
+}
+
+func checkNodeExpectations(kp kpData, toNode nodeData) error {
+	var errs derror.MultiError
+	if toNode.Level != kp.ToLevel {
+		errs = append(errs, fmt.Errorf("kp.level=%v != node.level=%v",
+			kp.ToLevel, toNode.Level))
+	}
+	if toNode.Generation != kp.ToGeneration {
+		errs = append(errs, fmt.Errorf("kp.generation=%v != node.generation=%v",
+			kp.ToGeneration, toNode.Generation))
+	}
+	if toNode.NumItems == 0 {
+		errs = append(errs, fmt.Errorf("node.num_items=0"))
+	} else if kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem != kp.ToKey {
+		errs = append(errs, fmt.Errorf("kp.key=%v != node.items[0].key=%v",
+			kp.ToKey, toNode.MinItem))
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
 }
