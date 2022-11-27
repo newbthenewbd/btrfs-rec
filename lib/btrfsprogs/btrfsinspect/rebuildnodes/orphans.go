@@ -8,11 +8,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-func listRoots(graph nodeGraph, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
+func listRoots(graph graph.Graph, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
 	kps := graph.EdgesTo[leaf]
 	if len(kps) == 0 {
 		return containers.NewSet(leaf)
@@ -24,7 +25,7 @@ func listRoots(graph nodeGraph, leaf btrfsvol.LogicalAddr) containers.Set[btrfsv
 	return ret
 }
 
-func walk(graph nodeGraph, root btrfsvol.LogicalAddr, fn func(btrfsvol.LogicalAddr) bool) {
+func walk(graph graph.Graph, root btrfsvol.LogicalAddr, fn func(btrfsvol.LogicalAddr) bool) {
 	if _, ok := graph.Nodes[root]; !ok {
 		return
 	}
@@ -48,7 +49,7 @@ func (a keyAndTree) Cmp(b keyAndTree) int {
 	return containers.NativeCmp(a.TreeID, b.TreeID)
 }
 
-func indexOrphans(fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph nodeGraph) (
+func indexOrphans(fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph) (
 	orphans containers.Set[btrfsvol.LogicalAddr],
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr],
 	key2leaf *containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr],

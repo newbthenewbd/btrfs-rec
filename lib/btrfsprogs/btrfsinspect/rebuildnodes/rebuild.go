@@ -45,7 +45,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Indexing orphans...")
-	orphans, leaf2orphans, key2leaf, err := indexOrphans(fs, *sb, scanData.nodeGraph)
+	orphans, leaf2orphans, key2leaf, err := indexOrphans(fs, *sb, *scanData.nodeGraph)
 	if err != nil {
 		return nil, err
 	}
