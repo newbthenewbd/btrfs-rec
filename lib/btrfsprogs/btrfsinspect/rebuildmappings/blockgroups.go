@@ -10,6 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
@@ -21,14 +22,14 @@ type BlockGroup struct {
 
 func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	// Dedup
-	bgsSet := make(map[BlockGroup]struct{}) // Can't use containers.Set because BlockGroup isn't ordered
+	bgsSet := make(containers.Set[BlockGroup])
 	for _, devResults := range scanResults {
 		for _, bg := range devResults.FoundBlockGroups {
-			bgsSet[BlockGroup{
+			bgsSet.Insert(BlockGroup{
 				LAddr: btrfsvol.LogicalAddr(bg.Key.ObjectID),
 				Size:  btrfsvol.AddrDelta(bg.Key.Offset),
 				Flags: bg.BG.Flags,
-			}] = struct{}{}
+			})
 		}
 	}
 

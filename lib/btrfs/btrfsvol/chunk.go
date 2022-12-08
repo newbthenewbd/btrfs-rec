@@ -70,11 +70,11 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 		}
 	}
 	// figure out the physical stripes (.PAddrs)
-	paddrs := make(map[QualifiedPhysicalAddr]struct{})
+	paddrs := make(containers.Set[QualifiedPhysicalAddr])
 	for _, chunk := range chunks {
 		offsetWithinRet := chunk.LAddr.Sub(ret.LAddr)
 		for _, stripe := range chunk.PAddrs {
-			paddrs[stripe.Add(-offsetWithinRet)] = struct{}{}
+			paddrs.Insert(stripe.Add(-offsetWithinRet))
 		}
 	}
 	ret.PAddrs = maps.Keys(paddrs)
