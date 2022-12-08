@@ -20,7 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
+func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) (addrspace *containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum], sumSize int) {
 	var records []btrfsinspect.SysExtentCSum
 	for _, devResults := range scanResults {
 		records = append(records, devResults.FoundExtentCSums...)
@@ -38,9 +38,9 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 		}
 	})
 	if len(records) == 0 {
-		return btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{}
+		return nil, 0
 	}
-	sumSize := records[0].Sums.ChecksumSize
+	sumSize = records[0].Sums.ChecksumSize
 
 	// Now build them in to a coherent address space.
 	//
@@ -53,7 +53,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	// "AAAAAAA" shouldn't be present, and if we just discard "BBBBBBBB"
 	// because it conflicts with "CCCCCCC", then we would erroneously
 	// include "AAAAAAA".
-	addrspace := &containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]{
+	addrspace = &containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]{
 		KeyFn: func(item btrfsinspect.SysExtentCSum) containers.NativeOrdered[btrfsvol.LogicalAddr] {
 			return containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: item.Sums.Addr}
 		},
@@ -146,6 +146,15 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 			newRecord = unionRecord
 			// loop around to check for more conflicts
 		}
+	}
+
+	return addrspace, sumSize
+}
+
+func ExtractAndFlattenLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
+	addrspace, sumSize := ExtractLogicalSums(ctx, scanResults)
+	if addrspace == nil {
+		return btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{}
 	}
 
 	// Now flatten that RBTree in to a SumRunWithGaps.
