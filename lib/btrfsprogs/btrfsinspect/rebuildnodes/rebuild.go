@@ -19,8 +19,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type Rebuilder struct {
@@ -32,12 +34,15 @@ type Rebuilder struct {
 	sb btrfstree.Superblock
 
 	graph        graph.Graph
+	uuidMap      uuidmap.UUIDMap
 	csums        containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
 	orphans      containers.Set[btrfsvol.LogicalAddr]
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
 	key2leaf     containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr]
 
 	augments map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
+
+	pendingAugments map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
@@ -71,6 +76,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		sb:    *sb,
 
 		graph:        *scanData.nodeGraph,
+		uuidMap:      *scanData.uuidMap,
 		csums:        *csums,
 		orphans:      orphans,
 		leaf2orphans: leaf2orphans,
@@ -86,15 +92,101 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 }
 
 func (o *Rebuilder) rebuild(ctx context.Context) error {
-	// TODO
-	//btrfsutil.WalkAllTrees(ctx, o.inner)
-	handleItem(o, ctx, 0, btrfstree.Item{})
+	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
+	btrfsutil.WalkAllTrees(ctx, o.inner, btrfsutil.WalkAllTreesHandler{
+		Err: func(*btrfsutil.WalkError) {},
+		TreeWalkHandler: btrfstree.TreeWalkHandler{
+			Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+				handleItem(o, ctx, path[0].FromTree, item)
+				return nil
+			},
+		},
+	})
+	for len(o.pendingAugments) > 0 {
+		// Apply the augments, keeping track of what keys are added to what tree.
+		newKeys := make(map[btrfsprim.ObjID][]btrfsprim.Key)
+		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
+			treeAugments := o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
+			for _, nodeAddr := range maps.SortedKeys(treeAugments) {
+				added, err := o.inner.Augment(treeID, nodeAddr)
+				if err != nil {
+					o.err(ctx, err)
+					continue
+				}
+				newKeys[treeID] = append(newKeys[treeID], added...)
+
+				set := o.augments[treeID]
+				if set == nil {
+					set = make(containers.Set[btrfsvol.LogicalAddr])
+					o.augments[treeID] = set
+				}
+				set.Insert(nodeAddr)
+			}
+		}
+		// Clear the list of pending augments.
+		o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
+		// Call handleItem() for each of the added keys.
+		for _, treeID := range maps.SortedKeys(newKeys) {
+			for _, key := range newKeys[treeID] {
+				item, err := o.inner.TreeLookup(treeID, key)
+				if err != nil {
+					o.err(ctx, err)
+					continue
+				}
+				handleItem(o, ctx, treeID, item)
+			}
+		}
+	}
 	return nil
 }
 
-func (o *Rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (o *Rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances []map[btrfsvol.LogicalAddr]int) containers.Set[btrfsvol.LogicalAddr] {
 	// TODO
+	return nil
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// _NodeFile is a subset of btrfstree.NodeFile.
+type _NodeFile interface {
+	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
+}
+
+func treeDistance(fs _NodeFile, tree, leaf btrfsprim.ObjID) (int, bool) {
+	dist := 0
+	for {
+		if tree == leaf {
+			return dist, true
+		}
+
+		parentTree, ok := fs.ParentTree(tree)
+		if !ok {
+			// Failed to look up parent info.
+			return 0, false
+		}
+		if parentTree == 0 {
+			// End of the line.
+			return 0, false
+		}
+
+		tree = parentTree
+		dist++
+	}
+}
+
+func (o *Rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
+	choicesWithDist := make(map[btrfsvol.LogicalAddr]int)
+	for choice := range choices {
+		if dist, ok := treeDistance(o.uuidMap, treeID, o.graph.Nodes[choice].Owner); ok {
+			choicesWithDist[choice] = dist
+		}
+	}
+	if len(choicesWithDist) > 0 {
+		o.pendingAugments[treeID] = append(o.pendingAugments[treeID], choicesWithDist)
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // err implements rebuildCallbacks.
 func (o *Rebuilder) err(ctx context.Context, e error) {
