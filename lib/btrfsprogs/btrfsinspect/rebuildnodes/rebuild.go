@@ -7,6 +7,7 @@ package rebuildnodes
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -141,8 +142,112 @@ func (o *Rebuilder) rebuild(ctx context.Context) error {
 }
 
 func (o *Rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances []map[btrfsvol.LogicalAddr]int) containers.Set[btrfsvol.LogicalAddr] {
-	// TODO
-	return nil
+	distances := make(map[btrfsvol.LogicalAddr]int)
+	generations := make(map[btrfsvol.LogicalAddr]btrfsprim.Generation)
+	lists := make([]containers.Set[btrfsvol.LogicalAddr], len(listsWithDistances))
+	for i, listWithDistances := range listsWithDistances {
+		lists[i] = make(containers.Set[btrfsvol.LogicalAddr], len(listWithDistances))
+		for item, dist := range listWithDistances {
+			lists[i].Insert(item)
+			distances[item] = dist
+			generations[item] = o.graph.Nodes[item].Generation
+		}
+	}
+
+	// Define an algorithm that takes several lists of items, and returns a
+	// set of those items such that each input list contains zero or one of
+	// the items from your return set.  The same item may appear in multiple
+	// of the input lists.
+	//
+	// > Example 1: Given the input lists
+	// >
+	// >     0: [A, B]
+	// >     2: [A, C]
+	// >
+	// > legal solutions would be `[]`, `[A]`, `[B]`, `[C]`, or `[B, C]`.  It
+	// > would not be legal to return `[A, B]` or `[A, C]`.
+	//
+	// > Example 2: Given the input lists
+	// >
+	// >     1: [A, B]
+	// >     2: [A]
+	// >     3: [B]
+	// >
+	// > legal solution woudl be `[]`, `[A]` or `[B]`.  It would not be legal
+	// > to return `[A, B]`.
+	//
+	// The algorithm should optimize for the following goals:
+	//
+	//  - We prefer that each input list have an item in the return set.
+	//
+	//    > In Example 1, while `[]`, `[B]`, and `[C]` are permissable
+	//    > solutions, they are not optimal, because one or both of the input
+	//    > lists are not represented.
+	//    >
+	//    > It may be the case that it is not possible to represent all lists
+	//    > in the result; in Example 2, either list 2 or list 3 must be
+	//    > unrepresented.
+	//
+	//  - Each item has a non-negative scalar "distance" score, we prefer
+	//    lower distances.  Distance scores are comparable; 0 is preferred,
+	//    and a distance of 4 is twice as bad as a distance of 2.
+	//
+	//  - Each item has a "generation" score, we prefer higher generations.
+	//    Generation scores should not be treated as a linear scale; the
+	//    magnitude of deltas is meaningless; only the sign of a delta is
+	//    meaningful.
+	//
+	//    > So it would be wrong to say something like
+	//    >
+	//    >     desirability = (-a*distance) + (b*generation)       // for some constants `a` and `b`
+	//    >
+	//    > because `generation` can't be used that way
+	//
+	//  - We prefer items that appear in more lists over items that appear in
+	//    fewer lists.
+	//
+	// The relative priority of these 4 goals is undefined; preferrably the
+	// algorithm should be defined in a way that makes it easy to adjust the
+	// relative priorities.
+
+	ret := make(containers.Set[btrfsvol.LogicalAddr])
+	illegal := make(containers.Set[btrfsvol.LogicalAddr]) // cannot-be-accepted and already-accepted
+	accept := func(item btrfsvol.LogicalAddr) {
+		ret.Insert(item)
+		for _, list := range lists {
+			if list.Has(item) {
+				illegal.InsertFrom(list)
+			}
+		}
+	}
+
+	counts := make(map[btrfsvol.LogicalAddr]int)
+	for _, list := range lists {
+		for item := range list {
+			counts[item] = counts[item] + 1
+		}
+	}
+
+	sortedItems := maps.Keys(distances)
+	sort.Slice(sortedItems, func(i, j int) bool {
+		iItem, jItem := sortedItems[i], sortedItems[j]
+		if counts[iItem] != counts[jItem] {
+			return counts[iItem] > counts[jItem] // reverse this check; higher counts should sort lower
+		}
+		if distances[iItem] != distances[jItem] {
+			return distances[iItem] < distances[jItem]
+		}
+		if generations[iItem] != generations[jItem] {
+			return generations[iItem] > generations[jItem] // reverse this check; higher generations should sort lower
+		}
+		return iItem < jItem // laddr is as good a tiebreaker as anything
+	})
+	for _, item := range sortedItems {
+		if !illegal.Has(item) {
+			accept(item)
+		}
+	}
+	return ret
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
