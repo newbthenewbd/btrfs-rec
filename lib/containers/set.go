@@ -150,3 +150,16 @@ func (small Set[T]) HasAny(big Set[T]) bool {
 	}
 	return false
 }
+
+func (small Set[T]) Intersection(big Set[T]) Set[T] {
+	if len(big) < len(small) {
+		small, big = big, small
+	}
+	ret := make(Set[T])
+	for v := range small {
+		if _, ok := big[v]; ok {
+			ret.Insert(v)
+		}
+	}
+	return ret
+}

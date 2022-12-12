@@ -65,7 +65,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Indexing orphans...")
-	orphans, leaf2orphans, key2leaf, err := indexOrphans(fs, *sb, *scanData.nodeGraph)
+	orphans, leaf2orphans, key2leaf, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +93,8 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 }
 
 func (o *Rebuilder) rebuild(ctx context.Context) error {
+	passNum := 0
+	dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
 	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
 	btrfsutil.WalkAllTrees(ctx, o.inner, btrfsutil.WalkAllTreesHandler{
 		Err: func(*btrfsutil.WalkError) {},
@@ -105,8 +107,10 @@ func (o *Rebuilder) rebuild(ctx context.Context) error {
 	})
 	for len(o.pendingAugments) > 0 {
 		// Apply the augments, keeping track of what keys are added to what tree.
+		dlog.Infof(ctx, "... pass %d: augmenting trees to add implied items", passNum)
 		newKeys := make(map[btrfsprim.ObjID][]btrfsprim.Key)
 		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
+			dlog.Infof(ctx, "... ... augmenting tree %v:", treeID)
 			treeAugments := o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
 			for _, nodeAddr := range maps.SortedKeys(treeAugments) {
 				added, err := o.inner.Augment(treeID, nodeAddr)
@@ -126,7 +130,9 @@ func (o *Rebuilder) rebuild(ctx context.Context) error {
 		}
 		// Clear the list of pending augments.
 		o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
+		passNum++
 		// Call handleItem() for each of the added keys.
+		dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
 		for _, treeID := range maps.SortedKeys(newKeys) {
 			for _, key := range newKeys[treeID] {
 				item, err := o.inner.TreeLookup(treeID, key)
@@ -247,6 +253,11 @@ func (o *Rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 			accept(item)
 		}
 	}
+
+	for i, list := range lists {
+		dlog.Infof(ctx, "... ... ... %d: %v: %v", i, list.Intersection(ret).TakeOne(), maps.SortedKeys(list))
+	}
+
 	return ret
 }
 
@@ -287,6 +298,7 @@ func (o *Rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, cho
 		}
 	}
 	if len(choicesWithDist) > 0 {
+		dlog.Infof(ctx, "augment(tree=%v): %v", treeID, maps.SortedKeys(choicesWithDist))
 		o.pendingAugments[treeID] = append(o.pendingAugments[treeID], choicesWithDist)
 	}
 }
