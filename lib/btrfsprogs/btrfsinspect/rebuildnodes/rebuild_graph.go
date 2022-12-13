@@ -85,6 +85,11 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 				btrfsitem.NameHash(body.Name))
 		case btrfsitem.XATTR_ITEM_KEY:
 			// nothing
+		default:
+			// This is a panic because the item decoder should not emit a
+			// btrfsitem.DirEntry for other item types without this code also being
+			// updated.
+			panic(fmt.Errorf("should not happen: DirEntry: unexpected ItemType=%v", item.Key.ItemType))
 		}
 		// item-within-directory
 		if body.Location != (btrfsprim.Key{}) {
@@ -106,7 +111,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 					body.Location.ObjectID,
 					body.Location.ItemType)
 			default:
-				o.err(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType: %v", body.Location.ItemType))
+				o.err(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType=%v", body.Location.ItemType))
 			}
 		}
 	case btrfsitem.Empty:
@@ -119,7 +124,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		//	// kernel ever reads this, so who knows if it
 		//	// always gets updated correctly?
 		//}
-		for _, ref := range body.Refs {
+		for i, ref := range body.Refs {
 			switch refBody := ref.Body.(type) {
 			case nil:
 				// nothing
@@ -137,7 +142,9 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			case btrfsitem.SharedDataRef:
 				// nothing
 			default:
-				panic("should not happen")
+				// This is a panic because the item decoder should not emit a new
+				// type to ref.Body without this code also being updated.
+				panic(fmt.Errorf("should not happen: Extent: unexpected .Refs[%d].Body type %T", i, refBody))
 			}
 		}
 	case btrfsitem.ExtentCSum:
@@ -172,7 +179,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 				roundDown(body.BodyExtent.DiskByteNr, btrfssum.BlockSize),
 				roundUp(body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes), btrfssum.BlockSize))
 		default:
-			o.err(ctx, fmt.Errorf("FileExtent: unexpected body.Type: %v", body.Type))
+			o.err(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
 		}
 	case btrfsitem.FreeSpaceBitmap:
 		o.wantOff(dlog.WithField(ctx, "wants", "FreeSpaceInfo"),
@@ -231,7 +238,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 				uint64(ref.Index))
 		}
 	case btrfsitem.Metadata:
-		for _, ref := range body.Refs {
+		for i, ref := range body.Refs {
 			switch refBody := ref.Body.(type) {
 			case nil:
 				// nothing
@@ -249,7 +256,9 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			case btrfsitem.SharedDataRef:
 				// nothing
 			default:
-				panic("should not happen")
+				// This is a panic because the item decoder should not emit a new
+				// type to ref.Body without this code also being updated.
+				panic(fmt.Errorf("should not happen: Metadata: unexpected .Refs[%d].Body type %T", i, refBody))
 			}
 		}
 	case btrfsitem.Root:
@@ -273,7 +282,10 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			parent = btrfsprim.ObjID(item.Key.Offset)
 			child = item.Key.ObjectID
 		default:
-			panic("should not happen")
+			// This is a panic because the item decoder should not emit a
+			// btrfsitem.RootRef for other item types without this code also being
+			// updated.
+			panic(fmt.Errorf("should not happen: RootRef: unexpected ItemType=%v", item.Key.ItemType))
 		}
 		// sibling
 		o.wantOff(dlog.WithField(ctx, "wants", fmt.Sprintf("corresponding %v", otherType)),
@@ -316,7 +328,11 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			btrfsprim.ROOT_TREE_OBJECTID,
 			body.ObjID,
 			btrfsitem.ROOT_ITEM_KEY)
+	case btrfsitem.Error:
+		o.err(ctx, fmt.Errorf("error decoding item: %w", body.Err))
 	default:
-		panic(fmt.Errorf("unsupported item type: %T", body))
+		// This is a panic because the item decoder should not emit new types without this
+		// code also being updated.
+		panic(fmt.Errorf("should not happen: unexpected item type: %T", body))
 	}
 }
