@@ -19,7 +19,7 @@ import (
 )
 
 type rebuildCallbacks interface {
-	err(ctx context.Context, e error)
+	fsErr(ctx context.Context, e error)
 	want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
 	wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
 	wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool)
@@ -111,7 +111,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 					body.Location.ObjectID,
 					body.Location.ItemType)
 			default:
-				o.err(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType=%v", body.Location.ItemType))
+				o.fsErr(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType=%v", body.Location.ItemType))
 			}
 		}
 	case btrfsitem.Empty:
@@ -179,7 +179,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 				roundDown(body.BodyExtent.DiskByteNr, btrfssum.BlockSize),
 				roundUp(body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes), btrfssum.BlockSize))
 		default:
-			o.err(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
+			o.fsErr(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
 		}
 	case btrfsitem.FreeSpaceBitmap:
 		o.wantOff(dlog.WithField(ctx, "wants", "FreeSpaceInfo"),
@@ -329,7 +329,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			body.ObjID,
 			btrfsitem.ROOT_ITEM_KEY)
 	case btrfsitem.Error:
-		o.err(ctx, fmt.Errorf("error decoding item: %w", body.Err))
+		o.fsErr(ctx, fmt.Errorf("error decoding item: %w", body.Err))
 	default:
 		// This is a panic because the item decoder should not emit new types without this
 		// code also being updated.
