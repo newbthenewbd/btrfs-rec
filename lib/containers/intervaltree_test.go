@@ -56,7 +56,7 @@ func TestIntervalTree(t *testing.T) {
 	tree.Insert(SimpleInterval{6, 10})
 	tree.Insert(SimpleInterval{19, 20})
 
-	t.Log(tree.ASCIIArt())
+	t.Log("\n" + tree.ASCIIArt())
 
 	// find intervals that touch [9,20]
 	intervals := tree.SearchAll(func(k NativeOrdered[int]) int {
