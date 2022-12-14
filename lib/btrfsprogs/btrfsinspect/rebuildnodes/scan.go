@@ -6,6 +6,8 @@ package rebuildnodes
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -17,11 +19,22 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type scanResult struct {
 	uuidMap   *uuidmap.UUIDMap
 	nodeGraph *graph.Graph
+}
+
+type scanStats struct {
+	N, D int
+}
+
+func (s scanStats) String() string {
+	return fmt.Sprintf("... %v%% (%v/%v)",
+		int(100*float64(s.N)/float64(s.D)),
+		s.N, s.D)
 }
 
 func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (*scanResult, error) {
@@ -32,16 +45,11 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		return nil, err
 	}
 
-	lastPct := -1
 	total := countNodes(scanResults)
 	done := 0
+	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress := func(done, total int) {
-		pct := int(100 * float64(done) / float64(total))
-		if pct != lastPct || done == total {
-			dlog.Infof(ctx, "... %v%% (%v/%v)",
-				pct, done, total)
-			lastPct = pct
-		}
+		progressWriter.Set(scanStats{N: done, D: total})
 	}
 
 	ret := &scanResult{
@@ -69,10 +77,10 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 			progress(done, total)
 		}
 	}
-
 	if done != total {
 		panic("should not happen")
 	}
+	progressWriter.Done()
 
 	missing := ret.uuidMap.MissingRootItems()
 	if len(missing) > 0 {
@@ -81,10 +89,12 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 
 	dlog.Info(ctx, "... done reading node data")
 
+	progressWriter = textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	dlog.Infof(ctx, "Checking keypointers for dead-ends...")
 	if err := ret.nodeGraph.FinalCheck(fs, *sb, progress); err != nil {
 		return nil, err
 	}
+	progressWriter.Done()
 	dlog.Info(ctx, "... done checking keypointers")
 
 	return ret, nil

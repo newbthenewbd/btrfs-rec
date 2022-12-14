@@ -6,6 +6,8 @@ package rebuildnodes
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -16,6 +18,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func listRoots(graph graph.Graph, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
@@ -54,6 +57,31 @@ func (a keyAndTree) Cmp(b keyAndTree) int {
 	return containers.NativeCmp(a.TreeID, b.TreeID)
 }
 
+type crawlStats struct {
+	DoneOrphans  int
+	TotalOrphans int
+
+	VisitedNodes int
+	FoundLeafs   int
+}
+
+func (s crawlStats) String() string {
+	return fmt.Sprintf("... crawling orphans %v%% (%v/%v); visited %d nodes, found %d leaf nodes",
+		int(100*float64(s.DoneOrphans)/float64(s.TotalOrphans)),
+		s.DoneOrphans, s.TotalOrphans, s.VisitedNodes, s.FoundLeafs)
+}
+
+type readStats struct {
+	DoneLeafNodes  int
+	TotalLeafNodes int
+}
+
+func (s readStats) String() string {
+	return fmt.Sprintf("... reading leafs %v%% (%v/%v)",
+		int(100*float64(s.DoneLeafNodes)/float64(s.TotalLeafNodes)),
+		s.DoneLeafNodes, s.TotalLeafNodes)
+}
+
 func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph) (
 	orphans containers.Set[btrfsvol.LogicalAddr],
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr],
@@ -71,18 +99,15 @@ func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb 
 	leaf2orphans = make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
 	visited := make(containers.Set[btrfsvol.LogicalAddr])
 
-	lastPct, lastVisited, lastLeafs := -1, 0, 0
-	total := len(orphans)
 	done := 0
+	crawlProgressWriter := textui.NewProgress[crawlStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress := func() {
-		pct := int(100 * float64(done) / float64(total))
-		if pct != lastPct || (len(visited) != lastVisited && len(visited)%500 == 0) || len(leaf2orphans) != lastLeafs || done == total {
-			dlog.Infof(ctx, "... crawling orphans %v%% (%v/%v); visited %d nodes, found %d leaf nodes",
-				pct, done, total, len(visited), len(leaf2orphans))
-			lastPct = pct
-			lastVisited = len(visited)
-			lastLeafs = len(leaf2orphans)
-		}
+		crawlProgressWriter.Set(crawlStats{
+			DoneOrphans:  done,
+			TotalOrphans: len(orphans),
+			VisitedNodes: len(visited),
+			FoundLeafs:   len(leaf2orphans),
+		})
 	}
 	progress()
 	for _, orphan := range maps.SortedKeys(orphans) {
@@ -102,17 +127,16 @@ func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb 
 		done++
 		progress()
 	}
+	crawlProgressWriter.Done()
 
 	key2leaf = new(containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr])
-	total = len(leaf2orphans)
 	done = 0
+	readProgressWriter := textui.NewProgress[readStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress = func() {
-		pct := int(100 * float64(done) / float64(total))
-		if pct != lastPct || done == total {
-			dlog.Infof(ctx, "... reading leafs %v%% (%v/%v)",
-				pct, done, total)
-			lastPct = pct
-		}
+		readProgressWriter.Set(readStats{
+			DoneLeafNodes:  done,
+			TotalLeafNodes: len(leaf2orphans),
+		})
 	}
 	progress()
 	for _, laddr := range maps.SortedKeys(leaf2orphans) {
@@ -136,5 +160,7 @@ func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb 
 		done++
 		progress()
 	}
+	readProgressWriter.Done()
+
 	return orphans, leaf2orphans, key2leaf, nil
 }

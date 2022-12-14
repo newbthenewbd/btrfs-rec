@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
@@ -21,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type ScanDevicesResult map[btrfsvol.DeviceID]ScanOneDeviceResult
@@ -78,6 +80,31 @@ type SysExtentCSum struct {
 	Sums       btrfsitem.ExtentCSum
 }
 
+type scanStats struct {
+	DevName string
+	DevSize btrfsvol.PhysicalAddr
+
+	Pos btrfsvol.PhysicalAddr
+
+	NumFoundNodes       int
+	NumFoundChunks      int
+	NumFoundBlockGroups int
+	NumFoundDevExtents  int
+	NumFoundExtentCSums int
+}
+
+func (s scanStats) String() string {
+	return fmt.Sprintf("... dev[%q] scanned %v%% (%d/%d) (found: %v nodes, %v chunks, %v block groups, %v dev extents, %v sum items)",
+		s.DevName,
+		int(100*float64(s.Pos)/float64(s.DevSize)),
+		s.Pos, s.DevSize,
+		s.NumFoundNodes,
+		s.NumFoundChunks,
+		s.NumFoundBlockGroups,
+		s.NumFoundDevExtents,
+		s.NumFoundExtentCSums)
+}
+
 // ScanOneDevice mostly mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device().
 func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblock) (ScanOneDeviceResult, error) {
@@ -103,19 +130,18 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 	var sums strings.Builder
 	sums.Grow(numSums * csumSize)
 
-	lastProgress := -1
+	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress := func(pos btrfsvol.PhysicalAddr) {
-		pct := int(100 * float64(pos) / float64(devSize))
-		if pct != lastProgress || pos == devSize {
-			dlog.Infof(ctx, "... dev[%q] scanned %v%% (found: %v nodes, %v chunks, %v block groups, %v dev extents, %v sum items)",
-				dev.Name(), pct,
-				len(result.FoundNodes),
-				len(result.FoundChunks),
-				len(result.FoundBlockGroups),
-				len(result.FoundDevExtents),
-				len(result.FoundExtentCSums))
-			lastProgress = pct
-		}
+		progressWriter.Set(scanStats{
+			DevName:             dev.Name(),
+			DevSize:             devSize,
+			Pos:                 pos,
+			NumFoundNodes:       len(result.FoundNodes),
+			NumFoundChunks:      len(result.FoundChunks),
+			NumFoundBlockGroups: len(result.FoundBlockGroups),
+			NumFoundDevExtents:  len(result.FoundDevExtents),
+			NumFoundExtentCSums: len(result.FoundExtentCSums),
+		})
 	}
 
 	var minNextNode btrfsvol.PhysicalAddr
@@ -212,6 +238,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 		}
 	}
 	progress(devSize)
+	progressWriter.Done()
 
 	result.Checksums = btrfssum.SumRun[btrfsvol.PhysicalAddr]{
 		ChecksumSize: csumSize,
