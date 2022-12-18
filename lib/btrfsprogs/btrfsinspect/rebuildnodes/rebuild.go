@@ -37,7 +37,6 @@ type Rebuilder struct {
 	graph        graph.Graph
 	uuidMap      uuidmap.UUIDMap
 	csums        containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
-	orphans      containers.Set[btrfsvol.LogicalAddr]
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
 	key2leaf     containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr]
 
@@ -65,7 +64,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Indexing orphans...")
-	orphans, leaf2orphans, key2leaf, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
+	leaf2orphans, key2leaf, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +78,6 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		graph:        *scanData.nodeGraph,
 		uuidMap:      *scanData.uuidMap,
 		csums:        *csums,
-		orphans:      orphans,
 		leaf2orphans: leaf2orphans,
 		key2leaf:     *key2leaf,
 

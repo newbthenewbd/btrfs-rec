@@ -83,13 +83,12 @@ func (s readStats) String() string {
 }
 
 func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph) (
-	orphans containers.Set[btrfsvol.LogicalAddr],
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr],
 	key2leaf *containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr],
 	err error,
 ) {
 	dlog.Info(ctx, "... counting orphans")
-	orphans = make(containers.Set[btrfsvol.LogicalAddr])
+	orphans := make(containers.Set[btrfsvol.LogicalAddr])
 	for node := range graph.Nodes {
 		if len(graph.EdgesTo[node]) == 0 {
 			orphans.Insert(node)
@@ -145,7 +144,7 @@ func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb 
 			Level: containers.Optional[uint8]{OK: true, Val: 0},
 		})
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 
 		for _, item := range nodeRef.Data.BodyLeaf {
@@ -162,5 +161,5 @@ func indexOrphans(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb 
 	}
 	readProgressWriter.Done()
 
-	return orphans, leaf2orphans, key2leaf, nil
+	return leaf2orphans, key2leaf, nil
 }
