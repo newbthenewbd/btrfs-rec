@@ -22,15 +22,19 @@ import (
 )
 
 func listRoots(graph graph.Graph, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
+	ret := make(containers.Set[btrfsvol.LogicalAddr])
+	_listRoots(ret, graph, leaf)
+	return ret
+}
+
+func _listRoots(ret containers.Set[btrfsvol.LogicalAddr], graph graph.Graph, leaf btrfsvol.LogicalAddr) {
 	kps := graph.EdgesTo[leaf]
 	if len(kps) == 0 {
-		return containers.NewSet(leaf)
+		ret.Insert(leaf)
 	}
-	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for _, kp := range kps {
-		ret.InsertFrom(listRoots(graph, kp.FromNode))
+		_listRoots(ret, graph, kp.FromNode)
 	}
-	return ret
 }
 
 type keyAndTree struct {

@@ -51,13 +51,12 @@ type Graph struct {
 	EdgesTo   map[btrfsvol.LogicalAddr][]*Edge
 }
 
-func (g Graph) insertEdge(kp Edge) {
-	ptr := &kp
-	if kp.ToNode == 0 {
+func (g Graph) insertEdge(ptr *Edge) {
+	if ptr.ToNode == 0 {
 		panic("kp.ToNode should not be zero")
 	}
-	g.EdgesFrom[kp.FromNode] = append(g.EdgesFrom[kp.FromNode], ptr)
-	g.EdgesTo[kp.ToNode] = append(g.EdgesTo[kp.ToNode], ptr)
+	g.EdgesFrom[ptr.FromNode] = append(g.EdgesFrom[ptr.FromNode], ptr)
+	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
 }
 
 func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
@@ -72,7 +71,7 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	if treeInfo.RootNode == 0 {
 		return
 	}
-	g.insertEdge(Edge{
+	g.insertEdge(&Edge{
 		FromTree:     treeID,
 		ToNode:       treeInfo.RootNode,
 		ToLevel:      treeInfo.Level,
@@ -99,18 +98,6 @@ func New(sb btrfstree.Superblock) *Graph {
 }
 
 func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	for _, item := range nodeRef.Data.BodyLeaf {
-		switch itemBody := item.Body.(type) {
-		case btrfsitem.Root:
-			g.insertEdge(Edge{
-				FromTree:     item.Key.ObjectID,
-				ToNode:       itemBody.ByteNr,
-				ToLevel:      itemBody.Level,
-				ToGeneration: itemBody.Generation,
-			})
-		}
-	}
-
 	g.Nodes[nodeRef.Addr] = Node{
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
@@ -119,16 +106,42 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 		MinItem:    discardOK(nodeRef.Data.MinItem()),
 		MaxItem:    discardOK(nodeRef.Data.MaxItem()),
 	}
-	for i, kp := range nodeRef.Data.BodyInternal {
-		g.insertEdge(Edge{
-			FromTree:     nodeRef.Data.Head.Owner,
-			FromNode:     nodeRef.Addr,
-			FromItem:     i,
-			ToNode:       kp.BlockPtr,
-			ToLevel:      nodeRef.Data.Head.Level - 1,
-			ToKey:        kp.Key,
-			ToGeneration: kp.Generation,
-		})
+
+	if nodeRef.Data.Head.Level == 0 {
+		cnt := 0
+		for _, item := range nodeRef.Data.BodyLeaf {
+			switch item.Body.(type) {
+			case btrfsitem.Root:
+				cnt++
+			}
+		}
+		kps := make([]Edge, 0, cnt)
+		for _, item := range nodeRef.Data.BodyLeaf {
+			switch itemBody := item.Body.(type) {
+			case btrfsitem.Root:
+				kps = append(kps, Edge{
+					FromTree:     item.Key.ObjectID,
+					ToNode:       itemBody.ByteNr,
+					ToLevel:      itemBody.Level,
+					ToGeneration: itemBody.Generation,
+				})
+				g.insertEdge(&kps[len(kps)-1])
+			}
+		}
+	} else {
+		kps := make([]Edge, len(nodeRef.Data.BodyInternal))
+		for i, kp := range nodeRef.Data.BodyInternal {
+			kps[i] = Edge{
+				FromTree:     nodeRef.Data.Head.Owner,
+				FromNode:     nodeRef.Addr,
+				FromItem:     i,
+				ToNode:       kp.BlockPtr,
+				ToLevel:      nodeRef.Data.Head.Level - 1,
+				ToKey:        kp.Key,
+				ToGeneration: kp.Generation,
+			}
+			g.insertEdge(&kps[i])
+		}
 	}
 }
 
