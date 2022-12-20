@@ -24,10 +24,25 @@ type Node struct {
 	MaxItem    btrfsprim.Key
 }
 
+func (n Node) String() string {
+	if n == (Node{}) {
+		return "{}"
+	}
+	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v, min:(%v,%v,%v), max:(%v,%v,%v)}`,
+		n.Level, n.Generation, n.Owner, n.NumItems,
+		n.MinItem.ObjectID, n.MinItem.ItemType, n.MinItem.Offset,
+		n.MaxItem.ObjectID, n.MaxItem.ItemType, n.MaxItem.Offset)
+}
+
 type Edge struct {
-	FromTree btrfsprim.ObjID
+	// It is invalid both 'FromRoot' and 'FromNode' to be
+	// non-zero.  If both are zero, then the Edge is from the
+	// superblock.
+	FromRoot btrfsvol.LogicalAddr
 	FromNode btrfsvol.LogicalAddr
-	FromItem int
+	FromItem int // only valid if one of FromRoot or FromNode is non-zero
+
+	FromTree btrfsprim.ObjID
 
 	ToNode       btrfsvol.LogicalAddr
 	ToLevel      uint8
@@ -36,8 +51,19 @@ type Edge struct {
 }
 
 func (kp Edge) String() string {
-	return fmt.Sprintf(`{t:%v,n:%v}[%d]->{n:%v,l:%v,g:%v,k:(%d,%v,%d)}`,
-		kp.FromTree, kp.FromNode, kp.FromItem,
+	var from string
+	switch {
+	case kp.FromRoot != 0:
+		from = fmt.Sprintf("root@%v[%d]:%v",
+			kp.FromRoot, kp.FromItem, kp.FromTree)
+	case kp.FromNode != 0:
+		from = fmt.Sprintf("{node:%v, tree:%v}[%d]",
+			kp.FromNode, kp.FromTree, kp.FromItem)
+	default:
+		from = fmt.Sprintf("superblock:%v", kp.FromTree)
+	}
+	return fmt.Sprintf(`%s -> {n:%v,l:%v,g:%v,k:(%v,%v,%v)}`,
+		from,
 		kp.ToNode, kp.ToLevel, kp.ToGeneration,
 		kp.ToKey.ObjectID,
 		kp.ToKey.ItemType,
@@ -54,6 +80,12 @@ type Graph struct {
 func (g Graph) insertEdge(ptr *Edge) {
 	if ptr.ToNode == 0 {
 		panic("kp.ToNode should not be zero")
+	}
+	if ptr.FromRoot != 0 && ptr.FromNode != 0 {
+		panic("kp.FromRoot and kp.FromNode should not both be set")
+	}
+	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromItem != 0 {
+		panic("kp.FromItem should only be set if either kp.FromRoot or kp.FromItem is set")
 	}
 	g.EdgesFrom[ptr.FromNode] = append(g.EdgesFrom[ptr.FromNode], ptr)
 	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
@@ -110,16 +142,16 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 	if nodeRef.Data.Head.Level == 0 {
 		cnt := 0
 		for _, item := range nodeRef.Data.BodyLeaf {
-			switch item.Body.(type) {
-			case btrfsitem.Root:
+			if _, ok := item.Body.(btrfsitem.Root); ok {
 				cnt++
 			}
 		}
 		kps := make([]Edge, 0, cnt)
-		for _, item := range nodeRef.Data.BodyLeaf {
-			switch itemBody := item.Body.(type) {
-			case btrfsitem.Root:
+		for i, item := range nodeRef.Data.BodyLeaf {
+			if itemBody, ok := item.Body.(btrfsitem.Root); ok {
 				kps = append(kps, Edge{
+					FromRoot:     nodeRef.Addr,
+					FromItem:     i,
 					FromTree:     item.Key.ObjectID,
 					ToNode:       itemBody.ByteNr,
 					ToLevel:      itemBody.Level,
@@ -132,9 +164,9 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 		kps := make([]Edge, len(nodeRef.Data.BodyInternal))
 		for i, kp := range nodeRef.Data.BodyInternal {
 			kps[i] = Edge{
-				FromTree:     nodeRef.Data.Head.Owner,
 				FromNode:     nodeRef.Addr,
 				FromItem:     i,
+				FromTree:     nodeRef.Data.Head.Owner,
 				ToNode:       kp.BlockPtr,
 				ToLevel:      nodeRef.Data.Head.Level - 1,
 				ToKey:        kp.Key,
