@@ -75,7 +75,7 @@ var _ btrfstree.TreeOperator = (*brokenTrees)(nil)
 // NewBrokenTrees wraps a *btrfs.FS to support looking up information
 // from broken trees.
 //
-// Of the btrfs.FS.Tree{Verb} methods:
+// Of the btrfstree.TreeOperator methods:
 //
 //   - TreeWalk works on broken trees
 //   - TreeLookup relies on the tree being properly ordered (which a
