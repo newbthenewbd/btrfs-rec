@@ -10,12 +10,14 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
+// key.objectid = inode number
+// key.offset = 0
 type Inode struct { // INODE_ITEM=1
 	Generation    btrfsprim.Generation `bin:"off=0x00, siz=0x08"`
 	TransID       int64                `bin:"off=0x08, siz=0x08"`
 	Size          int64                `bin:"off=0x10, siz=0x08"` // stat
 	NumBytes      int64                `bin:"off=0x18, siz=0x08"` // allocated bytes, may be larger than size (or smaller if there are holes?)
-	BlockGroup    int64                `bin:"off=0x20, siz=0x08"`
+	BlockGroup    btrfsprim.ObjID      `bin:"off=0x20, siz=0x08"` // only used for freespace inodes
 	NLink         int32                `bin:"off=0x28, siz=0x04"` // stat
 	UID           int32                `bin:"off=0x2C, siz=0x04"` // stat
 	GID           int32                `bin:"off=0x30, siz=0x04"` // stat

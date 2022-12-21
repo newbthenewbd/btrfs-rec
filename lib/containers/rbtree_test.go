@@ -112,6 +112,7 @@ func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K],
 		return nil
 	}))
 	require.Equal(t, expectedOrder, actOrder)
+	require.Equal(t, tree.Len(), len(expectedSet))
 }
 
 func FuzzRBTree(f *testing.F) {

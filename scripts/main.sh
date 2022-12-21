@@ -48,15 +48,9 @@ gen $b.gen/2.mappings.json \
       -e '2a{"LAddr":13631488,"PAddr":{"Dev":1,"Addr":13631488},"Size":1},') \
     inspect rebuild-mappings $b.gen/0.scandevices.json
 
-gen $b.gen/3.nodes.zip \
+gen $b.gen/3.nodes.json \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-    inspect visualize-nodes $b.gen/0.scandevices.json
-# gen $b.gen/2.loops.txt \
-#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-#     inspect show-loops $b.gen/0.scandevices.json
-# gen $b.gen/2.nodes.json \
-#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-#     inspect rebuild-nodes $b.gen/0.scandevices.json
+    inspect rebuild-nodes $b.gen/0.scandevices.json
 
 gen $b.gen/4.ls-files.txt \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \

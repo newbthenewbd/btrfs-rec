@@ -12,9 +12,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
+// RootRefs link subvolumes parent→child for normal subvolumes and
+// base→snapshot for snapshot subvolumes.  BACKREF items go the other
+// direction; child→parent and snapshot→base.
+//
+//	               ROOT_REF                   | ROOT_BACKREF
+//	key.objectid = ID of the parent subvolume | ID of the child subvolume
+//	key.offset   = ID of the child subvolume  | ID of the parent subvolume
 type RootRef struct { // ROOT_REF=156 ROOT_BACKREF=144
-	DirID         btrfsprim.ObjID `bin:"off=0x00, siz=0x8"`
-	Sequence      int64           `bin:"off=0x08, siz=0x8"`
+	DirID         btrfsprim.ObjID `bin:"off=0x00, siz=0x8"` // inode of the parent directory of the dir entry
+	Sequence      int64           `bin:"off=0x08, siz=0x8"` // index of that dir entry within the parent
 	NameLen       uint16          `bin:"off=0x10, siz=0x2"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0x12"`
 	Name          []byte `bin:"-"`

@@ -2,48 +2,37 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package graph
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/datawire/dlib/dlog"
+	"github.com/datawire/dlib/derror"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ShowLoops(ctx context.Context, out io.Writer, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) error {
-	scanData, err := ScanDevices(ctx, fs, nodeScanResults)
-	if err != nil {
-		return err
-	}
-
-	dlog.Info(ctx, "Collecting orphans...")
+func (g Graph) ShowLoops(out io.Writer) {
 	orphans := make(containers.Set[btrfsvol.LogicalAddr])
-	for node := range scanData.Nodes {
-		if len(scanData.EdgesTo[node]) == 0 {
+	for node := range g.Nodes {
+		if len(g.EdgesTo[node]) == 0 {
 			orphans.Insert(node)
 		}
 	}
 
-	dlog.Info(ctx, "Walking graph...")
-	loopWalk(out, *scanData, 0)
+	loopWalk(out, g, 0)
 	for _, orphan := range maps.SortedKeys(orphans) {
-		loopWalk(out, *scanData, orphan)
+		loopWalk(out, g, orphan)
 	}
-
-	return nil
 }
 
-func loopWalk(out io.Writer, scanData scanResult, stack ...btrfsvol.LogicalAddr) {
+func loopWalk(out io.Writer, scanData Graph, stack ...btrfsvol.LogicalAddr) {
 	for _, kp := range scanData.EdgesFrom[stack[len(stack)-1]] {
 		childStack := append(stack, kp.ToNode)
 		if slices.Contains(kp.ToNode, stack) {
@@ -54,7 +43,7 @@ func loopWalk(out io.Writer, scanData scanResult, stack ...btrfsvol.LogicalAddr)
 	}
 }
 
-func nodeRender(scanData scanResult, node btrfsvol.LogicalAddr) []string {
+func nodeRender(scanData Graph, node btrfsvol.LogicalAddr) []string {
 	if node == 0 {
 		return []string{"root"}
 	} else if nodeData, ok := scanData.Nodes[node]; ok {
@@ -82,7 +71,7 @@ func nodeRender(scanData scanResult, node btrfsvol.LogicalAddr) []string {
 	}
 }
 
-func edgeRender(scanData scanResult, kp kpData) []string {
+func edgeRender(scanData Graph, kp Edge) []string {
 	a := fmt.Sprintf("[%d]={", kp.FromItem)
 	b := strings.Repeat(" ", len(a))
 	ret := []string{
@@ -111,7 +100,7 @@ func edgeRender(scanData scanResult, kp kpData) []string {
 	return ret
 }
 
-func loopRender(out io.Writer, scanData scanResult, stack ...btrfsvol.LogicalAddr) {
+func loopRender(out io.Writer, scanData Graph, stack ...btrfsvol.LogicalAddr) {
 	var lines []string
 	add := func(suffixes []string) {
 		curLen := 0
@@ -151,4 +140,26 @@ func loopRender(out io.Writer, scanData scanResult, stack ...btrfsvol.LogicalAdd
 	for _, line := range lines {
 		fmt.Fprintln(out, "    "+line)
 	}
+}
+
+func checkNodeExpectations(kp Edge, toNode Node) error {
+	var errs derror.MultiError
+	if toNode.Level != kp.ToLevel {
+		errs = append(errs, fmt.Errorf("kp.level=%v != node.level=%v",
+			kp.ToLevel, toNode.Level))
+	}
+	if toNode.Generation != kp.ToGeneration {
+		errs = append(errs, fmt.Errorf("kp.generation=%v != node.generation=%v",
+			kp.ToGeneration, toNode.Generation))
+	}
+	if toNode.NumItems == 0 {
+		errs = append(errs, fmt.Errorf("node.num_items=0"))
+	} else if kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem != kp.ToKey {
+		errs = append(errs, fmt.Errorf("kp.key=%v != node.items[0].key=%v",
+			kp.ToKey, toNode.MinItem))
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
 }

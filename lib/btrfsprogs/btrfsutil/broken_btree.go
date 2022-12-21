@@ -75,7 +75,7 @@ var _ btrfstree.TreeOperator = (*brokenTrees)(nil)
 // NewBrokenTrees wraps a *btrfs.FS to support looking up information
 // from broken trees.
 //
-// Of the btrfs.FS.Tree{Verb}Trees methods:
+// Of the btrfs.FS.Tree{Verb} methods:
 //
 //   - TreeWalk works on broken trees
 //   - TreeLookup relies on the tree being properly ordered (which a
@@ -94,6 +94,7 @@ func NewBrokenTrees(ctx context.Context, inner *btrfs.FS) interface {
 	btrfstree.TreeOperator
 	Superblock() (*btrfstree.Superblock, error)
 	ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+	Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error)
 } {
 	return &brokenTrees{
 		ctx:   ctx,
@@ -144,37 +145,7 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 		cacheEntry.TreeRootErr = err
 	} else {
 		dlog.Infof(bt.ctx, "indexing tree %v...", treeID)
-		btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(
-			bt.ctx,
-			*treeRoot,
-			func(err *btrfstree.TreeError) {
-				if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
-					// This is a panic because on the filesystems I'm working with it more likely
-					// indicates a bug in my item parser than a problem with the filesystem.
-					panic(fmt.Errorf("TODO: error parsing item: %w", err))
-				}
-				cacheEntry.Errors.Insert(treeIndexError{
-					Path: bt.arena.Deflate(err.Path),
-					Err:  err.Err,
-				})
-			},
-			btrfstree.TreeWalkHandler{
-				Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
-					if cacheEntry.Items.Lookup(item.Key) != nil {
-						// This is a panic because I'm not really sure what the best way to
-						// handle this is, and so if this happens I want the program to crash
-						// and force me to figure out how to handle it.
-						panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
-					}
-					cacheEntry.Items.Insert(treeIndexValue{
-						Path:     bt.arena.Deflate(path),
-						Key:      item.Key,
-						ItemSize: item.BodySize,
-					})
-					return nil
-				},
-			},
-		)
+		bt.rawTreeWalk(*treeRoot, cacheEntry, nil)
 		dlog.Infof(bt.ctx, "... done indexing tree %v", treeID)
 	}
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
@@ -183,6 +154,43 @@ func (bt *brokenTrees) treeIndex(treeID btrfsprim.ObjID) treeIndex {
 		bt.treeIndexes[treeID] = cacheEntry
 	}
 	return cacheEntry
+}
+
+func (bt *brokenTrees) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry treeIndex, walked *[]btrfsprim.Key) {
+	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(
+		bt.ctx,
+		root,
+		func(err *btrfstree.TreeError) {
+			if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
+				// This is a panic because on the filesystems I'm working with it more likely
+				// indicates a bug in my item parser than a problem with the filesystem.
+				panic(fmt.Errorf("TODO: error parsing item: %w", err))
+			}
+			cacheEntry.Errors.Insert(treeIndexError{
+				Path: bt.arena.Deflate(err.Path),
+				Err:  err.Err,
+			})
+		},
+		btrfstree.TreeWalkHandler{
+			Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+				if cacheEntry.Items.Lookup(item.Key) != nil {
+					// This is a panic because I'm not really sure what the best way to
+					// handle this is, and so if this happens I want the program to crash
+					// and force me to figure out how to handle it.
+					panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, root.TreeID))
+				}
+				cacheEntry.Items.Insert(treeIndexValue{
+					Path:     bt.arena.Deflate(path),
+					Key:      item.Key,
+					ItemSize: item.BodySize,
+				})
+				if walked != nil {
+					*walked = append(*walked, item.Key)
+				}
+				return nil
+			},
+		},
+	)
 }
 
 func (bt *brokenTrees) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
@@ -314,4 +322,27 @@ func (bt *brokenTrees) Superblock() (*btrfstree.Superblock, error) {
 
 func (bt *brokenTrees) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
+}
+
+func (bt *brokenTrees) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error) {
+	sb, err := bt.Superblock()
+	if err != nil {
+		return nil, err
+	}
+	index := bt.treeIndex(treeID)
+	if index.TreeRootErr != nil {
+		return nil, index.TreeRootErr
+	}
+	nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeAddr, btrfstree.NodeExpectations{})
+	if err != nil {
+		return nil, err
+	}
+	var ret []btrfsprim.Key
+	bt.rawTreeWalk(btrfstree.TreeRoot{
+		TreeID:     treeID,
+		RootNode:   nodeAddr,
+		Level:      nodeRef.Data.Head.Level,
+		Generation: nodeRef.Data.Head.Generation,
+	}, index, &ret)
+	return ret, nil
 }

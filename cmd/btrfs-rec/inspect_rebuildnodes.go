@@ -4,7 +4,6 @@
 
 package main
 
-/*
 import (
 	"bufio"
 	"io"
@@ -16,8 +15,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 func init() {
@@ -52,7 +53,7 @@ func init() {
 	})
 }
 
-func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsvol.LogicalAddr]*rebuildnodes.RebuiltNode) (err error) {
+func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]) (err error) {
 	buffer := bufio.NewWriter(w)
 	defer func() {
 		if _err := buffer.Flush(); err == nil && _err != nil {
@@ -66,4 +67,3 @@ func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsvol.LogicalAddr]*rebuildn
 		ForceTrailingNewlines: true,
 	}, rebuiltNodes)
 }
-*/

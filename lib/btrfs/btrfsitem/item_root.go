@@ -11,12 +11,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
+// key.objectid = tree ID
+// key.offset = either
+//   - 0 if objectid is one of the BTRFS_*_TREE_OBJECTID defines or a non-snapshot volume; or
+//   - transaction_id of when this snapshot was created
 type Root struct { // ROOT_ITEM=132
-	Inode         Inode                `bin:"off=0x000, siz=0xa0"`
+	Inode         Inode                `bin:"off=0x000, siz=0xa0"` // ???
 	Generation    btrfsprim.Generation `bin:"off=0x0a0, siz=0x08"`
-	RootDirID     btrfsprim.ObjID      `bin:"off=0x0a8, siz=0x08"`
-	ByteNr        btrfsvol.LogicalAddr `bin:"off=0x0b0, siz=0x08"`
-	ByteLimit     int64                `bin:"off=0x0b8, siz=0x08"`
+	RootDirID     btrfsprim.ObjID      `bin:"off=0x0a8, siz=0x08"` // inode number of the root inode
+	ByteNr        btrfsvol.LogicalAddr `bin:"off=0x0b0, siz=0x08"` // root node
+	ByteLimit     int64                `bin:"off=0x0b8, siz=0x08"` // always 0 (unused)
 	BytesUsed     int64                `bin:"off=0x0c0, siz=0x08"`
 	LastSnapshot  int64                `bin:"off=0x0c8, siz=0x08"`
 	Flags         RootFlags            `bin:"off=0x0d0, siz=0x08"`
@@ -36,7 +40,7 @@ type Root struct { // ROOT_ITEM=132
 	OTime         btrfsprim.Time       `bin:"off=0x153, siz=0x0c"`
 	STime         btrfsprim.Time       `bin:"off=0x15f, siz=0x0c"`
 	RTime         btrfsprim.Time       `bin:"off=0x16b, siz=0x0c"`
-	GlobalTreeID  btrfsprim.ObjID      `bin:"off=0x177, siz=0x08"`
+	GlobalTreeID  btrfsprim.ObjID      `bin:"off=0x177, siz=0x08"` // ???
 	Reserved      [7]int64             `bin:"off=0x17f, siz=0x38"`
 	binstruct.End `bin:"off=0x1b7"`
 }

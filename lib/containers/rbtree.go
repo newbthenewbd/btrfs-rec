@@ -37,6 +37,11 @@ type RBTree[K Ordered[K], V any] struct {
 	KeyFn  func(V) K
 	AttrFn func(*RBNode[V])
 	root   *RBNode[V]
+	len    int
+}
+
+func (t *RBTree[K, V]) Len() int {
+	return t.len
 }
 
 func (t *RBTree[K, V]) Walk(fn func(*RBNode[V]) error) error {
@@ -324,6 +329,7 @@ func (t *RBTree[K, V]) Insert(val V) {
 		exact.Value = val
 		return
 	}
+	t.len++
 
 	node := &RBNode[V]{
 		Color:  Red,
@@ -394,6 +400,7 @@ func (t *RBTree[K, V]) Delete(key K) {
 	if nodeToDelete == nil {
 		return
 	}
+	t.len--
 
 	// This is closely based on the algorithm presented in CLRS
 	// 3e.

@@ -5,27 +5,70 @@
 package containers
 
 import (
+	"fmt"
 	"io"
+	"sort"
 
 	"git.lukeshu.com/go/lowmemjson"
-	"golang.org/x/exp/constraints"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 // Set[T] is an unordered set of T.
-//
-// Despite Set[T] being unordered, T is required to be an ordered type
-// in order that a Set[T] have a deterministic JSON representation.
-type Set[T constraints.Ordered] map[T]struct{}
+type Set[T comparable] map[T]struct{}
 
 var (
 	_ lowmemjson.Encodable = Set[int]{}
 	_ lowmemjson.Decodable = (*Set[int])(nil)
 )
 
+func cast[T any](x any) T { return x.(T) }
+
 func (o Set[T]) EncodeJSON(w io.Writer) error {
-	return lowmemjson.Encode(w, maps.SortedKeys(o))
+	var less func(a, b T) bool
+	var zero T
+	switch (any(zero)).(type) {
+	case _Ordered[T]:
+		less = func(a, b T) bool { return cast[_Ordered[T]](a).Cmp(b) < 0 }
+	// This is the constraints.Ordered list
+	case string:
+		less = func(a, b T) bool { return cast[string](a) < cast[string](b) }
+	case int:
+		less = func(a, b T) bool { return cast[int](a) < cast[int](b) }
+	case int8:
+		less = func(a, b T) bool { return cast[int8](a) < cast[int8](b) }
+	case int16:
+		less = func(a, b T) bool { return cast[int16](a) < cast[int16](b) }
+	case int32:
+		less = func(a, b T) bool { return cast[int32](a) < cast[int32](b) }
+	case int64:
+		less = func(a, b T) bool { return cast[int64](a) < cast[int64](b) }
+	case uint:
+		less = func(a, b T) bool { return cast[uint](a) < cast[uint](b) }
+	case uint8:
+		less = func(a, b T) bool { return cast[uint8](a) < cast[uint8](b) }
+	case uint16:
+		less = func(a, b T) bool { return cast[uint16](a) < cast[uint16](b) }
+	case uint32:
+		less = func(a, b T) bool { return cast[uint32](a) < cast[uint32](b) }
+	case uint64:
+		less = func(a, b T) bool { return cast[uint64](a) < cast[uint64](b) }
+	case uintptr:
+		less = func(a, b T) bool { return cast[uintptr](a) < cast[uintptr](b) }
+	case float32:
+		less = func(a, b T) bool { return cast[float32](a) < cast[float32](b) }
+	case float64:
+		less = func(a, b T) bool { return cast[float64](a) < cast[float64](b) }
+	default:
+		less = func(a, b T) bool { return fmt.Sprint(a) < fmt.Sprint(b) }
+	}
+
+	keys := maps.Keys(o)
+	sort.Slice(keys, func(i, j int) bool {
+		return less(keys[i], keys[j])
+	})
+
+	return lowmemjson.Encode(w, keys)
 }
 
 func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
@@ -49,7 +92,7 @@ func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
 	})
 }
 
-func NewSet[T constraints.Ordered](values ...T) Set[T] {
+func NewSet[T comparable](values ...T) Set[T] {
 	ret := make(Set[T], len(values))
 	for _, value := range values {
 		ret.Insert(value)
@@ -106,4 +149,17 @@ func (small Set[T]) HasAny(big Set[T]) bool {
 		}
 	}
 	return false
+}
+
+func (small Set[T]) Intersection(big Set[T]) Set[T] {
+	if len(big) < len(small) {
+		small, big = big, small
+	}
+	ret := make(Set[T])
+	for v := range small {
+		if _, ok := big[v]; ok {
+			ret.Insert(v)
+		}
+	}
+	return ret
 }

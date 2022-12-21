@@ -12,6 +12,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
+// key.objectid = laddr of the extent
+// key.offset = length of the extent
 type Extent struct { // EXTENT_ITEM=168
 	Head ExtentHeader
 	Info TreeBlockInfo // only if .Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK)

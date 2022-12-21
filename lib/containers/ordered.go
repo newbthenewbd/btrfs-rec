@@ -8,9 +8,11 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-type Ordered[T interface{ Cmp(T) int }] interface {
+type _Ordered[T any] interface {
 	Cmp(T) int
 }
+
+type Ordered[T _Ordered[T]] _Ordered[T]
 
 type NativeOrdered[T constraints.Ordered] struct {
 	Val T

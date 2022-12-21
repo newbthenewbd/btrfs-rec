@@ -5,42 +5,10 @@
 package rebuildnodes
 
 import (
-	"fmt"
+	"golang.org/x/exp/constraints"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
-
-func ptrTo[T any](x T) *T {
-	return &x
-}
-
-func maybeSet[K, V comparable](name string, m map[K]V, k K, v V) error {
-	if other, conflict := m[k]; conflict && other != v {
-		return fmt.Errorf("conflict: %s %v can't have both %v and %v", name, k, other, v)
-	}
-	m[k] = v
-	return nil
-}
-
-/*
-var maxKey = btrfsprim.Key{
-	ObjectID: math.MaxUint64,
-	ItemType: math.MaxUint8,
-	Offset:   math.MaxUint64,
-}
-
-func keyMm(key btrfsprim.Key) btrfsprim.Key {
-	switch {
-	case key.Offset > 0:
-		key.Offset--
-	case key.ItemType > 0:
-		key.ItemType--
-	case key.ObjectID > 0:
-		key.ObjectID--
-	}
-	return key
-}
-*/
 
 func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
 	var cnt int
@@ -48,4 +16,12 @@ func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
 		cnt += len(devResults.FoundNodes)
 	}
 	return cnt
+}
+
+func roundDown[T constraints.Integer](n, d T) T {
+	return (n / d) * d
+}
+
+func roundUp[T constraints.Integer](n, d T) T {
+	return ((n + d - 1) / d) * d
 }

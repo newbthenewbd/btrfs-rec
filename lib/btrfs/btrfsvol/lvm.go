@@ -256,9 +256,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	return ret
 }
 
-// paddrs isn't a containers.Set because QualifiedPhysicalAddr is not
-// an ordered type.
-func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[QualifiedPhysicalAddr]struct{}, maxlen AddrDelta) {
+func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs containers.Set[QualifiedPhysicalAddr], maxlen AddrDelta) {
 	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
 		return chunkMapping{LAddr: laddr, Size: 1}.cmpRange(chunk)
 	})
@@ -269,10 +267,10 @@ func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs map[
 	chunk := node.Value
 
 	offsetWithinChunk := laddr.Sub(chunk.LAddr)
-	paddrs = make(map[QualifiedPhysicalAddr]struct{})
+	paddrs = make(containers.Set[QualifiedPhysicalAddr])
 	maxlen = chunk.Size - offsetWithinChunk
 	for _, stripe := range chunk.PAddrs {
-		paddrs[stripe.Add(offsetWithinChunk)] = struct{}{}
+		paddrs.Insert(stripe.Add(offsetWithinChunk))
 	}
 
 	return paddrs, maxlen

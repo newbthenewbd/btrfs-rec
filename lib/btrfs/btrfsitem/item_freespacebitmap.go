@@ -4,6 +4,8 @@
 
 package btrfsitem
 
+// key.objectid = object ID of the FreeSpaceInfo (logical_addr)
+// key.offset = offset of the FreeSpaceInfo (size)
 type FreeSpaceBitmap []byte // FREE_SPACE_BITMAP=200
 
 func (o *FreeSpaceBitmap) UnmarshalBinary(dat []byte) (int, error) {
