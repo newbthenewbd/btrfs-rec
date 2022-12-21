@@ -26,7 +26,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type Rebuilder struct {
+type rebuilder struct {
 	raw   *btrfs.FS
 	inner interface {
 		btrfstree.TreeOperator
@@ -70,7 +70,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Rebuilding node tree...")
-	o := &Rebuilder{
+	o := &rebuilder{
 		raw:   fs,
 		inner: btrfsutil.NewBrokenTrees(ctx, fs),
 		sb:    *sb,
@@ -90,13 +90,13 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	return o.augments, nil
 }
 
-func (o *Rebuilder) ioErr(ctx context.Context, err error) {
+func (o *rebuilder) ioErr(ctx context.Context, err error) {
 	err = fmt.Errorf("should not happen: i/o error: %w", err)
 	dlog.Error(ctx, err)
 	panic(err)
 }
 
-func (o *Rebuilder) rebuild(ctx context.Context) error {
+func (o *rebuilder) rebuild(ctx context.Context) error {
 	passNum := 0
 	dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
 	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
@@ -151,7 +151,7 @@ func (o *Rebuilder) rebuild(ctx context.Context) error {
 	return nil
 }
 
-func (o *Rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances []map[btrfsvol.LogicalAddr]int) containers.Set[btrfsvol.LogicalAddr] {
+func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances []map[btrfsvol.LogicalAddr]int) containers.Set[btrfsvol.LogicalAddr] {
 	distances := make(map[btrfsvol.LogicalAddr]int)
 	generations := make(map[btrfsvol.LogicalAddr]btrfsprim.Generation)
 	lists := make([]containers.Set[btrfsvol.LogicalAddr], len(listsWithDistances))
@@ -294,7 +294,7 @@ func treeDistance(fs _NodeFile, tree, leaf btrfsprim.ObjID) (int, bool) {
 	}
 }
 
-func (o *Rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
 	choicesWithDist := make(map[btrfsvol.LogicalAddr]int)
 	for choice := range choices {
 		if dist, ok := treeDistance(o.uuidMap, treeID, o.graph.Nodes[choice].Owner); ok {
@@ -312,12 +312,12 @@ func (o *Rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, cho
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // fsErr implements rebuildCallbacks.
-func (o *Rebuilder) fsErr(ctx context.Context, e error) {
+func (o *rebuilder) fsErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 
 // want implements rebuildCallbacks.
-func (o *Rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
+func (o *rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
@@ -345,7 +345,7 @@ func (o *Rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrf
 }
 
 // wantOff implements rebuildCallbacks.
-func (o *Rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
+func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
@@ -371,7 +371,7 @@ func (o *Rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID b
 }
 
 // wantFunc implements rebuildCallbacks.
-func (o *Rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool) {
+func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool) {
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
@@ -415,7 +415,7 @@ func (o *Rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 // func implements rebuildCallbacks.
 //
 // interval is [beg, end)
-func (o *Rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
+func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
 	for beg < end {
 		// check if we already have it
 		if run, err := btrfs.LookupCSum(o.inner, o.sb.ChecksumType, beg); err == nil {
@@ -460,7 +460,7 @@ func (o *Rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr)
 }
 
 // wantFileExt implements rebuildCallbacks.
-func (o *Rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	min := btrfsprim.Key{
 		ObjectID: ino,
 		ItemType: btrfsitem.EXTENT_DATA_KEY,
