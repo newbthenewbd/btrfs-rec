@@ -590,8 +590,8 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 							continue
 						}
 						itemEnd := itemBeg + itemSize
-						// We're being and "wanting" any extent that has any overlap with the
-						// gap.  But maybe instead we sould only want extents that are
+						// We're being greedy and "wanting" any extent that has any overlap with
+						// the gap.  But maybe instead we sould only want extents that are
 						// *entirely* within the gap.  I'll have to run it on real filesystems
 						// to see what works better.
 						//
