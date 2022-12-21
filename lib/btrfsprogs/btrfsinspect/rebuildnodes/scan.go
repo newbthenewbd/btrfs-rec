@@ -16,6 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -25,6 +26,7 @@ import (
 type scanResult struct {
 	uuidMap   *uuidmap.UUIDMap
 	nodeGraph *graph.Graph
+	keyIO     *keyio.Handle
 }
 
 type scanStats struct {
@@ -56,6 +58,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		uuidMap:   uuidmap.New(),
 		nodeGraph: graph.New(*sb),
 	}
+	ret.keyIO = keyio.NewHandle(fs, *sb, ret.nodeGraph)
 
 	progress(done, total)
 	for _, devResults := range scanResults {
@@ -72,6 +75,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 			}
 
 			ret.nodeGraph.InsertNode(nodeRef)
+			ret.keyIO.InsertNode(nodeRef)
 
 			done++
 			progress(done, total)

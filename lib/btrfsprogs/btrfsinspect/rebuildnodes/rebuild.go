@@ -20,6 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
@@ -38,7 +39,7 @@ type rebuilder struct {
 	uuidMap      uuidmap.UUIDMap
 	csums        containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
 	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
-	key2leaf     containers.SortedMap[keyAndTree, btrfsvol.LogicalAddr]
+	keyIO        keyio.Handle
 
 	augments map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
 
@@ -64,7 +65,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Indexing orphans...")
-	leaf2orphans, key2leaf, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
+	leaf2orphans, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		uuidMap:      *scanData.uuidMap,
 		csums:        *csums,
 		leaf2orphans: leaf2orphans,
-		key2leaf:     *key2leaf,
+		keyIO:        *scanData.keyIO,
 
 		augments: make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]),
 	}
@@ -335,10 +336,10 @@ func (o *rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrf
 
 	ctx = dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.key2leaf.Subrange(
-		func(k keyAndTree, _ btrfsvol.LogicalAddr) int { k.Key.Offset = 0; return tgt.Cmp(k.Key) },
-		func(_ keyAndTree, v btrfsvol.LogicalAddr) bool {
-			wants.InsertFrom(o.leaf2orphans[v])
+	o.keyIO.Keys.Subrange(
+		func(k keyio.KeyAndTree, _ keyio.ItemPtr) int { k.Key.Offset = 0; return tgt.Cmp(k.Key) },
+		func(_ keyio.KeyAndTree, v keyio.ItemPtr) bool {
+			wants.InsertFrom(o.leaf2orphans[v.Node])
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -361,10 +362,10 @@ func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID b
 
 	ctx = dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key=%v", treeID, tgt))
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.key2leaf.Subrange(
-		func(k keyAndTree, _ btrfsvol.LogicalAddr) int { return tgt.Cmp(k.Key) },
-		func(_ keyAndTree, v btrfsvol.LogicalAddr) bool {
-			wants.InsertFrom(o.leaf2orphans[v])
+	o.keyIO.Keys.Subrange(
+		func(k keyio.KeyAndTree, _ keyio.ItemPtr) int { return tgt.Cmp(k.Key) },
+		func(_ keyio.KeyAndTree, v keyio.ItemPtr) bool {
+			wants.InsertFrom(o.leaf2orphans[v.Node])
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -392,20 +393,15 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 
 	ctx = dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key=%v +func", treeID, tgt))
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.key2leaf.Subrange(
-		func(k keyAndTree, _ btrfsvol.LogicalAddr) int { k.Key.Offset = 0; return tgt.Cmp(k.Key) },
-		func(k keyAndTree, v btrfsvol.LogicalAddr) bool {
-			nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](o.raw, o.sb, v, btrfstree.NodeExpectations{
-				LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: v},
-				Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: o.graph.Nodes[v].Generation},
-			})
-			if err != nil {
-				o.ioErr(ctx, err)
+	o.keyIO.Keys.Subrange(
+		func(k keyio.KeyAndTree, _ keyio.ItemPtr) int { k.Key.Offset = 0; return tgt.Cmp(k.Key) },
+		func(k keyio.KeyAndTree, v keyio.ItemPtr) bool {
+			itemBody, ok := o.keyIO.ReadItem(v)
+			if !ok {
+				o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", v))
 			}
-			for _, item := range nodeRef.Data.BodyLeaf {
-				if k.Key == item.Key && fn(item.Body) {
-					wants.InsertFrom(o.leaf2orphans[v])
-				}
+			if fn(itemBody) {
+				wants.InsertFrom(o.leaf2orphans[v.Node])
 			}
 			return true
 		})
@@ -441,18 +437,18 @@ func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr)
 				continue
 			}
 			run := rbNode.Value.Sums
-			key := keyAndTree{
+			key := keyio.KeyAndTree{
 				Key:    rbNode.Value.Key,
 				TreeID: btrfsprim.CSUM_TREE_OBJECTID,
 			}
-			leaf, ok := o.key2leaf.Load(key)
+			itemPtr, ok := o.keyIO.Keys.Load(key)
 			if !ok {
 				// This is a panic because if we found it in `o.csums` then it has
 				// to be in some Node, and if we didn't find it from
 				// btrfs.LookupCSum(), then that Node must be an orphan.
 				panic(fmt.Errorf("should not happen: no orphan contains %v", key.Key))
 			}
-			o.wantAugment(ctx, key.TreeID, o.leaf2orphans[leaf])
+			o.wantAugment(ctx, key.TreeID, o.leaf2orphans[itemPtr.Node])
 
 			beg = run.Addr.Add(run.Size())
 		}
@@ -558,8 +554,8 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 		}
 		ctx := dlog.WithField(ctx, "want_key", fmt.Sprintf("file extent for tree=%v inode=%v bytes [%v, %v)", treeID, ino, gap.Beg, gap.End))
 		wants := make(containers.Set[btrfsvol.LogicalAddr])
-		o.key2leaf.Subrange(
-			func(k keyAndTree, _ btrfsvol.LogicalAddr) int {
+		o.keyIO.Keys.Subrange(
+			func(k keyio.KeyAndTree, _ keyio.ItemPtr) int {
 				switch {
 				case min.Cmp(k.Key) < 0:
 					return 1
@@ -569,45 +565,37 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 					return 0
 				}
 			},
-			func(k keyAndTree, v btrfsvol.LogicalAddr) bool {
-				nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](o.raw, o.sb, v, btrfstree.NodeExpectations{
-					LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: v},
-					Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: o.graph.Nodes[v].Generation},
-				})
-				if err != nil {
-					o.ioErr(ctx, fmt.Errorf("error reading previously read node@%v: %w", v, err))
+			func(k keyio.KeyAndTree, v keyio.ItemPtr) bool {
+				itemBody, ok := o.keyIO.ReadItem(v)
+				if !ok {
+					o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", v))
 				}
-				for _, item := range nodeRef.Data.BodyLeaf {
-					if k.Key != item.Key {
-						continue
+				switch itemBody := itemBody.(type) {
+				case btrfsitem.FileExtent:
+					itemBeg := int64(k.Offset)
+					itemSize, err := itemBody.Size()
+					if err != nil {
+						o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, k, err))
+						break
 					}
-					switch itemBody := item.Body.(type) {
-					case btrfsitem.FileExtent:
-						itemBeg := int64(item.Key.Offset)
-						itemSize, err := itemBody.Size()
-						if err != nil {
-							o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, item.Key, err))
-							continue
-						}
-						itemEnd := itemBeg + itemSize
-						// We're being greedy and "wanting" any extent that has any overlap with
-						// the gap.  But maybe instead we sould only want extents that are
-						// *entirely* within the gap.  I'll have to run it on real filesystems
-						// to see what works better.
-						//
-						// TODO(lukeshu): Re-evaluate whether being greedy here is the right
-						// thing.
-						if itemEnd > gap.Beg && itemBeg < gap.End {
-							wants.InsertFrom(o.leaf2orphans[v])
-						}
-					case btrfsitem.Error:
-						o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, item.Key, itemBody.Err))
-					default:
-						// This is a panic because the item decoder should not emit EXTENT_DATA
-						// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
-						// this code also being updated.
-						panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", itemBody))
+					itemEnd := itemBeg + itemSize
+					// We're being greedy and "wanting" any extent that has any overlap with
+					// the gap.  But maybe instead we sould only want extents that are
+					// *entirely* within the gap.  I'll have to run it on real filesystems
+					// to see what works better.
+					//
+					// TODO(lukeshu): Re-evaluate whether being greedy here is the right
+					// thing.
+					if itemEnd > gap.Beg && itemBeg < gap.End {
+						wants.InsertFrom(o.leaf2orphans[v.Node])
 					}
+				case btrfsitem.Error:
+					o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, k, itemBody.Err))
+				default:
+					// This is a panic because the item decoder should not emit EXTENT_DATA
+					// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
+					// this code also being updated.
+					panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", itemBody))
 				}
 				return true
 			})

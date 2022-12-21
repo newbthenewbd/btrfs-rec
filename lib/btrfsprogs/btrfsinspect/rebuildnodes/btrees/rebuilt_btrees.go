@@ -16,17 +16,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	pkggraph "git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
-
-type itemPtr struct {
-	Node btrfsvol.LogicalAddr
-	Idx  int
-}
 
 type rebuiltTree struct {
 	// static
@@ -39,7 +34,7 @@ type rebuiltTree struct {
 
 	// mutable
 	Roots containers.Set[btrfsvol.LogicalAddr]
-	Items containers.SortedMap[btrfsprim.Key, itemPtr]
+	Items containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 }
 
 // isOwnerOK returns whether it is permissible for a node with
@@ -85,9 +80,9 @@ func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
 // NewRebuiltTrees().
 type RebuiltTrees struct {
 	// static
-	rawFile diskio.File[btrfsvol.LogicalAddr]
-	sb      btrfstree.Superblock
-	graph   pkggraph.Graph
+	sb    btrfstree.Superblock
+	graph pkggraph.Graph
+	keyIO keyio.Handle
 
 	// static callbacks
 	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
@@ -95,63 +90,28 @@ type RebuiltTrees struct {
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
-	trees     map[btrfsprim.ObjID]*rebuiltTree
-	nodeCache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
+	trees map[btrfsprim.ObjID]*rebuiltTree
 }
 
 // NewRebuiltTrees returns a new RebuiltTrees instance.  All of the
 // callbacks must be non-nil.
 func NewRebuiltTrees(
-	file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph pkggraph.Graph,
+	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO keyio.Handle,
 	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
 	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool),
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
 ) *RebuiltTrees {
 	return &RebuiltTrees{
-		rawFile: file,
-		sb:      sb,
-		graph:   graph,
+		sb:    sb,
+		graph: graph,
+		keyIO: keyIO,
 
 		cbAddedItem:  cbAddedItem,
 		cbLookupRoot: cbLookupRoot,
 		cbLookupUUID: cbLookupUUID,
 
-		trees:     make(map[btrfsprim.ObjID]*rebuiltTree),
-		nodeCache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](8),
+		trees: make(map[btrfsprim.ObjID]*rebuiltTree),
 	}
-}
-
-func (ts *RebuiltTrees) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
-	if cached, ok := ts.nodeCache.Get(laddr); ok {
-		return cached
-	}
-
-	graphInfo, ok := ts.graph.Nodes[laddr]
-	if !ok {
-		panic(fmt.Errorf("should not happen: node@%v is not mentioned in the in-memory graph", laddr))
-	}
-
-	ref, err := btrfstree.ReadNode(ts.rawFile, ts.sb, laddr, btrfstree.NodeExpectations{
-		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
-		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
-		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: graphInfo.Generation},
-		Owner: func(treeID btrfsprim.ObjID) error {
-			if treeID != graphInfo.Owner {
-				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
-					graphInfo.Owner, treeID)
-			}
-			return nil
-		},
-		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem},
-		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem},
-	})
-	if err != nil {
-		panic(fmt.Errorf("should not happen: i/o error: %w", err))
-	}
-
-	ts.nodeCache.Add(laddr, ref)
-
-	return ref
 }
 
 type rootStats struct {
@@ -198,14 +158,14 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 		if !roots.Has(rootNode) {
 			continue
 		}
-		for j, item := range ts.readNode(leaf).Data.BodyLeaf {
+		for j, item := range ts.keyIO.ReadNode(leaf).Data.BodyLeaf {
 			if _, exists := tree.Items.Load(item.Key); exists {
 				// This is a panic because I'm not really sure what the best way to
 				// handle this is, and so if this happens I want the program to crash
 				// and force me to figure out how to handle it.
 				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
 			}
-			tree.Items.Store(item.Key, itemPtr{
+			tree.Items.Store(item.Key, keyio.ItemPtr{
 				Node: leaf,
 				Idx:  j,
 			})
@@ -361,7 +321,7 @@ func (ts *RebuiltTrees) Load(ctx context.Context, treeID btrfsprim.ObjID, key bt
 	if !ok {
 		return nil, false
 	}
-	return ts.readNode(ptr.Node).Data.BodyLeaf[ptr.Idx].Body, true
+	return ts.keyIO.ReadItem(ptr)
 }
 
 // Search searches for an item from a tree.
@@ -372,7 +332,7 @@ func (ts *RebuiltTrees) Search(ctx context.Context, treeID btrfsprim.ObjID, fn f
 	if !ts.AddTree(ctx, treeID) {
 		return btrfsprim.Key{}, false
 	}
-	k, _, ok := ts.trees[treeID].Items.Search(func(k btrfsprim.Key, _ itemPtr) int {
+	k, _, ok := ts.trees[treeID].Items.Search(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
 		return fn(k)
 	})
 	return k, ok
@@ -386,7 +346,7 @@ func (ts *RebuiltTrees) SearchAll(ctx context.Context, treeID btrfsprim.ObjID, f
 	if !ts.AddTree(ctx, treeID) {
 		return nil
 	}
-	kvs := ts.trees[treeID].Items.SearchAll(func(k btrfsprim.Key, _ itemPtr) int {
+	kvs := ts.trees[treeID].Items.SearchAll(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
 		return fn(k)
 	})
 	if len(kvs) == 0 {
