@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -19,30 +20,24 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/btrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type rebuilder struct {
-	raw   *btrfs.FS
-	inner interface {
-		btrfstree.TreeOperator
-		Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error)
-	}
-	sb btrfstree.Superblock
+	sb      btrfstree.Superblock
+	rebuilt *btrees.RebuiltTrees
 
-	graph        graph.Graph
-	uuidMap      uuidmap.UUIDMap
-	csums        containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
-	leaf2orphans map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
-	keyIO        keyio.Handle
+	graph graph.Graph
+	csums containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
+	keyIO keyio.Handle
 
-	augments map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
-
+	curKey          keyio.KeyAndTree
+	queue           []keyio.KeyAndTree
 	pendingAugments map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
@@ -64,31 +59,21 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		csums = new(containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum])
 	}
 
-	dlog.Info(ctx, "Indexing orphans...")
-	leaf2orphans, err := indexOrphans(ctx, fs, *sb, *scanData.nodeGraph)
-	if err != nil {
-		return nil, err
-	}
-
 	dlog.Info(ctx, "Rebuilding node tree...")
 	o := &rebuilder{
-		raw:   fs,
-		inner: btrfsutil.NewBrokenTrees(ctx, fs),
-		sb:    *sb,
+		sb: *sb,
 
-		graph:        *scanData.nodeGraph,
-		uuidMap:      *scanData.uuidMap,
-		csums:        *csums,
-		leaf2orphans: leaf2orphans,
-		keyIO:        *scanData.keyIO,
-
-		augments: make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]),
+		graph: *scanData.nodeGraph,
+		csums: *csums,
+		keyIO: *scanData.keyIO,
 	}
+	o.rebuilt = btrees.NewRebuiltTrees(*sb, *scanData.nodeGraph, *scanData.keyIO,
+		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
 	if err := o.rebuild(ctx); err != nil {
 		return nil, err
 	}
 
-	return o.augments, nil
+	return o.rebuilt.ListRoots(), nil
 }
 
 func (o *rebuilder) ioErr(ctx context.Context, err error) {
@@ -97,59 +82,151 @@ func (o *rebuilder) ioErr(ctx context.Context, err error) {
 	panic(err)
 }
 
+type rebuildStats struct {
+	PassNum int
+	Task    string
+	N, D    int
+}
+
+func (s rebuildStats) String() string {
+	pct := 100
+	if s.D > 0 {
+		pct = int(100 * float64(s.N) / float64(s.D))
+	}
+	return fmt.Sprintf("... pass %d: %s %v%% (%v/%v)",
+		s.PassNum, s.Task, pct, s.N, s.D)
+}
+
 func (o *rebuilder) rebuild(ctx context.Context) error {
 	passNum := 0
 	dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
+	// Seed the queue
 	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
-	btrfsutil.WalkAllTrees(ctx, o.inner, btrfsutil.WalkAllTreesHandler{
-		Err: func(*btrfsutil.WalkError) {},
-		TreeWalkHandler: btrfstree.TreeWalkHandler{
-			Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
-				handleItem(o, ctx, path[0].FromTree, item)
-				return nil
-			},
-		},
-	})
-	for len(o.pendingAugments) > 0 {
-		// Apply the augments, keeping track of what keys are added to what tree.
-		dlog.Infof(ctx, "... pass %d: augmenting trees to add implied items", passNum)
-		newKeys := make(map[btrfsprim.ObjID][]btrfsprim.Key)
-		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
-			dlog.Infof(ctx, "... ... augmenting tree %v:", treeID)
-			treeAugments := o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
-			for _, nodeAddr := range maps.SortedKeys(treeAugments) {
-				added, err := o.inner.Augment(treeID, nodeAddr)
-				if err != nil {
-					dlog.Errorf(ctx, "error augmenting: %v", err)
-					continue
-				}
-				newKeys[treeID] = append(newKeys[treeID], added...)
+	o.rebuilt.AddTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	o.rebuilt.AddTree(ctx, btrfsprim.CHUNK_TREE_OBJECTID)
+	o.rebuilt.AddTree(ctx, btrfsprim.TREE_LOG_OBJECTID)
+	o.rebuilt.AddTree(ctx, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
+	for {
+		// Handle items in the queue
+		queue := o.queue
+		o.queue = nil
+		progressWriter := textui.NewProgress[rebuildStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+		queueProgress := func(done int) {
+			progressWriter.Set(rebuildStats{
+				PassNum: passNum,
+				Task:    "processing item queue",
+				N:       done,
+				D:       len(queue),
+			})
+		}
+		for i, key := range queue {
+			queueProgress(i)
+			o.curKey = key
+			itemBody, ok := o.rebuilt.Load(ctx, key.TreeID, key.Key)
+			if !ok {
+				o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
+			}
+			handleItem(o, ctx, key.TreeID, btrfstree.Item{
+				Key:  key.Key,
+				Body: itemBody,
+			})
+			if key.ItemType == btrfsitem.ROOT_ITEM_KEY {
+				o.rebuilt.AddTree(ctx, key.ObjectID)
+			}
+		}
+		queueProgress(len(queue))
+		progressWriter.Done()
 
-				set := o.augments[treeID]
-				if set == nil {
-					set = make(containers.Set[btrfsvol.LogicalAddr])
-					o.augments[treeID] = set
-				}
-				set.Insert(nodeAddr)
-			}
+		// Check if we can bail
+		if len(o.queue) == 0 && len(o.pendingAugments) == 0 {
+			break
 		}
-		// Clear the list of pending augments.
+
+		// Apply augments that were requested while handling items from the queue
+		resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.pendingAugments))
+		numAugments := 0
+		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
+			resolvedAugments[treeID] = o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
+			numAugments += len(resolvedAugments[treeID])
+		}
 		o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
-		passNum++
-		// Call handleItem() for each of the added keys.
-		dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
-		for _, treeID := range maps.SortedKeys(newKeys) {
-			for _, key := range newKeys[treeID] {
-				item, err := o.inner.TreeLookup(treeID, key)
-				if err != nil {
-					o.ioErr(ctx, fmt.Errorf("error looking up already-inserted item: tree=%v key=%v: %w",
-						treeID, key, err))
-				}
-				handleItem(o, ctx, treeID, item)
+		progressWriter = textui.NewProgress[rebuildStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+		numAugmented := 0
+		augmentProgress := func() {
+			progressWriter.Set(rebuildStats{
+				PassNum: passNum,
+				Task:    "applying augments",
+				N:       numAugmented,
+				D:       numAugments,
+			})
+		}
+		for _, treeID := range maps.SortedKeys(resolvedAugments) {
+			for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
+				augmentProgress()
+				o.rebuilt.AddRoot(ctx, treeID, nodeAddr)
+				numAugmented++
 			}
 		}
+		augmentProgress()
+		progressWriter.Done()
+
+		passNum++
+		dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
 	}
 	return nil
+}
+
+func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
+	o.queue = append(o.queue, keyio.KeyAndTree{
+		TreeID: tree,
+		Key:    key,
+	})
+}
+
+func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool) {
+	key, ok := o._want(ctx, btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY)
+	if !ok {
+		o.queue = append(o.queue, o.curKey)
+		return btrfsitem.Root{}, false
+	}
+	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.ROOT_TREE_OBJECTID, key)
+	if !ok {
+		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
+	}
+	switch itemBody := itemBody.(type) {
+	case btrfsitem.Root:
+		return itemBody, true
+	case btrfsitem.Error:
+		o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", btrfsprim.ROOT_TREE_OBJECTID, key, itemBody.Err))
+		return btrfsitem.Root{}, false
+	default:
+		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
+		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
+	}
+}
+
+func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	key := btrfsitem.UUIDToKey(uuid)
+	if ok := o._wantOff(ctx, btrfsprim.UUID_TREE_OBJECTID, key.ObjectID, key.ItemType, key.Offset); !ok {
+		o.queue = append(o.queue, o.curKey)
+		return 0, false
+	}
+	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.UUID_TREE_OBJECTID, key)
+	if !ok {
+		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
+	}
+	switch itemBody := itemBody.(type) {
+	case btrfsitem.UUIDMap:
+		return itemBody.ObjID, true
+	case btrfsitem.Error:
+		o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", btrfsprim.UUID_TREE_OBJECTID, key, itemBody.Err))
+		return 0, false
+	default:
+		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
+	}
 }
 
 func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances []map[btrfsvol.LogicalAddr]int) containers.Set[btrfsvol.LogicalAddr] {
@@ -268,37 +345,10 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// _NodeFile is a subset of btrfstree.NodeFile.
-type _NodeFile interface {
-	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
-}
-
-func treeDistance(fs _NodeFile, tree, leaf btrfsprim.ObjID) (int, bool) {
-	dist := 0
-	for {
-		if tree == leaf {
-			return dist, true
-		}
-
-		parentTree, ok := fs.ParentTree(tree)
-		if !ok {
-			// Failed to look up parent info.
-			return 0, false
-		}
-		if parentTree == 0 {
-			// End of the line.
-			return 0, false
-		}
-
-		tree = parentTree
-		dist++
-	}
-}
-
 func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
 	choicesWithDist := make(map[btrfsvol.LogicalAddr]int)
 	for choice := range choices {
-		if dist, ok := treeDistance(o.uuidMap, treeID, o.graph.Nodes[choice].Owner); ok {
+		if dist, ok := o.rebuilt.COWDistance(ctx, treeID, o.graph.Nodes[choice].Owner); ok {
 			choicesWithDist[choice] = dist
 		}
 	}
@@ -319,17 +369,25 @@ func (o *rebuilder) fsErr(ctx context.Context, e error) {
 
 // want implements rebuildCallbacks.
 func (o *rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
+	o._want(ctx, treeID, objID, typ)
+}
+func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
+	if !o.rebuilt.AddTree(ctx, treeID) {
+		o.queue = append(o.queue, o.curKey)
+		return btrfsprim.Key{}, false
+	}
+
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	if _, err := o.inner.TreeSearch(treeID, func(key btrfsprim.Key, _ uint32) int {
+	if key, ok := o.rebuilt.Search(ctx, treeID, func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
-	}); err == nil {
-		return
+	}); ok {
+		return key, true
 	}
 
 	// OK, we need to insert it
@@ -339,14 +397,23 @@ func (o *rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrf
 	o.keyIO.Keys.Subrange(
 		func(k keyio.KeyAndTree, _ keyio.ItemPtr) int { k.Key.Offset = 0; return tgt.Cmp(k.Key) },
 		func(_ keyio.KeyAndTree, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.leaf2orphans[v.Node])
+			wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
+	return btrfsprim.Key{}, false
 }
 
 // wantOff implements rebuildCallbacks.
 func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
+	o._wantOff(ctx, treeID, objID, typ, off)
+}
+func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) (ok bool) {
+	if !o.rebuilt.AddTree(ctx, treeID) {
+		o.queue = append(o.queue, o.curKey)
+		return false
+	}
+
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
@@ -354,8 +421,8 @@ func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID b
 		ItemType: typ,
 		Offset:   off,
 	}
-	if _, err := o.inner.TreeLookup(treeID, tgt); err == nil {
-		return
+	if _, ok := o.rebuilt.Load(ctx, treeID, tgt); ok {
+		return true
 	}
 
 	// OK, we need to insert it
@@ -365,26 +432,36 @@ func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID b
 	o.keyIO.Keys.Subrange(
 		func(k keyio.KeyAndTree, _ keyio.ItemPtr) int { return tgt.Cmp(k.Key) },
 		func(_ keyio.KeyAndTree, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.leaf2orphans[v.Node])
+			wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
+	return false
 }
 
 // wantFunc implements rebuildCallbacks.
 func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool) {
+	if !o.rebuilt.AddTree(ctx, treeID) {
+		o.queue = append(o.queue, o.curKey)
+		return
+	}
+
 	// check if we already have it
 
 	tgt := btrfsprim.Key{
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	items, _ := o.inner.TreeSearchAll(treeID, func(key btrfsprim.Key, _ uint32) int {
+	keys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	})
-	for _, item := range items {
-		if fn(item.Body) {
+	for _, itemKey := range keys {
+		itemBody, ok := o.rebuilt.Load(ctx, treeID, itemKey)
+		if !ok {
+			o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", itemKey))
+		}
+		if fn(itemBody) {
 			return
 		}
 	}
@@ -398,10 +475,10 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 		func(k keyio.KeyAndTree, v keyio.ItemPtr) bool {
 			itemBody, ok := o.keyIO.ReadItem(v)
 			if !ok {
-				o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", v))
+				o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v at %v", k, v))
 			}
 			if fn(itemBody) {
-				wants.InsertFrom(o.leaf2orphans[v.Node])
+				wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
 			}
 			return true
 		})
@@ -412,35 +489,42 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 //
 // interval is [beg, end)
 func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
-	for beg < end {
-		// check if we already have it
-		if run, err := btrfs.LookupCSum(o.inner, o.sb.ChecksumType, beg); err == nil {
-			// we already have it
-			beg = run.Addr.Add(run.Size())
-		} else {
-			// we need to insert it
-			ctx := dlog.WithField(ctx, "want_key", fmt.Sprintf("csum for laddr=%v", beg))
-			rbNode := o.csums.Search(func(item btrfsinspect.SysExtentCSum) int {
-				switch {
-				case item.Sums.Addr > beg:
-					return -1
-				case item.Sums.Addr.Add(item.Sums.Size()) <= beg:
-					return 1
-				default:
-					return 0
-				}
+	if !o.rebuilt.AddTree(ctx, btrfsprim.CSUM_TREE_OBJECTID) {
+		o.queue = append(o.queue, o.curKey)
+		return
+	}
 
-			})
-			if rbNode == nil {
-				o.wantAugment(ctx, btrfsprim.CSUM_TREE_OBJECTID, nil) // log an error
-				beg += btrfssum.BlockSize
-				continue
+	for beg < end {
+		// Figure out which key we want.
+
+		ctx := dlog.WithField(ctx, "want_key", fmt.Sprintf("csum for laddr=%v", beg))
+		rbNode := o.csums.Search(func(item btrfsinspect.SysExtentCSum) int {
+			switch {
+			case item.Sums.Addr > beg:
+				return -1
+			case item.Sums.Addr.Add(item.Sums.Size()) <= beg:
+				return 1
+			default:
+				return 0
 			}
-			run := rbNode.Value.Sums
-			key := keyio.KeyAndTree{
-				Key:    rbNode.Value.Key,
-				TreeID: btrfsprim.CSUM_TREE_OBJECTID,
-			}
+
+		})
+		if rbNode == nil {
+			o.wantAugment(ctx, btrfsprim.CSUM_TREE_OBJECTID, nil) // log an error
+			beg += btrfssum.BlockSize
+			continue
+		}
+		run := rbNode.Value.Sums
+		key := keyio.KeyAndTree{
+			Key:    rbNode.Value.Key,
+			TreeID: btrfsprim.CSUM_TREE_OBJECTID,
+		}
+
+		// Check if we already have it.
+
+		// .Search is more efficient than .Load, because it doesn't load the body (and we don't need the body).
+		if _, ok := o.rebuilt.Search(ctx, key.TreeID, key.Key.Cmp); !ok {
+			// We need to insert it.
 			itemPtr, ok := o.keyIO.Keys.Load(key)
 			if !ok {
 				// This is a panic because if we found it in `o.csums` then it has
@@ -448,15 +532,20 @@ func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr)
 				// btrfs.LookupCSum(), then that Node must be an orphan.
 				panic(fmt.Errorf("should not happen: no orphan contains %v", key.Key))
 			}
-			o.wantAugment(ctx, key.TreeID, o.leaf2orphans[itemPtr.Node])
-
-			beg = run.Addr.Add(run.Size())
+			o.wantAugment(ctx, key.TreeID, o.rebuilt.LeafToRoots(ctx, key.TreeID, itemPtr.Node))
 		}
+
+		beg = run.Addr.Add(run.Size())
 	}
 }
 
 // wantFileExt implements rebuildCallbacks.
 func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+	if !o.rebuilt.AddTree(ctx, treeID) {
+		o.queue = append(o.queue, o.curKey)
+		return
+	}
+
 	min := btrfsprim.Key{
 		ObjectID: ino,
 		ItemType: btrfsitem.EXTENT_DATA_KEY,
@@ -467,7 +556,7 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 		ItemType: btrfsitem.EXTENT_DATA_KEY,
 		Offset:   uint64(size - 1),
 	}
-	exts, _ := o.inner.TreeSearchAll(treeID, func(key btrfsprim.Key, _ uint32) int {
+	extKeys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
 		switch {
 		case min.Cmp(key) < 0:
 			return 1
@@ -491,13 +580,18 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 		Beg: 0,
 		End: size,
 	})
-	for _, ext := range exts {
-		switch extBody := ext.Body.(type) {
+	for _, extKey := range extKeys {
+		extBody, ok := o.rebuilt.Load(ctx, treeID, extKey)
+		if !ok {
+			o.ioErr(ctx, fmt.Errorf("could not look up already-inserted item: tree=%v key=%v",
+				treeID, extKey))
+		}
+		switch extBody := extBody.(type) {
 		case btrfsitem.FileExtent:
-			extBeg := int64(ext.Key.Offset)
+			extBeg := int64(extKey.Offset)
 			extSize, err := extBody.Size()
 			if err != nil {
-				o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, ext.Key, err))
+				o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, extKey, err))
 				continue
 			}
 			extEnd := extBeg + extSize
@@ -532,7 +626,7 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 				})
 			}
 		case btrfsitem.Error:
-			o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, ext.Key, extBody.Err))
+			o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, extKey, extBody.Err))
 		default:
 			// This is a panic because the item decoder should not emit EXTENT_DATA
 			// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
@@ -587,7 +681,7 @@ func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino
 					// TODO(lukeshu): Re-evaluate whether being greedy here is the right
 					// thing.
 					if itemEnd > gap.Beg && itemBeg < gap.End {
-						wants.InsertFrom(o.leaf2orphans[v.Node])
+						wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
 					}
 				case btrfsitem.Error:
 					o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, k, itemBody.Err))

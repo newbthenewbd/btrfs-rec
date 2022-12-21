@@ -17,14 +17,11 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/uuidmap"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type scanResult struct {
-	uuidMap   *uuidmap.UUIDMap
 	nodeGraph *graph.Graph
 	keyIO     *keyio.Handle
 }
@@ -55,7 +52,6 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 	}
 
 	ret := &scanResult{
-		uuidMap:   uuidmap.New(),
 		nodeGraph: graph.New(*sb),
 	}
 	ret.keyIO = keyio.NewHandle(fs, *sb, ret.nodeGraph)
@@ -70,10 +66,6 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 				return nil, err
 			}
 
-			if err := ret.uuidMap.InsertNode(nodeRef); err != nil {
-				return nil, err
-			}
-
 			ret.nodeGraph.InsertNode(nodeRef)
 			ret.keyIO.InsertNode(nodeRef)
 
@@ -85,12 +77,6 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		panic("should not happen")
 	}
 	progressWriter.Done()
-
-	missing := ret.uuidMap.MissingRootItems()
-	if len(missing) > 0 {
-		dlog.Errorf(ctx, "... could not find root items for %d trees: %v", len(missing), maps.SortedKeys(missing))
-	}
-
 	dlog.Info(ctx, "... done reading node data")
 
 	progressWriter = textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)

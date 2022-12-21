@@ -51,6 +51,21 @@ func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
 	}
 }
 
+// cowDistance returns how many COW-snapshots down the 'tree' is from
+// the 'parent'.
+func (tree *rebuiltTree) cowDistance(parentID btrfsprim.ObjID) (dist int, ok bool) {
+	for {
+		if parentID == tree.ID {
+			return dist, true
+		}
+		if tree.Parent == nil {
+			return 0, false
+		}
+		tree = tree.Parent
+		dist++
+	}
+}
+
 // RebuiltTrees is an abstraction for rebuilding and accessing
 // potentially broken btrees.
 //
@@ -70,11 +85,14 @@ func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
 //
 //   - it does not keep track of errors encountered in a tree
 //
-// Additionally, it provides a piece of functionality that
+// Additionally, it provides some functionality that
 // btrfsutil.BrokenTrees does not:
 //
 //   - it provides a .LeafToRoots() method to advise on what
 //     additional roots should be added
+//
+//   - it provides a .COWDistance() method to compare how related two
+//     trees are
 //
 // A zero RebuiltTrees is invalid; it must be initialized with
 // NewRebuiltTrees().
@@ -378,6 +396,15 @@ func (ts *RebuiltTrees) LeafToRoots(ctx context.Context, treeID btrfsprim.ObjID,
 		return nil
 	}
 	return ret
+}
+
+// COWDistance returns how many COW-snapshots down from the 'child'
+// tree is from the 'parent' tree.
+//
+// It is invalid (panic) to call COWDistance for a tree without having
+// called AddTree for the child first.
+func (ts *RebuiltTrees) COWDistance(ctx context.Context, childID, parentID btrfsprim.ObjID) (dist int, ok bool) {
+	return ts.trees[childID].cowDistance(parentID)
 }
 
 // ListRoots returns a listing of all initialized trees and their root
