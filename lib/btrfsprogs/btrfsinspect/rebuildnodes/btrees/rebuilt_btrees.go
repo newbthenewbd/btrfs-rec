@@ -15,9 +15,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
+	pkggraph "git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -33,6 +34,9 @@ type rebuiltTree struct {
 	UUID   btrfsprim.UUID
 	Parent *rebuiltTree
 
+	// all leafs (lvl=0) that pass .isOwnerOK, even if not in the tree
+	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
+
 	// mutable
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	Items containers.SortedMap[btrfsprim.Key, itemPtr]
@@ -40,15 +44,15 @@ type rebuiltTree struct {
 
 // isOwnerOK returns whether it is permissible for a node with
 // .Head.Owner=owner to be in this tree.
-func (t *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
+func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
 	for {
-		if t == nil {
+		if tree == nil {
 			return false
 		}
-		if owner == t.ID {
+		if owner == tree.ID {
 			return true
 		}
-		t = t.Parent
+		tree = tree.Parent
 	}
 }
 
@@ -71,13 +75,19 @@ func (t *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
 //
 //   - it does not keep track of errors encountered in a tree
 //
+// Additionally, it provides a piece of functionality that
+// btrfsutil.BrokenTrees does not:
+//
+//   - it provides a .LeafToRoots() method to advise on what
+//     additional roots should be added
+//
 // A zero RebuiltTrees is invalid; it must be initialized with
 // NewRebuiltTrees().
 type RebuiltTrees struct {
 	// static
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
-	graph   graph.Graph
+	graph   pkggraph.Graph
 
 	// static callbacks
 	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
@@ -92,7 +102,7 @@ type RebuiltTrees struct {
 // NewRebuiltTrees returns a new RebuiltTrees instance.  All of the
 // callbacks must be non-nil.
 func NewRebuiltTrees(
-	file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph,
+	file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph pkggraph.Graph,
 	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
 	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool),
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
@@ -144,36 +154,20 @@ func (ts *RebuiltTrees) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvo
 	return ref
 }
 
-func walk(graph graph.Graph, root btrfsvol.LogicalAddr, visited containers.Set[btrfsvol.LogicalAddr], fn func(btrfsvol.LogicalAddr) bool) {
-	if _, ok := graph.Nodes[root]; !ok {
-		return
-	}
-	if visited.Has(root) {
-		return
-	}
-	defer visited.Insert(root)
-	if !fn(root) {
-		return
-	}
-	for _, kp := range graph.EdgesFrom[root] {
-		walk(graph, kp.ToNode, visited, fn)
-	}
-}
-
 type rootStats struct {
 	TreeID   btrfsprim.ObjID
 	RootNode btrfsvol.LogicalAddr
 
-	VisitedNodes int
-	TotalNodes   int
-	AddedItems   int
+	DoneLeafs  int
+	TotalLeafs int
+	AddedItems int
 }
 
 func (s rootStats) String() string {
 	return fmt.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items)",
 		s.TreeID, s.RootNode,
-		int(100*float64(s.VisitedNodes)/float64(s.TotalNodes)),
-		s.VisitedNodes, s.TotalNodes,
+		int(100*float64(s.DoneLeafs)/float64(s.TotalLeafs)),
+		s.DoneLeafs, s.TotalLeafs,
 		s.AddedItems)
 }
 
@@ -187,43 +181,40 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 	tree := ts.trees[treeID]
 	tree.Roots.Insert(rootNode)
 
-	visited := make(containers.Set[btrfsvol.LogicalAddr])
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	numAdded := 0
-	progress := func() {
+	progress := func(done int) {
 		progressWriter.Set(rootStats{
-			TreeID:       treeID,
-			RootNode:     rootNode,
-			VisitedNodes: len(visited),
-			TotalNodes:   len(ts.graph.Nodes),
-			AddedItems:   numAdded,
+			TreeID:     treeID,
+			RootNode:   rootNode,
+			DoneLeafs:  done,
+			TotalLeafs: len(tree.leafToRoots),
+			AddedItems: numAdded,
 		})
 	}
-	progress()
-	walk(ts.graph, rootNode, visited, func(node btrfsvol.LogicalAddr) bool {
-		progress()
-		if !tree.isOwnerOK(ts.graph.Nodes[node].Owner) {
-			return false
+	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
+		progress(i)
+		roots := tree.leafToRoots[leaf]
+		if !roots.Has(rootNode) {
+			continue
 		}
-		if ts.graph.Nodes[node].Level == 0 {
-			for i, item := range ts.readNode(node).Data.BodyLeaf {
-				if _, exists := tree.Items.Load(item.Key); exists {
-					// This is a panic because I'm not really sure what the best way to
-					// handle this is, and so if this happens I want the program to crash
-					// and force me to figure out how to handle it.
-					panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
-				}
-				tree.Items.Store(item.Key, itemPtr{
-					Node: node,
-					Idx:  i,
-				})
-				numAdded++
-				ts.cbAddedItem(ctx, treeID, item.Key)
+		for j, item := range ts.readNode(leaf).Data.BodyLeaf {
+			if _, exists := tree.Items.Load(item.Key); exists {
+				// This is a panic because I'm not really sure what the best way to
+				// handle this is, and so if this happens I want the program to crash
+				// and force me to figure out how to handle it.
+				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
 			}
+			tree.Items.Store(item.Key, itemPtr{
+				Node: leaf,
+				Idx:  j,
+			})
+			numAdded++
+			ts.cbAddedItem(ctx, treeID, item.Key)
+			progress(i)
 		}
-		return true
-	})
-	progress()
+	}
+	progress(len(tree.leafToRoots))
 	progressWriter.Done()
 }
 
@@ -243,6 +234,7 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 	if slices.Contains(treeID, stack) {
 		return false
 	}
+
 	tree := &rebuiltTree{
 		ID:    treeID,
 		Roots: make(containers.Set[btrfsvol.LogicalAddr]),
@@ -282,11 +274,79 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 			tree.Parent = ts.trees[parentID]
 		}
 	}
+	tree.indexLeafs(ctx, ts.graph)
+
 	ts.trees[treeID] = tree
 	if root != 0 {
 		ts.AddRoot(ctx, treeID, root)
 	}
+
 	return true
+}
+
+type indexStats struct {
+	TreeID     btrfsprim.ObjID
+	DoneNodes  int
+	TotalNodes int
+}
+
+func (s indexStats) String() string {
+	return fmt.Sprintf("tree %v: indexing leaf nodes: %v%% (%v/%v)",
+		s.TreeID,
+		int(100*float64(s.DoneNodes)/float64(s.TotalNodes)),
+		s.DoneNodes, s.TotalNodes)
+}
+
+func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
+	nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
+	progressWriter := textui.NewProgress[indexStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progress := func() {
+		progressWriter.Set(indexStats{
+			TreeID:     tree.ID,
+			DoneNodes:  len(nodeToRoots),
+			TotalNodes: len(graph.Nodes),
+		})
+	}
+	progress()
+	for _, node := range maps.SortedKeys(graph.Nodes) {
+		tree.indexNode(graph, node, nodeToRoots, progress, nil)
+	}
+	progressWriter.Done()
+
+	tree.leafToRoots = make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
+	for node, roots := range nodeToRoots {
+		if graph.Nodes[node].Level == 0 && len(roots) > 0 {
+			tree.leafToRoots[node] = roots
+		}
+	}
+}
+
+func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAddr, index map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr], progress func(), stack []btrfsvol.LogicalAddr) {
+	defer progress()
+	if _, done := index[node]; done {
+		return
+	}
+	if slices.Contains(node, stack) {
+		return
+	}
+	if !tree.isOwnerOK(graph.Nodes[node].Owner) {
+		index[node] = nil
+		return
+	}
+	kps := slices.RemoveAllFunc(graph.EdgesTo[node], func(kp *pkggraph.Edge) bool {
+		return !tree.isOwnerOK(graph.Nodes[kp.FromNode].Owner)
+	})
+	if len(kps) == 0 {
+		index[node] = containers.NewSet[btrfsvol.LogicalAddr](node)
+		return
+	}
+	stack = append(stack, node)
+	roots := make(containers.Set[btrfsvol.LogicalAddr])
+	for _, kp := range kps {
+		tree.indexNode(graph, kp.FromNode, index, progress, stack)
+		roots.InsertFrom(index[kp.FromNode])
+	}
+	index[node] = roots
 }
 
 // Load reads an item from a tree.
@@ -335,6 +395,27 @@ func (ts *RebuiltTrees) SearchAll(ctx context.Context, treeID btrfsprim.ObjID, f
 	ret := make([]btrfsprim.Key, len(kvs))
 	for i := range kvs {
 		ret[i] = kvs[i].K
+	}
+	return ret
+}
+
+// LeafToRoots returns the list of potential roots (to pass to
+// .AddRoot) that include a given leaf-node.
+//
+// It is not nescessary to call AddTree for the tree first;
+// LeafToRoots will call it for you.
+func (ts *RebuiltTrees) LeafToRoots(ctx context.Context, treeID btrfsprim.ObjID, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
+	if !ts.AddTree(ctx, treeID) {
+		return nil
+	}
+	ret := make(containers.Set[btrfsvol.LogicalAddr])
+	for root := range ts.trees[treeID].leafToRoots[leaf] {
+		if !ts.trees[treeID].Roots.Has(root) {
+			ret.Insert(root)
+		}
+	}
+	if len(ret) == 0 {
+		return nil
 	}
 	return ret
 }
