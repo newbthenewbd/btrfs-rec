@@ -85,7 +85,8 @@ type RebuiltTrees struct {
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
-	trees map[btrfsprim.ObjID]*rebuiltTree
+	trees     map[btrfsprim.ObjID]*rebuiltTree
+	nodeCache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
 // NewRebuiltTrees returns a new RebuiltTrees instance.  All of the
@@ -105,15 +106,21 @@ func NewRebuiltTrees(
 		cbLookupRoot: cbLookupRoot,
 		cbLookupUUID: cbLookupUUID,
 
-		trees: make(map[btrfsprim.ObjID]*rebuiltTree),
+		trees:     make(map[btrfsprim.ObjID]*rebuiltTree),
+		nodeCache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](8),
 	}
 }
 
 func (ts *RebuiltTrees) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
+	if cached, ok := ts.nodeCache.Get(laddr); ok {
+		return cached
+	}
+
 	graphInfo, ok := ts.graph.Nodes[laddr]
 	if !ok {
 		panic(fmt.Errorf("should not happen: node@%v is not mentioned in the in-memory graph", laddr))
 	}
+
 	ref, err := btrfstree.ReadNode(ts.rawFile, ts.sb, laddr, btrfstree.NodeExpectations{
 		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
@@ -131,6 +138,9 @@ func (ts *RebuiltTrees) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvo
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
 	}
+
+	ts.nodeCache.Add(laddr, ref)
+
 	return ref
 }
 
