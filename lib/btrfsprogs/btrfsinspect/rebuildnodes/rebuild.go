@@ -146,6 +146,7 @@ func (o *rebuilder) rebuild(ctx context.Context) error {
 		resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.pendingAugments))
 		numAugments := 0
 		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
+			dlog.Infof(ctx, "... ... augments for tree %v:", treeID)
 			resolvedAugments[treeID] = o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
 			numAugments += len(resolvedAugments[treeID])
 		}
@@ -337,7 +338,12 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	}
 
 	for i, list := range lists {
-		dlog.Infof(ctx, "... ... ... %d: %v: %v", i, list.Intersection(ret).TakeOne(), maps.SortedKeys(list))
+		chose := list.Intersection(ret)
+		if len(chose) == 0 {
+			dlog.Infof(ctx, "... ... ... lists[%d]: chose (none) from %v", i, maps.SortedKeys(list))
+		} else {
+			dlog.Infof(ctx, "... ... ... lists[%d]: chose %v from %v", i, chose.TakeOne(), maps.SortedKeys(list))
+		}
 	}
 
 	return ret
