@@ -136,17 +136,18 @@ type rootStats struct {
 	TreeID   btrfsprim.ObjID
 	RootNode btrfsvol.LogicalAddr
 
-	DoneLeafs  int
-	TotalLeafs int
-	AddedItems int
+	DoneLeafs     int
+	TotalLeafs    int
+	AddedItems    int
+	ReplacedItems int
 }
 
 func (s rootStats) String() string {
-	return fmt.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items)",
+	return fmt.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items, replaced %v items)",
 		s.TreeID, s.RootNode,
 		int(100*float64(s.DoneLeafs)/float64(s.TotalLeafs)),
 		s.DoneLeafs, s.TotalLeafs,
-		s.AddedItems)
+		s.AddedItems, s.ReplacedItems)
 }
 
 // AddRoot adds an additional root node to an existing tree.  It is
@@ -161,13 +162,15 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	numAdded := 0
+	numReplaced := 0
 	progress := func(done int) {
 		progressWriter.Set(rootStats{
-			TreeID:     treeID,
-			RootNode:   rootNode,
-			DoneLeafs:  done,
-			TotalLeafs: len(tree.leafToRoots),
-			AddedItems: numAdded,
+			TreeID:        treeID,
+			RootNode:      rootNode,
+			DoneLeafs:     done,
+			TotalLeafs:    len(tree.leafToRoots),
+			AddedItems:    numAdded,
+			ReplacedItems: numReplaced,
 		})
 	}
 	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
@@ -177,17 +180,32 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 			continue
 		}
 		for j, item := range ts.keyIO.ReadNode(leaf).Data.BodyLeaf {
-			if _, exists := tree.Items.Load(item.Key); exists {
-				// This is a panic because I'm not really sure what the best way to
-				// handle this is, and so if this happens I want the program to crash
-				// and force me to figure out how to handle it.
-				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
-			}
-			tree.Items.Store(item.Key, keyio.ItemPtr{
+			newPtr := keyio.ItemPtr{
 				Node: leaf,
 				Idx:  j,
-			})
-			numAdded++
+			}
+			if oldPtr, exists := tree.Items.Load(item.Key); !exists {
+				tree.Items.Store(item.Key, newPtr)
+				numAdded++
+			} else {
+				oldGen := ts.graph.Nodes[oldPtr.Node].Generation
+				newGen := ts.graph.Nodes[newPtr.Node].Generation
+				switch {
+				case oldGen < newGen:
+					tree.Items.Store(item.Key, newPtr)
+					numReplaced++
+				case oldGen > newGen:
+					// keep the old one
+				case oldGen == newGen:
+					// This is a panic because I'm not really sure what the best way to
+					// handle this is, and so if this happens I want the program to crash
+					// and force me to figure out how to handle it.
+					panic(fmt.Errorf("dup key=%v in tree=%v: old=%v=%#v ; new=%v=%#v",
+						item.Key, treeID,
+						oldPtr, ts.graph.Nodes[oldPtr.Node],
+						newPtr, ts.graph.Nodes[newPtr.Node]))
+				}
+			}
 			ts.cbAddedItem(ctx, treeID, item.Key)
 			progress(i)
 		}
