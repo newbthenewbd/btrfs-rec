@@ -352,15 +352,17 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, choices containers.Set[btrfsvol.LogicalAddr]) {
-	choicesWithDist := make(map[btrfsvol.LogicalAddr]int)
-	for choice := range choices {
-		if dist, ok := o.rebuilt.COWDistance(ctx, treeID, o.graph.Nodes[choice].Owner); ok {
-			choicesWithDist[choice] = dist
-		}
-	}
-	if len(choicesWithDist) == 0 {
+	if len(choices) == 0 {
 		dlog.Errorf(ctx, "augment(tree=%v): could not find wanted item", treeID)
 		return
+	}
+	choicesWithDist := make(map[btrfsvol.LogicalAddr]int, len(choices))
+	for choice := range choices {
+		dist, ok := o.rebuilt.COWDistance(ctx, treeID, o.graph.Nodes[choice].Owner)
+		if !ok {
+			panic(fmt.Errorf("should not happen: .wantAugment called for tree=%v with invalid choice=%v", treeID, choice))
+		}
+		choicesWithDist[choice] = dist
 	}
 	dlog.Infof(ctx, "augment(tree=%v): %v", treeID, maps.SortedKeys(choicesWithDist))
 	o.pendingAugments[treeID] = append(o.pendingAugments[treeID], choicesWithDist)

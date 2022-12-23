@@ -34,6 +34,7 @@ type rebuiltTree struct {
 
 	// mutable
 	Roots containers.Set[btrfsvol.LogicalAddr]
+	Leafs containers.Set[btrfsvol.LogicalAddr]
 	Items containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 }
 
@@ -175,10 +176,10 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 	}
 	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
 		progress(i)
-		roots := tree.leafToRoots[leaf]
-		if !roots.Has(rootNode) {
+		if tree.Leafs.Has(leaf) || !tree.leafToRoots[leaf].Has(rootNode) {
 			continue
 		}
+		tree.Leafs.Insert(leaf)
 		for j, item := range ts.keyIO.ReadNode(leaf).Data.BodyLeaf {
 			newPtr := keyio.ItemPtr{
 				Node: leaf,
@@ -234,6 +235,7 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 	tree := &rebuiltTree{
 		ID:    treeID,
 		Roots: make(containers.Set[btrfsvol.LogicalAddr]),
+		Leafs: make(containers.Set[btrfsvol.LogicalAddr]),
 	}
 	var root btrfsvol.LogicalAddr
 	switch treeID {
@@ -404,11 +406,17 @@ func (ts *RebuiltTrees) LeafToRoots(ctx context.Context, treeID btrfsprim.ObjID,
 	if !ts.AddTree(ctx, treeID) {
 		return nil
 	}
+	if ts.graph.Nodes[leaf].Level != 0 {
+		panic(fmt.Errorf("should not happen: NodeToRoots(tree=%v, leaf=%v): not a leaf",
+			treeID, leaf))
+	}
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for root := range ts.trees[treeID].leafToRoots[leaf] {
-		if !ts.trees[treeID].Roots.Has(root) {
-			ret.Insert(root)
+		if ts.trees[treeID].Roots.Has(root) {
+			panic(fmt.Errorf("should not happen: NodeToRoots(tree=%v, leaf=%v): tree contains root=%v but not leaf",
+				treeID, leaf, root))
 		}
+		ret.Insert(root)
 	}
 	if len(ret) == 0 {
 		return nil
