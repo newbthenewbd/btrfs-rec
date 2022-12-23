@@ -32,6 +32,7 @@ type rebuiltTree struct {
 
 	// all leafs (lvl=0) that pass .isOwnerOK, even if not in the tree
 	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
+	keys        containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 
 	// mutable
 	Roots containers.Set[btrfsvol.LogicalAddr]
@@ -41,13 +42,13 @@ type rebuiltTree struct {
 
 // isOwnerOK returns whether it is permissible for a node with
 // .Head.Owner=owner to be in this tree.
-func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID) bool {
+func (tree *rebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generation) bool {
 	for {
-		if tree == nil {
-			return false
-		}
 		if owner == tree.ID {
 			return true
+		}
+		if tree.Parent == nil || gen >= tree.ParentGen {
+			return false
 		}
 		tree = tree.Parent
 	}
@@ -65,6 +66,38 @@ func (tree *rebuiltTree) cowDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 		}
 		tree = tree.Parent
 		dist++
+	}
+}
+
+func (tree *rebuiltTree) shouldReplace(graph pkggraph.Graph, oldNode, newNode btrfsvol.LogicalAddr) bool {
+	oldDist, _ := tree.cowDistance(graph.Nodes[oldNode].Owner)
+	newDist, _ := tree.cowDistance(graph.Nodes[newNode].Owner)
+	switch {
+	case newDist < oldDist:
+		// Replace the old one with the new lower-dist one.
+		return true
+	case newDist > oldDist:
+		// Retain the old lower-dist one.
+		return false
+	default:
+		oldGen := graph.Nodes[oldNode].Generation
+		newGen := graph.Nodes[newNode].Generation
+		switch {
+		case newGen > oldGen:
+			// Replace the old one with the new higher-gen one.
+			return true
+		case newGen < oldGen:
+			// Retain the old higher-gen one.
+			return false
+		default:
+			// This is a panic because I'm not really sure what the best way to
+			// handle this is, and so if this happens I want the program to crash
+			// and force me to figure out how to handle it.
+			panic(fmt.Errorf("dup nodes in tree=%v: old=%v=%v ; new=%v=%v",
+				tree.ID,
+				oldNode, graph.Nodes[oldNode],
+				newNode, graph.Nodes[newNode]))
+		}
 	}
 }
 
@@ -189,24 +222,9 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 			if oldPtr, exists := tree.Items.Load(itemKey); !exists {
 				tree.Items.Store(itemKey, newPtr)
 				numAdded++
-			} else {
-				oldGen := ts.graph.Nodes[oldPtr.Node].Generation
-				newGen := ts.graph.Nodes[newPtr.Node].Generation
-				switch {
-				case oldGen < newGen:
-					tree.Items.Store(itemKey, newPtr)
-					numReplaced++
-				case oldGen > newGen:
-					// keep the old one
-				case oldGen == newGen:
-					// This is a panic because I'm not really sure what the best way to
-					// handle this is, and so if this happens I want the program to crash
-					// and force me to figure out how to handle it.
-					panic(fmt.Errorf("dup key=%v in tree=%v: old=%v=%#v ; new=%v=%#v",
-						itemKey, treeID,
-						oldPtr, ts.graph.Nodes[oldPtr.Node],
-						newPtr, ts.graph.Nodes[newPtr.Node]))
-				}
+			} else if tree.shouldReplace(ts.graph, oldPtr.Node, newPtr.Node) {
+				tree.Items.Store(itemKey, newPtr)
+				numReplaced++
 			}
 			ts.cbAddedItem(ctx, treeID, itemKey)
 			progress(i)
@@ -327,26 +345,42 @@ func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAd
 		return
 	}
 	if slices.Contains(node, stack) {
-		return
+		panic("loop")
 	}
-	if !tree.isOwnerOK(graph.Nodes[node].Owner) {
+	if !tree.isOwnerOK(graph.Nodes[node].Owner, graph.Nodes[node].Generation) {
 		index[node] = nil
 		return
 	}
-	kps := slices.RemoveAllFunc(graph.EdgesTo[node], func(kp *pkggraph.Edge) bool {
-		return !tree.isOwnerOK(graph.Nodes[kp.FromNode].Owner)
-	})
-	if len(kps) == 0 {
-		index[node] = containers.NewSet[btrfsvol.LogicalAddr](node)
-		return
-	}
+
+	// tree.leafToRoots
 	stack = append(stack, node)
-	roots := make(containers.Set[btrfsvol.LogicalAddr])
+	var roots containers.Set[btrfsvol.LogicalAddr]
+	kps := slices.RemoveAllFunc(graph.EdgesTo[node], func(kp *pkggraph.Edge) bool {
+		return !tree.isOwnerOK(graph.Nodes[kp.FromNode].Owner, graph.Nodes[kp.FromNode].Generation)
+	})
 	for _, kp := range kps {
 		tree.indexNode(graph, kp.FromNode, index, progress, stack)
-		roots.InsertFrom(index[kp.FromNode])
+		if len(index[kp.FromNode]) > 0 {
+			if roots == nil {
+				roots = make(containers.Set[btrfsvol.LogicalAddr])
+			}
+			roots.InsertFrom(index[kp.FromNode])
+		}
+	}
+	if roots == nil {
+		roots = containers.NewSet[btrfsvol.LogicalAddr](node)
 	}
 	index[node] = roots
+
+	// tree.keys
+	for i, key := range graph.Nodes[node].Items {
+		if oldPtr, ok := tree.keys.Load(key); !ok || tree.shouldReplace(graph, oldPtr.Node, node) {
+			tree.keys.Store(key, keyio.ItemPtr{
+				Node: node,
+				Idx:  i,
+			})
+		}
+	}
 }
 
 // Load reads an item from a tree.
@@ -424,6 +458,14 @@ func (ts *RebuiltTrees) LeafToRoots(ctx context.Context, treeID btrfsprim.ObjID,
 		return nil
 	}
 	return ret
+}
+
+// Keys returns a map of all keys in node that would be valid in this tree.
+//
+// It is invalid (panic) to call Keys for a tree without having called
+// AddTree first.
+func (ts *RebuiltTrees) Keys(treeID btrfsprim.ObjID) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+	return &ts.trees[treeID].keys
 }
 
 // COWDistance returns how many COW-snapshots down from the 'child'

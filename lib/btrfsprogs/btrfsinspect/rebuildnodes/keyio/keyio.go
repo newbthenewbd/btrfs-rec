@@ -38,37 +38,20 @@ func (ptr ItemPtr) String() string {
 }
 
 type Handle struct {
-	Keys containers.SortedMap[KeyAndTree, ItemPtr]
-
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
-	graph   *graph.Graph
+	graph   graph.Graph
 
 	cache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
-func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph *graph.Graph) *Handle {
+func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph) *Handle {
 	return &Handle{
 		rawFile: file,
 		sb:      sb,
 		graph:   graph,
 
 		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](8),
-	}
-}
-
-func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	for i, item := range nodeRef.Data.BodyLeaf {
-		k := KeyAndTree{
-			Key:    item.Key,
-			TreeID: nodeRef.Data.Head.Owner,
-		}
-		if cur, ok := o.Keys.Load(k); !ok || o.graph.Nodes[cur.Node].Generation < nodeRef.Data.Head.Generation {
-			o.Keys.Store(k, ItemPtr{
-				Node: nodeRef.Addr,
-				Idx:  i,
-			})
-		}
 	}
 }
 

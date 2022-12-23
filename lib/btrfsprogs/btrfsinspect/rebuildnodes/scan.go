@@ -16,7 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -31,12 +30,12 @@ func (s scanStats) String() string {
 		s.N, s.D)
 }
 
-func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (graph.Graph, *keyio.Handle, error) {
+func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (graph.Graph, error) {
 	dlog.Infof(ctx, "Reading node data from FS...")
 
 	sb, err := fs.Superblock()
 	if err != nil {
-		return graph.Graph{}, nil, err
+		return graph.Graph{}, err
 	}
 
 	total := countNodes(scanResults)
@@ -47,7 +46,6 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 	}
 
 	nodeGraph := graph.New(*sb)
-	keyIO := keyio.NewHandle(fs, *sb, nodeGraph)
 
 	progress(done, total)
 	for _, devResults := range scanResults {
@@ -56,11 +54,10 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 			})
 			if err != nil {
-				return graph.Graph{}, nil, err
+				return graph.Graph{}, err
 			}
 
 			nodeGraph.InsertNode(nodeRef)
-			keyIO.InsertNode(nodeRef)
 
 			done++
 			progress(done, total)
@@ -75,10 +72,10 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 	progressWriter = textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	dlog.Infof(ctx, "Checking keypointers for dead-ends...")
 	if err := nodeGraph.FinalCheck(fs, *sb, progress); err != nil {
-		return graph.Graph{}, nil, err
+		return graph.Graph{}, err
 	}
 	progressWriter.Done()
 	dlog.Info(ctx, "... done checking keypointers")
 
-	return *nodeGraph, keyIO, nil
+	return *nodeGraph, nil
 }
