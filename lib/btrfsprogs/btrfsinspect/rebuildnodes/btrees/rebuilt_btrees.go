@@ -25,9 +25,10 @@ import (
 
 type rebuiltTree struct {
 	// static
-	ID     btrfsprim.ObjID
-	UUID   btrfsprim.UUID
-	Parent *rebuiltTree
+	ID        btrfsprim.ObjID
+	UUID      btrfsprim.UUID
+	Parent    *rebuiltTree
+	ParentGen btrfsprim.Generation // offset of this tree's root item
 
 	// all leafs (lvl=0) that pass .isOwnerOK, even if not in the tree
 	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
@@ -105,7 +106,7 @@ type RebuiltTrees struct {
 
 	// static callbacks
 	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool)
+	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
@@ -117,7 +118,7 @@ type RebuiltTrees struct {
 func NewRebuiltTrees(
 	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO keyio.Handle,
 	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool),
+	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool),
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
 ) *RebuiltTrees {
 	return &RebuiltTrees{
@@ -252,13 +253,14 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
 			return false
 		}
-		rootItem, ok := ts.cbLookupRoot(ctx, treeID)
+		rootOff, rootItem, ok := ts.cbLookupRoot(ctx, treeID)
 		if !ok {
 			return false
 		}
 		root = rootItem.ByteNr
 		tree.UUID = rootItem.UUID
 		if rootItem.ParentUUID != (btrfsprim.UUID{}) {
+			tree.ParentGen = rootOff
 			if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
 				return false
 			}

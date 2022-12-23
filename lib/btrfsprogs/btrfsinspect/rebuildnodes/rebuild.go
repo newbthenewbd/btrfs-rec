@@ -184,11 +184,11 @@ func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key b
 	})
 }
 
-func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (item btrfsitem.Root, ok bool) {
+func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
 	key, ok := o._want(ctx, btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY)
 	if !ok {
 		o.queue = append(o.queue, o.curKey)
-		return btrfsitem.Root{}, false
+		return 0, btrfsitem.Root{}, false
 	}
 	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.ROOT_TREE_OBJECTID, key)
 	if !ok {
@@ -196,10 +196,10 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (ite
 	}
 	switch itemBody := itemBody.(type) {
 	case btrfsitem.Root:
-		return itemBody, true
+		return btrfsprim.Generation(key.Offset), itemBody, true
 	case btrfsitem.Error:
 		o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", btrfsprim.ROOT_TREE_OBJECTID, key, itemBody.Err))
-		return btrfsitem.Root{}, false
+		return 0, btrfsitem.Root{}, false
 	default:
 		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
 		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
