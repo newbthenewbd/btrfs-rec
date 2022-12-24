@@ -6,6 +6,7 @@ package graph
 
 import (
 	"fmt"
+	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -22,10 +23,11 @@ type Node struct {
 	NumItems   uint32
 	MinItem    btrfsprim.Key
 	MaxItem    btrfsprim.Key
+	Items      []btrfsprim.Key
 }
 
 func (n Node) String() string {
-	if n == (Node{}) {
+	if reflect.ValueOf(n).IsZero() {
 		return "{}"
 	}
 	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v, min:(%v,%v,%v), max:(%v,%v,%v)}`,
@@ -130,7 +132,7 @@ func New(sb btrfstree.Superblock) *Graph {
 }
 
 func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	g.Nodes[nodeRef.Addr] = Node{
+	nodeData := Node{
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 		Owner:      nodeRef.Data.Head.Owner,
@@ -147,7 +149,11 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 			}
 		}
 		kps := make([]Edge, 0, cnt)
+		keys := make([]btrfsprim.Key, len(nodeRef.Data.BodyLeaf))
+		nodeData.Items = keys
+		g.Nodes[nodeRef.Addr] = nodeData
 		for i, item := range nodeRef.Data.BodyLeaf {
+			keys[i] = item.Key
 			if itemBody, ok := item.Body.(btrfsitem.Root); ok {
 				kps = append(kps, Edge{
 					FromRoot:     nodeRef.Addr,
@@ -161,6 +167,7 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 			}
 		}
 	} else {
+		g.Nodes[nodeRef.Addr] = nodeData
 		kps := make([]Edge, len(nodeRef.Data.BodyInternal))
 		for i, kp := range nodeRef.Data.BodyInternal {
 			kps[i] = Edge{

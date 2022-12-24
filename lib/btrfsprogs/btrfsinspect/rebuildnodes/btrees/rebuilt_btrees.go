@@ -181,20 +181,20 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 			continue
 		}
 		tree.Leafs.Insert(leaf)
-		for j, item := range ts.keyIO.ReadNode(leaf).Data.BodyLeaf {
+		for j, itemKey := range ts.graph.Nodes[leaf].Items {
 			newPtr := keyio.ItemPtr{
 				Node: leaf,
 				Idx:  j,
 			}
-			if oldPtr, exists := tree.Items.Load(item.Key); !exists {
-				tree.Items.Store(item.Key, newPtr)
+			if oldPtr, exists := tree.Items.Load(itemKey); !exists {
+				tree.Items.Store(itemKey, newPtr)
 				numAdded++
 			} else {
 				oldGen := ts.graph.Nodes[oldPtr.Node].Generation
 				newGen := ts.graph.Nodes[newPtr.Node].Generation
 				switch {
 				case oldGen < newGen:
-					tree.Items.Store(item.Key, newPtr)
+					tree.Items.Store(itemKey, newPtr)
 					numReplaced++
 				case oldGen > newGen:
 					// keep the old one
@@ -203,12 +203,12 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 					// handle this is, and so if this happens I want the program to crash
 					// and force me to figure out how to handle it.
 					panic(fmt.Errorf("dup key=%v in tree=%v: old=%v=%#v ; new=%v=%#v",
-						item.Key, treeID,
+						itemKey, treeID,
 						oldPtr, ts.graph.Nodes[oldPtr.Node],
 						newPtr, ts.graph.Nodes[newPtr.Node]))
 				}
 			}
-			ts.cbAddedItem(ctx, treeID, item.Key)
+			ts.cbAddedItem(ctx, treeID, itemKey)
 			progress(i)
 		}
 	}
