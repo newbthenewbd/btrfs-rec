@@ -25,22 +25,64 @@ func (ptr ItemPtr) String() string {
 	return fmt.Sprintf("node@%v[%v]", ptr.Node, ptr.Idx)
 }
 
+type SizeAndErr struct {
+	Size uint64
+	Err  error
+}
+
 type Handle struct {
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
 	graph   graph.Graph
 
+	Sizes map[ItemPtr]SizeAndErr
+
 	cache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
-func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph graph.Graph) *Handle {
+func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *Handle {
 	return &Handle{
 		rawFile: file,
 		sb:      sb,
-		graph:   graph,
+
+		Sizes: make(map[ItemPtr]SizeAndErr),
 
 		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](8),
 	}
+}
+
+func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
+	for i, item := range nodeRef.Data.BodyLeaf {
+		ptr := ItemPtr{
+			Node: nodeRef.Addr,
+			Idx:  i,
+		}
+		switch itemBody := item.Body.(type) {
+		case btrfsitem.ExtentCSum:
+			o.Sizes[ptr] = SizeAndErr{
+				Size: uint64(itemBody.Size()),
+				Err:  nil,
+			}
+		case btrfsitem.FileExtent:
+			size, err := itemBody.Size()
+			o.Sizes[ptr] = SizeAndErr{
+				Size: uint64(size),
+				Err:  err,
+			}
+		case btrfsitem.Error:
+			switch item.Key.ItemType {
+			case btrfsprim.EXTENT_CSUM_KEY, btrfsprim.EXTENT_DATA_KEY:
+				o.Sizes[ptr] = SizeAndErr{
+					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
+						ptr, nodeRef.Data.Head.Owner, item.Key, itemBody.Err),
+				}
+			}
+		}
+	}
+}
+
+func (o *Handle) SetGraph(graph graph.Graph) {
+	o.graph = graph
 }
 
 func (o *Handle) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {

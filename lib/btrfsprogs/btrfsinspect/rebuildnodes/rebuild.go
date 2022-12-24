@@ -51,7 +51,7 @@ type rebuilder struct {
 }
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
-	nodeGraph, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
+	nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,6 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	}
 
 	dlog.Info(ctx, "Rebuilding node tree...")
-	keyIO := keyio.NewHandle(fs, *sb, nodeGraph)
 	o := &rebuilder{
 		sb: *sb,
 
@@ -499,12 +498,23 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 func (o *rebuilder) _wantRange(
 	ctx context.Context,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
-	sizeFn func(btrfsprim.Key) (uint64, error),
 	beg, end uint64,
 ) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.queue = append(o.queue, o.curKey)
 		return
+	}
+
+	sizeFn := func(key btrfsprim.Key) (uint64, error) {
+		ptr, ok := o.rebuilt.Keys(treeID).Load(key)
+		if !ok {
+			panic(fmt.Errorf("should not happen: could not load key: %v", key))
+		}
+		sizeAndErr, ok := o.keyIO.Sizes[ptr]
+		if !ok {
+			panic(fmt.Errorf("should not happen: %v item did not have a size recorded", typ))
+		}
+		return sizeAndErr.Size, sizeAndErr.Err
 	}
 
 	// Step 1: Build a listing of the runs that we do have.
@@ -661,54 +671,11 @@ func (o *rebuilder) _wantRange(
 func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
 	const treeID = btrfsprim.CSUM_TREE_OBJECTID
 	o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
-		func(key btrfsprim.Key) (uint64, error) {
-			ptr, ok := o.rebuilt.Keys(treeID).Load(key)
-			if !ok {
-				panic(fmt.Errorf("should not happen: could not load key: %v", key))
-			}
-			body, ok := o.keyIO.ReadItem(ptr)
-			if !ok {
-				panic(fmt.Errorf("should not happen: could not read item: %v", key))
-			}
-			switch body := body.(type) {
-			case btrfsitem.ExtentCSum:
-				return uint64(body.Size()), nil
-			case btrfsitem.Error:
-				return 0, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, key, body.Err)
-			default:
-				// This is a panic because the item decoder should not emit EXTENT_CSUM
-				// items as anything but btrfsitem.ExtentCSum or btrfsitem.Error without
-				// this code also being updated.
-				panic(fmt.Errorf("should not happen: EXTENT_CSUM item has unexpected type: %T", body))
-			}
-		},
 		uint64(beg), uint64(end))
 }
 
 // wantFileExt implements rebuildCallbacks.
 func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	o._wantRange(ctx, treeID, ino, btrfsprim.EXTENT_DATA_KEY,
-		func(key btrfsprim.Key) (uint64, error) {
-			ptr, ok := o.rebuilt.Keys(treeID).Load(key)
-			if !ok {
-				panic(fmt.Errorf("should not happen: could not load key: %v", key))
-			}
-			body, ok := o.keyIO.ReadItem(ptr)
-			if !ok {
-				panic(fmt.Errorf("should not happen: could not read item: %v", key))
-			}
-			switch body := body.(type) {
-			case btrfsitem.FileExtent:
-				size, err := body.Size()
-				return uint64(size), err
-			case btrfsitem.Error:
-				return 0, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, key, body.Err)
-			default:
-				// This is a panic because the item decoder should not emit EXTENT_DATA
-				// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
-				// this code also being updated.
-				panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", body))
-			}
-		},
 		0, uint64(size))
 }
