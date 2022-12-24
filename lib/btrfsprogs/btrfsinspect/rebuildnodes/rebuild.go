@@ -15,11 +15,9 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/btrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
@@ -45,7 +43,6 @@ type rebuilder struct {
 	rebuilt *btrees.RebuiltTrees
 
 	graph graph.Graph
-	csums containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
 	keyIO *keyio.Handle
 
 	curKey          keyAndTree
@@ -65,19 +62,12 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		return nil, err
 	}
 
-	dlog.Info(ctx, "Indexing checksums...")
-	csums, _ := rebuildmappings.ExtractLogicalSums(ctx, nodeScanResults)
-	if csums == nil {
-		csums = new(containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum])
-	}
-
 	dlog.Info(ctx, "Rebuilding node tree...")
 	keyIO := keyio.NewHandle(fs, *sb, nodeGraph)
 	o := &rebuilder{
 		sb: *sb,
 
 		graph: nodeGraph,
-		csums: *csums,
 		keyIO: keyIO,
 	}
 	o.rebuilt = btrees.NewRebuiltTrees(*sb, nodeGraph, keyIO,
@@ -506,219 +496,219 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 	o.wantAugment(ctx, treeID, wants)
 }
 
-// func implements rebuildCallbacks.
-//
-// interval is [beg, end)
-func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
-	treeID := btrfsprim.CSUM_TREE_OBJECTID
+func (o *rebuilder) _wantRange(
+	ctx context.Context,
+	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
+	sizeFn func(btrfsprim.Key) (uint64, error),
+	beg, end uint64,
+) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.queue = append(o.queue, o.curKey)
 		return
 	}
 
-	last := beg
-	for beg < end {
-		// Figure out which key we want.
-
-		ctx := dlog.WithField(ctx, "want_key", fmt.Sprintf("csum for laddr=%v", beg))
-		rbNode := o.csums.Search(func(item btrfsinspect.SysExtentCSum) int {
-			switch {
-			case item.Sums.Addr > beg:
-				return -1
-			case item.Sums.Addr.Add(item.Sums.Size()) <= beg:
-				return 1
-			default:
-				return 0
-			}
-
-		})
-		if rbNode == nil {
-			beg += btrfssum.BlockSize
-			continue
-		} else if last < beg {
-			dlog.Errorf(ctx, "augment(tree=%v): could not find csum items for %v-%v", treeID, last, beg)
-		}
-		run := rbNode.Value.Sums
-		key := rbNode.Value.Key
-
-		// Check if we already have it.
-
-		// .Search is more efficient than .Load, because it doesn't load the body (and we don't need the body).
-		if _, ok := o.rebuilt.Search(ctx, treeID, key.Cmp); !ok {
-			// We need to insert it.
-			itemPtr, ok := o.rebuilt.Keys(treeID).Load(key)
-			if !ok {
-				// This is a panic because if we found it in `o.csums` then it has
-				// to be in some Node, and if we didn't find it from
-				// btrfs.LookupCSum(), then that Node must be an orphan.
-				panic(fmt.Errorf("should not happen: no orphan contains %v", key))
-			}
-			o.wantAugment(ctx, treeID, o.rebuilt.LeafToRoots(ctx, treeID, itemPtr.Node))
-		}
-
-		beg = run.Addr.Add(run.Size())
-		last = beg
+	// Step 1: Build a listing of the runs that we do have.
+	runMin := btrfsprim.Key{
+		ObjectID: objID,
+		ItemType: typ,
+		Offset:   0, // *NOT* `beg`
 	}
-	if last < beg {
-		dlog.Errorf(ctx, "augment(tree=%v): could not find csum items for %v-%v", treeID, last, beg)
+	runMax := btrfsprim.Key{
+		ObjectID: objID,
+		ItemType: typ,
+		Offset:   end - 1,
 	}
-}
-
-// wantFileExt implements rebuildCallbacks.
-func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
-	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.queue = append(o.queue, o.curKey)
-		return
-	}
-
-	min := btrfsprim.Key{
-		ObjectID: ino,
-		ItemType: btrfsitem.EXTENT_DATA_KEY,
-		Offset:   0,
-	}
-	max := btrfsprim.Key{
-		ObjectID: ino,
-		ItemType: btrfsitem.EXTENT_DATA_KEY,
-		Offset:   uint64(size - 1),
-	}
-	extKeys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
+	runKeys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
 		switch {
-		case min.Cmp(key) < 0:
+		case runMin.Cmp(key) < 0:
 			return 1
-		case max.Cmp(key) > 0:
+		case runMax.Cmp(key) > 0:
 			return -1
 		default:
 			return 0
 		}
 	})
 
+	// Step 2: Build a listing of the gaps.
+	//
+	// Start with a gap of the whole range, then subtract each run
+	// from it.
 	type gap struct {
 		// range is [Beg,End)
-		Beg, End int64
+		Beg, End uint64
 	}
-	gaps := &containers.RBTree[containers.NativeOrdered[int64], gap]{
-		KeyFn: func(gap gap) containers.NativeOrdered[int64] {
-			return containers.NativeOrdered[int64]{Val: gap.Beg}
+	gaps := &containers.RBTree[containers.NativeOrdered[uint64], gap]{
+		KeyFn: func(gap gap) containers.NativeOrdered[uint64] {
+			return containers.NativeOrdered[uint64]{Val: gap.Beg}
 		},
 	}
 	gaps.Insert(gap{
-		Beg: 0,
-		End: size,
+		Beg: beg,
+		End: end,
 	})
-	for _, extKey := range extKeys {
-		extBody, ok := o.rebuilt.Load(ctx, treeID, extKey)
-		if !ok {
-			o.ioErr(ctx, fmt.Errorf("could not look up already-inserted item: tree=%v key=%v",
-				treeID, extKey))
+	for _, runKey := range runKeys {
+		runSize, err := sizeFn(runKey)
+		if err != nil {
+			o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, runKey, err))
 		}
-		switch extBody := extBody.(type) {
-		case btrfsitem.FileExtent:
-			extBeg := int64(extKey.Offset)
-			extSize, err := extBody.Size()
-			if err != nil {
-				o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, extKey, err))
-				continue
+		if runSize == 0 {
+			continue
+		}
+		runBeg := runKey.Offset
+		runEnd := runBeg + runSize
+		if runEnd <= beg {
+			continue
+		}
+		overlappingGaps := gaps.SearchRange(func(gap gap) int {
+			switch {
+			case gap.End <= runBeg:
+				return 1
+			case runEnd <= gap.Beg:
+				return -1
+			default:
+				return 0
 			}
-			extEnd := extBeg + extSize
-			overlappingGaps := gaps.SearchRange(func(gap gap) int {
-				switch {
-				case gap.End <= extBeg:
-					return 1
-				case extEnd <= gap.Beg:
-					return -1
-				default:
-					return 0
-				}
+		})
+		if len(overlappingGaps) == 0 {
+			continue
+		}
+		gapsBeg := overlappingGaps[0].Beg
+		gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
+		for _, gap := range overlappingGaps {
+			gaps.Delete(containers.NativeOrdered[uint64]{Val: gap.Beg})
+		}
+		if gapsBeg < runBeg {
+			gaps.Insert(gap{
+				Beg: gapsBeg,
+				End: runBeg,
 			})
-			if len(overlappingGaps) == 0 {
-				continue
-			}
-			beg := overlappingGaps[0].Beg
-			end := overlappingGaps[len(overlappingGaps)-1].End
-			for _, gap := range overlappingGaps {
-				gaps.Delete(containers.NativeOrdered[int64]{Val: gap.Beg})
-			}
-			if beg < extBeg {
-				gaps.Insert(gap{
-					Beg: beg,
-					End: extBeg,
-				})
-			}
-			if end > extEnd {
-				gaps.Insert(gap{
-					Beg: extEnd,
-					End: end,
-				})
-			}
-		case btrfsitem.Error:
-			o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, extKey, extBody.Err))
-		default:
-			// This is a panic because the item decoder should not emit EXTENT_DATA
-			// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
-			// this code also being updated.
-			panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", extBody))
+		}
+		if gapsEnd > runEnd {
+			gaps.Insert(gap{
+				Beg: runEnd,
+				End: gapsEnd,
+			})
 		}
 	}
+
+	// Step 2: Fill each gap.
 	_ = gaps.Walk(func(rbNode *containers.RBNode[gap]) error {
 		gap := rbNode.Value
-		min := btrfsprim.Key{
-			ObjectID: ino,
-			ItemType: btrfsitem.EXTENT_DATA_KEY,
-			Offset:   0,
+		last := gap.Beg
+		runMin := btrfsprim.Key{
+			ObjectID: objID,
+			ItemType: typ,
+			Offset:   0, // *NOT* `gap.Beg`
 		}
-		max := btrfsprim.Key{
-			ObjectID: ino,
-			ItemType: btrfsitem.EXTENT_DATA_KEY,
-			Offset:   uint64(gap.End - 1),
+		runMax := btrfsprim.Key{
+			ObjectID: objID,
+			ItemType: typ,
+			Offset:   gap.End - 1,
 		}
-		ctx := dlog.WithField(ctx, "want_key", fmt.Sprintf("file extent for tree=%v inode=%v bytes [%v, %v)", treeID, ino, gap.Beg, gap.End))
-		wants := make(containers.Set[btrfsvol.LogicalAddr])
 		o.rebuilt.Keys(treeID).Subrange(
-			func(k btrfsprim.Key, _ keyio.ItemPtr) int {
+			func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 				switch {
-				case min.Cmp(k) < 0:
+				case runMin.Cmp(key) < 0:
 					return 1
-				case max.Cmp(k) > 0:
+				case runMax.Cmp(key) > 0:
 					return -1
 				default:
 					return 0
 				}
 			},
 			func(k btrfsprim.Key, v keyio.ItemPtr) bool {
-				itemBody, ok := o.keyIO.ReadItem(v)
-				if !ok {
-					o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", v))
+				runSize, err := sizeFn(k)
+				if err != nil {
+					o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, k, err))
+					return true
 				}
-				switch itemBody := itemBody.(type) {
-				case btrfsitem.FileExtent:
-					itemBeg := int64(k.Offset)
-					itemSize, err := itemBody.Size()
-					if err != nil {
-						o.fsErr(ctx, fmt.Errorf("FileExtent: tree=%v key=%v: %w", treeID, k, err))
-						break
-					}
-					itemEnd := itemBeg + itemSize
-					// We're being greedy and "wanting" any extent that has any overlap with
-					// the gap.  But maybe instead we sould only want extents that are
-					// *entirely* within the gap.  I'll have to run it on real filesystems
-					// to see what works better.
-					//
-					// TODO(lukeshu): Re-evaluate whether being greedy here is the right
-					// thing.
-					if itemEnd > gap.Beg && itemBeg < gap.End {
-						wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
-					}
-				case btrfsitem.Error:
-					o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, k, itemBody.Err))
-				default:
-					// This is a panic because the item decoder should not emit EXTENT_DATA
-					// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
-					// this code also being updated.
-					panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", itemBody))
+				if runSize == 0 {
+					return true
 				}
+				runBeg := k.Offset
+				runEnd := runBeg + runSize
+				if runEnd <= gap.Beg {
+					return true
+				}
+
+				// TODO: This is dumb and greedy.
+				if last < runBeg {
+					// log an error
+					o.wantAugment(dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key={%v, %v, %v-%v}",
+						treeID, objID, typ, last, runBeg)),
+						treeID, nil)
+				}
+				o.wantAugment(dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key={%v, %v, %v-%v}",
+					treeID, objID, typ, gap.Beg, gap.End)),
+					treeID, o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
+				last = runEnd
+
 				return true
 			})
-		o.wantAugment(ctx, treeID, wants)
+		if last < gap.End {
+			// log an error
+			o.wantAugment(dlog.WithField(ctx, "want_key", fmt.Sprintf("tree=%v key={%v, %v, %v-%v}",
+				treeID, objID, typ, last, gap.End)),
+				treeID, nil)
+		}
 		return nil
 	})
+}
+
+// func implements rebuildCallbacks.
+//
+// interval is [beg, end)
+func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
+	const treeID = btrfsprim.CSUM_TREE_OBJECTID
+	o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
+		func(key btrfsprim.Key) (uint64, error) {
+			ptr, ok := o.rebuilt.Keys(treeID).Load(key)
+			if !ok {
+				panic(fmt.Errorf("should not happen: could not load key: %v", key))
+			}
+			body, ok := o.keyIO.ReadItem(ptr)
+			if !ok {
+				panic(fmt.Errorf("should not happen: could not read item: %v", key))
+			}
+			switch body := body.(type) {
+			case btrfsitem.ExtentCSum:
+				return uint64(body.Size()), nil
+			case btrfsitem.Error:
+				return 0, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, key, body.Err)
+			default:
+				// This is a panic because the item decoder should not emit EXTENT_CSUM
+				// items as anything but btrfsitem.ExtentCSum or btrfsitem.Error without
+				// this code also being updated.
+				panic(fmt.Errorf("should not happen: EXTENT_CSUM item has unexpected type: %T", body))
+			}
+		},
+		uint64(beg), uint64(end))
+}
+
+// wantFileExt implements rebuildCallbacks.
+func (o *rebuilder) wantFileExt(ctx context.Context, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+	o._wantRange(ctx, treeID, ino, btrfsprim.EXTENT_DATA_KEY,
+		func(key btrfsprim.Key) (uint64, error) {
+			ptr, ok := o.rebuilt.Keys(treeID).Load(key)
+			if !ok {
+				panic(fmt.Errorf("should not happen: could not load key: %v", key))
+			}
+			body, ok := o.keyIO.ReadItem(ptr)
+			if !ok {
+				panic(fmt.Errorf("should not happen: could not read item: %v", key))
+			}
+			switch body := body.(type) {
+			case btrfsitem.FileExtent:
+				size, err := body.Size()
+				return uint64(size), err
+			case btrfsitem.Error:
+				return 0, fmt.Errorf("error decoding item: tree=%v key=%v: %w", treeID, key, body.Err)
+			default:
+				// This is a panic because the item decoder should not emit EXTENT_DATA
+				// items as anything but btrfsitem.FileExtent or btrfsitem.Error without
+				// this code also being updated.
+				panic(fmt.Errorf("should not happen: EXTENT_DATA item has unexpected type: %T", body))
+			}
+		},
+		0, uint64(size))
 }
