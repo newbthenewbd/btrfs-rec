@@ -28,6 +28,18 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
+type keyAndTree struct {
+	btrfsprim.Key
+	TreeID btrfsprim.ObjID
+}
+
+func (a keyAndTree) Cmp(b keyAndTree) int {
+	if d := a.Key.Cmp(b.Key); d != 0 {
+		return d
+	}
+	return containers.NativeCmp(a.TreeID, b.TreeID)
+}
+
 type rebuilder struct {
 	sb      btrfstree.Superblock
 	rebuilt *btrees.RebuiltTrees
@@ -36,8 +48,8 @@ type rebuilder struct {
 	csums containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
 	keyIO *keyio.Handle
 
-	curKey          keyio.KeyAndTree
-	queue           []keyio.KeyAndTree
+	curKey          keyAndTree
+	queue           []keyAndTree
 	pendingAugments map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
@@ -179,7 +191,7 @@ func (o *rebuilder) rebuild(ctx context.Context) error {
 }
 
 func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
-	o.queue = append(o.queue, keyio.KeyAndTree{
+	o.queue = append(o.queue, keyAndTree{
 		TreeID: tree,
 		Key:    key,
 	})

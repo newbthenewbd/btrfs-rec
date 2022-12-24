@@ -16,18 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
-type KeyAndTree struct {
-	btrfsprim.Key
-	TreeID btrfsprim.ObjID
-}
-
-func (a KeyAndTree) Cmp(b KeyAndTree) int {
-	if d := a.Key.Cmp(b.Key); d != 0 {
-		return d
-	}
-	return containers.NativeCmp(a.TreeID, b.TreeID)
-}
-
 type ItemPtr struct {
 	Node btrfsvol.LogicalAddr
 	Idx  int
