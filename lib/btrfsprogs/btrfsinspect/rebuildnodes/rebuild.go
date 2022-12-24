@@ -117,7 +117,7 @@ func (o *rebuilder) rebuild(ctx context.Context) error {
 	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
 	o.rebuilt.AddTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
 	o.rebuilt.AddTree(ctx, btrfsprim.CHUNK_TREE_OBJECTID)
-	o.rebuilt.AddTree(ctx, btrfsprim.TREE_LOG_OBJECTID)
+	//o.rebuilt.AddTree(ctx, btrfsprim.TREE_LOG_OBJECTID) // TODO(lukeshu): Special LOG_TREE handling
 	o.rebuilt.AddTree(ctx, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
 	for {
 		// Handle items in the queue
