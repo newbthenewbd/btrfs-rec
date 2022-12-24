@@ -34,7 +34,7 @@ type rebuilder struct {
 
 	graph graph.Graph
 	csums containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]
-	keyIO keyio.Handle
+	keyIO *keyio.Handle
 
 	curKey          keyio.KeyAndTree
 	queue           []keyio.KeyAndTree
@@ -42,7 +42,7 @@ type rebuilder struct {
 }
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
-	scanData, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
+	nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +63,11 @@ func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	o := &rebuilder{
 		sb: *sb,
 
-		graph: *scanData.nodeGraph,
+		graph: nodeGraph,
 		csums: *csums,
-		keyIO: *scanData.keyIO,
+		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltTrees(*sb, *scanData.nodeGraph, *scanData.keyIO,
+	o.rebuilt = btrees.NewRebuiltTrees(*sb, nodeGraph, keyIO,
 		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
 	if err := o.rebuild(ctx); err != nil {
 		return nil, err

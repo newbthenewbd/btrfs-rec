@@ -102,7 +102,7 @@ type RebuiltTrees struct {
 	// static
 	sb    btrfstree.Superblock
 	graph pkggraph.Graph
-	keyIO keyio.Handle
+	keyIO *keyio.Handle
 
 	// static callbacks
 	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
@@ -116,7 +116,7 @@ type RebuiltTrees struct {
 // NewRebuiltTrees returns a new RebuiltTrees instance.  All of the
 // callbacks must be non-nil.
 func NewRebuiltTrees(
-	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO keyio.Handle,
+	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle,
 	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
 	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool),
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
