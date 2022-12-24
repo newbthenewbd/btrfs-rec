@@ -43,7 +43,7 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, 
 	}
 }
 
-func (o *Handle) ReadNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
+func (o *Handle) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
 	if cached, ok := o.cache.Get(laddr); ok {
 		return cached
 	}
@@ -80,7 +80,7 @@ func (o *Handle) ReadItem(ptr ItemPtr) (item btrfsitem.Item, ok bool) {
 	if o.graph.Nodes[ptr.Node].Level != 0 || ptr.Idx < 0 {
 		return nil, false
 	}
-	items := o.ReadNode(ptr.Node).Data.BodyLeaf
+	items := o.readNode(ptr.Node).Data.BodyLeaf
 	if ptr.Idx >= len(items) {
 		return nil, false
 	}
