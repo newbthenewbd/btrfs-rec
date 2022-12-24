@@ -510,11 +510,13 @@ func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID 
 //
 // interval is [beg, end)
 func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr) {
-	if !o.rebuilt.AddTree(ctx, btrfsprim.CSUM_TREE_OBJECTID) {
+	treeID := btrfsprim.CSUM_TREE_OBJECTID
+	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.queue = append(o.queue, o.curKey)
 		return
 	}
 
+	last := beg
 	for beg < end {
 		// Figure out which key we want.
 
@@ -531,20 +533,20 @@ func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr)
 
 		})
 		if rbNode == nil {
-			o.wantAugment(ctx, btrfsprim.CSUM_TREE_OBJECTID, nil) // log an error
 			beg += btrfssum.BlockSize
 			continue
+		} else if last < beg {
+			dlog.Errorf(ctx, "augment(tree=%v): could not find csum items for %v-%v", treeID, last, beg)
 		}
 		run := rbNode.Value.Sums
 		key := rbNode.Value.Key
-		treeID := btrfsprim.CSUM_TREE_OBJECTID
 
 		// Check if we already have it.
 
 		// .Search is more efficient than .Load, because it doesn't load the body (and we don't need the body).
 		if _, ok := o.rebuilt.Search(ctx, treeID, key.Cmp); !ok {
 			// We need to insert it.
-			itemPtr, ok := o.rebuilt.Keys(btrfsprim.CSUM_TREE_OBJECTID).Load(key)
+			itemPtr, ok := o.rebuilt.Keys(treeID).Load(key)
 			if !ok {
 				// This is a panic because if we found it in `o.csums` then it has
 				// to be in some Node, and if we didn't find it from
@@ -555,6 +557,10 @@ func (o *rebuilder) wantCSum(ctx context.Context, beg, end btrfsvol.LogicalAddr)
 		}
 
 		beg = run.Addr.Add(run.Size())
+		last = beg
+	}
+	if last < beg {
+		dlog.Errorf(ctx, "augment(tree=%v): could not find csum items for %v-%v", treeID, last, beg)
 	}
 }
 
