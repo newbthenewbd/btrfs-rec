@@ -25,6 +25,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
@@ -69,7 +70,7 @@ func init() {
 				PreTree: func(name string, treeID btrfsprim.ObjID) {
 					treeErrCnt = 0
 					treeItemCnt = make(map[btrfsitem.Type]int)
-					fmt.Printf("tree id=%v name=%q\n", treeID, name)
+					textui.Fprintf(os.Stdout, "tree id=%v name=%q\n", treeID, name)
 				},
 				Err: func(_ *btrfsutil.WalkError) {
 					treeErrCnt++
@@ -98,7 +99,7 @@ func init() {
 			if scandevicesFilename != "" {
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
-				fmt.Printf("lost+found\n")
+				textui.Fprintf(os.Stdout, "lost+found\n")
 				sb, _ := fs.Superblock()
 				for _, devResults := range scanResults {
 					for laddr := range devResults.FoundNodes {

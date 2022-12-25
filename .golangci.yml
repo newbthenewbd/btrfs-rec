@@ -6,6 +6,7 @@ linters:
   disable:
     - structcheck # doesn't support Go 1.18 yet
   enable:
+    - forbidigo
     - gofmt
 linters-settings:
   gofmt:

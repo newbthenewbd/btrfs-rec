@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/datawire/dlib/dlog"
@@ -16,6 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
@@ -37,13 +37,13 @@ func init() {
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
 					Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
-						fmt.Printf("%s = ", path)
+						textui.Fprintf(os.Stdout, "%s = ", path)
 						spew.Dump(item)
 						os.Stdout.WriteString("\n")
 						return nil
 					},
 					BadItem: func(path btrfstree.TreePath, item btrfstree.Item) error {
-						fmt.Printf("%s = ", path)
+						textui.Fprintf(os.Stdout, "%s = ", path)
 						spew.Dump(item)
 						os.Stdout.WriteString("\n")
 						return nil

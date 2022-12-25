@@ -22,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
@@ -32,20 +33,20 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+			out := bufio.NewWriter(os.Stdout)
+			defer out.Flush()
 			defer func() {
 				if r := derror.PanicToError(recover()); r != nil {
-					fmt.Printf("\n\n%+v\n", r)
+					textui.Fprintf(out, "\n\n%+v\n", r)
 					err = fmt.Errorf("panicked")
 				}
 			}()
 			ctx := cmd.Context()
 
-			out := bufio.NewWriter(os.Stdout)
 			printSubvol(out, "", true, "/", &btrfs.Subvolume{
 				FS:     btrfsutil.NewBrokenTrees(ctx, fs),
 				TreeID: btrfsprim.FS_TREE_OBJECTID,
 			})
-			out.Flush()
 
 			return nil
 		},
