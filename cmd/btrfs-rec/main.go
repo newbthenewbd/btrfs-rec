@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/datawire/dlib/dgroup"
@@ -20,6 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type logLevelFlag struct {
@@ -162,7 +162,7 @@ func main() {
 	}
 
 	if err := argparser.ExecuteContext(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
+		textui.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
 		os.Exit(1)
 	}
 }

@@ -5,7 +5,6 @@
 package btrfsinspect
 
 import (
-	"fmt"
 	"io"
 	"sort"
 
@@ -21,19 +20,19 @@ func PrintLogicalSpace(out io.Writer, fs *btrfs.FS) {
 	for _, mapping := range mappings {
 		if mapping.LAddr > prevEnd {
 			size := mapping.LAddr.Sub(prevEnd)
-			fmt.Fprintf(out, "logical_hole laddr=%v size=%v\n", prevEnd, size)
+			textui.Fprintf(out, "logical_hole laddr=%v size=%v\n", prevEnd, size)
 			sumHole += size
 		}
 		if mapping.LAddr != prevBeg {
 			if !mapping.Flags.OK {
-				fmt.Fprintf(out, "chunk laddr=%v size=%v flags=(missing)\n",
+				textui.Fprintf(out, "chunk laddr=%v size=%v flags=(missing)\n",
 					mapping.LAddr, mapping.Size)
 			} else {
-				fmt.Fprintf(out, "chunk laddr=%v size=%v flags=%v\n",
+				textui.Fprintf(out, "chunk laddr=%v size=%v flags=%v\n",
 					mapping.LAddr, mapping.Size, mapping.Flags.Val)
 			}
 		}
-		fmt.Fprintf(out, "\tstripe dev_id=%v paddr=%v\n",
+		textui.Fprintf(out, "\tstripe dev_id=%v paddr=%v\n",
 			mapping.PAddr.Dev, mapping.PAddr.Addr)
 		sumChunk += mapping.Size
 		prevBeg = mapping.LAddr
@@ -60,10 +59,10 @@ func PrintPhysicalSpace(out io.Writer, fs *btrfs.FS) {
 		}
 		if mapping.PAddr.Addr > prevEnd {
 			size := mapping.PAddr.Addr.Sub(prevEnd)
-			fmt.Fprintf(out, "physical_hole paddr=%v size=%v\n", prevEnd, size)
+			textui.Fprintf(out, "physical_hole paddr=%v size=%v\n", prevEnd, size)
 			sumHole += size
 		}
-		fmt.Fprintf(out, "devext dev=%v paddr=%v size=%v laddr=%v\n",
+		textui.Fprintf(out, "devext dev=%v paddr=%v size=%v laddr=%v\n",
 			mapping.PAddr.Dev, mapping.PAddr.Addr, mapping.Size, mapping.LAddr)
 		sumExt += mapping.Size
 		prevEnd = mapping.PAddr.Addr.Add(mapping.Size)
