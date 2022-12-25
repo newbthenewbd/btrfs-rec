@@ -5,8 +5,12 @@
 package graph
 
 import (
+	"context"
 	"fmt"
 	"reflect"
+	"time"
+
+	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -14,6 +18,9 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type Node struct {
@@ -131,7 +138,7 @@ func New(sb btrfstree.Superblock) *Graph {
 	return g
 }
 
-func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
+func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
 	nodeData := Node{
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
@@ -184,23 +191,77 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 	}
 }
 
-func (g *Graph) FinalCheck(fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, progress func(n, d int)) error {
-	total := len(g.EdgesTo)
-	done := 0
-	progress(done, total)
+type progStats struct {
+	textui.Portion[int]
+}
+
+func (s progStats) String() string {
+	return "... " + s.Portion.String()
+}
+
+func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) error {
+	var stats progStats
+
+	dlog.Info(ctx, "Checking keypointers for dead-ends...")
+	progressWriter := textui.NewProgress[progStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	stats.D = len(g.EdgesTo)
+	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
 		if _, ok := g.Nodes[laddr]; !ok {
 			_, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, sb, laddr, btrfstree.NodeExpectations{
 				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 			})
 			if err == nil {
+				progressWriter.Done()
 				return fmt.Errorf("node@%v exists but was not in node scan results", laddr)
 			}
 			g.BadNodes[laddr] = err
 		}
-		done++
-		progress(done, total)
+		stats.N++
+		progressWriter.Set(stats)
 	}
+	progressWriter.Done()
+	dlog.Info(ctx, "... done checking keypointers")
+
+	dlog.Info(ctx, "Checking for btree loops...")
+	stats.D = len(g.Nodes)
+	stats.N = 0
+	progressWriter = textui.NewProgress[progStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter.Set(stats)
+	visited := make(containers.Set[btrfsvol.LogicalAddr], len(g.Nodes))
+	numLoops := 0
+	var checkNode func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr)
+	checkNode = func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr) {
+		defer func() {
+			stats.N = len(visited)
+			progressWriter.Set(stats)
+		}()
+		if visited.Has(node) {
+			return
+		}
+		if slices.Contains(node, stack) {
+			numLoops++
+			dlog.Error(ctx, "loop:")
+			for _, line := range g.renderLoop(append(stack, node)) {
+				dlog.Errorf(ctx, "    %s", line)
+			}
+			return
+		}
+		stack = append(stack, node)
+		for _, kp := range g.EdgesTo[node] {
+			checkNode(kp.FromNode, stack)
+		}
+		visited.Insert(node)
+	}
+	for _, node := range maps.SortedKeys(g.Nodes) {
+		checkNode(node, nil)
+	}
+	progressWriter.Done()
+	if numLoops > 0 {
+		return fmt.Errorf("%d btree loops", numLoops)
+	}
+	dlog.Info(ctx, "... done checking for loops")
+
 	return nil
 }
 

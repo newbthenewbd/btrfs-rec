@@ -345,6 +345,8 @@ func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAd
 		return
 	}
 	if slices.Contains(node, stack) {
+		// This is a panic because graph.FinalCheck() should
+		// have already checked for loops.
 		panic("loop")
 	}
 	if !tree.isOwnerOK(graph.Nodes[node].Owner, graph.Nodes[node].Generation) {

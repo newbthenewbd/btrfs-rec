@@ -72,14 +72,9 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 	progressWriter.Done()
 	dlog.Info(ctx, "... done reading node data")
 
-	progressWriter = textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
-	dlog.Infof(ctx, "Checking keypointers for dead-ends...")
-	if err := nodeGraph.FinalCheck(fs, *sb, progress); err != nil {
+	if err := nodeGraph.FinalCheck(ctx, fs, *sb); err != nil {
 		return graph.Graph{}, nil, err
 	}
-	progressWriter.Done()
-	dlog.Info(ctx, "... done checking keypointers")
-
 	keyIO.SetGraph(*nodeGraph)
 
 	return *nodeGraph, keyIO, nil
