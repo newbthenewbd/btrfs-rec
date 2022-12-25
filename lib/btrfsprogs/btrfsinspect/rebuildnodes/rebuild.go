@@ -51,13 +51,13 @@ type rebuilder struct {
 }
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
-	nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
+	dlog.Info(ctx, "Reading superblock...")
+	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
 	}
 
-	dlog.Info(ctx, "Reading superblock...")
-	sb, err := fs.Superblock()
+	nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
