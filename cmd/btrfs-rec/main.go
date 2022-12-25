@@ -14,26 +14,12 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
-
-type logLevelFlag struct {
-	logrus.Level
-}
-
-func (lvl *logLevelFlag) Type() string { return "loglevel" }
-func (lvl *logLevelFlag) Set(str string) error {
-	var err error
-	lvl.Level, err = logrus.ParseLevel(str)
-	return err
-}
-
-var _ pflag.Value = (*logLevelFlag)(nil)
 
 type subcommand struct {
 	cobra.Command
@@ -43,7 +29,7 @@ type subcommand struct {
 var inspectors, repairers []subcommand
 
 func main() {
-	logLevelFlag := logLevelFlag{
+	logLevelFlag := textui.LogLevelFlag{
 		Level: logrus.InfoLevel,
 	}
 	var pvsFlag []string
@@ -115,9 +101,7 @@ func main() {
 			runE := child.RunE
 			cmd.RunE = func(cmd *cobra.Command, args []string) error {
 				ctx := cmd.Context()
-				logger := logrus.New()
-				logger.SetLevel(logLevelFlag.Level)
-				ctx = dlog.WithLogger(ctx, dlog.WrapLogrus(logger))
+				ctx = dlog.WithLogger(ctx, textui.NewLogger(logLevelFlag.Level))
 
 				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
 					EnableSignalHandling: true,
