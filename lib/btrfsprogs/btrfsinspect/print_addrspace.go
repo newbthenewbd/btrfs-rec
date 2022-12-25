@@ -9,10 +9,9 @@ import (
 	"io"
 	"sort"
 
-	"golang.org/x/text/message"
-
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func PrintLogicalSpace(out io.Writer, fs *btrfs.FS) {
@@ -40,10 +39,9 @@ func PrintLogicalSpace(out io.Writer, fs *btrfs.FS) {
 		prevBeg = mapping.LAddr
 		prevEnd = mapping.LAddr.Add(mapping.Size)
 	}
-	p := message.NewPrinter(message.MatchLanguage("en"))
-	p.Fprintf(out, "total logical holes      = %v (%d)\n", sumHole, int64(sumHole))
-	p.Fprintf(out, "total logical chunks     = %v (%d)\n", sumChunk, int64(sumChunk))
-	p.Fprintf(out, "total logical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
+	textui.Fprintf(out, "total logical holes      = %v (%d)\n", sumHole, int64(sumHole))
+	textui.Fprintf(out, "total logical chunks     = %v (%d)\n", sumChunk, int64(sumChunk))
+	textui.Fprintf(out, "total logical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
 }
 
 func PrintPhysicalSpace(out io.Writer, fs *btrfs.FS) {
@@ -70,8 +68,7 @@ func PrintPhysicalSpace(out io.Writer, fs *btrfs.FS) {
 		sumExt += mapping.Size
 		prevEnd = mapping.PAddr.Addr.Add(mapping.Size)
 	}
-	p := message.NewPrinter(message.MatchLanguage("en"))
-	p.Fprintf(out, "total physical holes      = %v (%d)\n", sumHole, int64(sumHole))
-	p.Fprintf(out, "total physical extents    = %v (%d)\n", sumExt, int64(sumExt))
-	p.Fprintf(out, "total physical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
+	textui.Fprintf(out, "total physical holes      = %v (%d)\n", sumHole, int64(sumHole))
+	textui.Fprintf(out, "total physical extents    = %v (%d)\n", sumExt, int64(sumExt))
+	textui.Fprintf(out, "total physical addr space = %v (%d)\n", prevEnd, int64(prevEnd))
 }
