@@ -24,6 +24,14 @@ type UUIDMap struct { // UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
 func KeyToUUID(key btrfsprim.Key) btrfsprim.UUID {
 	var uuid btrfsprim.UUID
 	binary.LittleEndian.PutUint64(uuid[:8], uint64(key.ObjectID))
-	binary.LittleEndian.PutUint64(uuid[8:], uint64(key.Offset))
+	binary.LittleEndian.PutUint64(uuid[8:], key.Offset)
 	return uuid
+}
+
+func UUIDToKey(uuid btrfsprim.UUID) btrfsprim.Key {
+	return btrfsprim.Key{
+		ObjectID: btrfsprim.ObjID(binary.LittleEndian.Uint64(uuid[:8])),
+		ItemType: UUID_SUBVOL_KEY,
+		Offset:   binary.LittleEndian.Uint64(uuid[8:]),
+	}
 }

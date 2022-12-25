@@ -6,6 +6,7 @@ package graph
 
 import (
 	"fmt"
+	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -22,12 +23,28 @@ type Node struct {
 	NumItems   uint32
 	MinItem    btrfsprim.Key
 	MaxItem    btrfsprim.Key
+	Items      []btrfsprim.Key
+}
+
+func (n Node) String() string {
+	if reflect.ValueOf(n).IsZero() {
+		return "{}"
+	}
+	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v, min:(%v,%v,%v), max:(%v,%v,%v)}`,
+		n.Level, n.Generation, n.Owner, n.NumItems,
+		n.MinItem.ObjectID, n.MinItem.ItemType, n.MinItem.Offset,
+		n.MaxItem.ObjectID, n.MaxItem.ItemType, n.MaxItem.Offset)
 }
 
 type Edge struct {
-	FromTree btrfsprim.ObjID
+	// It is invalid both 'FromRoot' and 'FromNode' to be
+	// non-zero.  If both are zero, then the Edge is from the
+	// superblock.
+	FromRoot btrfsvol.LogicalAddr
 	FromNode btrfsvol.LogicalAddr
-	FromItem int
+	FromItem int // only valid if one of FromRoot or FromNode is non-zero
+
+	FromTree btrfsprim.ObjID
 
 	ToNode       btrfsvol.LogicalAddr
 	ToLevel      uint8
@@ -36,8 +53,19 @@ type Edge struct {
 }
 
 func (kp Edge) String() string {
-	return fmt.Sprintf(`{t:%v,n:%v}[%d]->{n:%v,l:%v,g:%v,k:(%d,%v,%d)}`,
-		kp.FromTree, kp.FromNode, kp.FromItem,
+	var from string
+	switch {
+	case kp.FromRoot != 0:
+		from = fmt.Sprintf("root@%v[%d]:%v",
+			kp.FromRoot, kp.FromItem, kp.FromTree)
+	case kp.FromNode != 0:
+		from = fmt.Sprintf("{node:%v, tree:%v}[%d]",
+			kp.FromNode, kp.FromTree, kp.FromItem)
+	default:
+		from = fmt.Sprintf("superblock:%v", kp.FromTree)
+	}
+	return fmt.Sprintf(`%s -> {n:%v,l:%v,g:%v,k:(%v,%v,%v)}`,
+		from,
 		kp.ToNode, kp.ToLevel, kp.ToGeneration,
 		kp.ToKey.ObjectID,
 		kp.ToKey.ItemType,
@@ -51,13 +79,18 @@ type Graph struct {
 	EdgesTo   map[btrfsvol.LogicalAddr][]*Edge
 }
 
-func (g Graph) insertEdge(kp Edge) {
-	ptr := &kp
-	if kp.ToNode == 0 {
+func (g Graph) insertEdge(ptr *Edge) {
+	if ptr.ToNode == 0 {
 		panic("kp.ToNode should not be zero")
 	}
-	g.EdgesFrom[kp.FromNode] = append(g.EdgesFrom[kp.FromNode], ptr)
-	g.EdgesTo[kp.ToNode] = append(g.EdgesTo[kp.ToNode], ptr)
+	if ptr.FromRoot != 0 && ptr.FromNode != 0 {
+		panic("kp.FromRoot and kp.FromNode should not both be set")
+	}
+	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromItem != 0 {
+		panic("kp.FromItem should only be set if either kp.FromRoot or kp.FromItem is set")
+	}
+	g.EdgesFrom[ptr.FromNode] = append(g.EdgesFrom[ptr.FromNode], ptr)
+	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
 }
 
 func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
@@ -72,7 +105,7 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	if treeInfo.RootNode == 0 {
 		return
 	}
-	g.insertEdge(Edge{
+	g.insertEdge(&Edge{
 		FromTree:     treeID,
 		ToNode:       treeInfo.RootNode,
 		ToLevel:      treeInfo.Level,
@@ -99,19 +132,7 @@ func New(sb btrfstree.Superblock) *Graph {
 }
 
 func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	for _, item := range nodeRef.Data.BodyLeaf {
-		switch itemBody := item.Body.(type) {
-		case btrfsitem.Root:
-			g.insertEdge(Edge{
-				FromTree:     item.Key.ObjectID,
-				ToNode:       itemBody.ByteNr,
-				ToLevel:      itemBody.Level,
-				ToGeneration: itemBody.Generation,
-			})
-		}
-	}
-
-	g.Nodes[nodeRef.Addr] = Node{
+	nodeData := Node{
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 		Owner:      nodeRef.Data.Head.Owner,
@@ -119,16 +140,47 @@ func (g *Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 		MinItem:    discardOK(nodeRef.Data.MinItem()),
 		MaxItem:    discardOK(nodeRef.Data.MaxItem()),
 	}
-	for i, kp := range nodeRef.Data.BodyInternal {
-		g.insertEdge(Edge{
-			FromTree:     nodeRef.Data.Head.Owner,
-			FromNode:     nodeRef.Addr,
-			FromItem:     i,
-			ToNode:       kp.BlockPtr,
-			ToLevel:      nodeRef.Data.Head.Level - 1,
-			ToKey:        kp.Key,
-			ToGeneration: kp.Generation,
-		})
+
+	if nodeRef.Data.Head.Level == 0 {
+		cnt := 0
+		for _, item := range nodeRef.Data.BodyLeaf {
+			if _, ok := item.Body.(btrfsitem.Root); ok {
+				cnt++
+			}
+		}
+		kps := make([]Edge, 0, cnt)
+		keys := make([]btrfsprim.Key, len(nodeRef.Data.BodyLeaf))
+		nodeData.Items = keys
+		g.Nodes[nodeRef.Addr] = nodeData
+		for i, item := range nodeRef.Data.BodyLeaf {
+			keys[i] = item.Key
+			if itemBody, ok := item.Body.(btrfsitem.Root); ok {
+				kps = append(kps, Edge{
+					FromRoot:     nodeRef.Addr,
+					FromItem:     i,
+					FromTree:     item.Key.ObjectID,
+					ToNode:       itemBody.ByteNr,
+					ToLevel:      itemBody.Level,
+					ToGeneration: itemBody.Generation,
+				})
+				g.insertEdge(&kps[len(kps)-1])
+			}
+		}
+	} else {
+		g.Nodes[nodeRef.Addr] = nodeData
+		kps := make([]Edge, len(nodeRef.Data.BodyInternal))
+		for i, kp := range nodeRef.Data.BodyInternal {
+			kps[i] = Edge{
+				FromNode:     nodeRef.Addr,
+				FromItem:     i,
+				FromTree:     nodeRef.Data.Head.Owner,
+				ToNode:       kp.BlockPtr,
+				ToLevel:      nodeRef.Data.Head.Level - 1,
+				ToKey:        kp.Key,
+				ToGeneration: kp.Generation,
+			}
+			g.insertEdge(&kps[i])
+		}
 	}
 }
 

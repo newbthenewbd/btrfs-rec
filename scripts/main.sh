@@ -52,9 +52,9 @@ gen $b.gen/3.nodes.json \
     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
     inspect rebuild-nodes $b.gen/0.scandevices.json
 
-gen $b.gen/4.ls-files.txt \
-    ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-    inspect ls-files
-gen $b.gen/4.ls-trees.txt \
-    ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-    inspect ls-trees --scandevices=$b.gen/0.scandevices.json
+# gen $b.gen/4.ls-files.txt \
+#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
+#     inspect ls-files
+# gen $b.gen/4.ls-trees.txt \
+#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
+#     inspect ls-trees --scandevices=$b.gen/0.scandevices.json

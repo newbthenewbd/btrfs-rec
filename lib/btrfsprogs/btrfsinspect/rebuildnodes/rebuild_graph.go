@@ -269,6 +269,22 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 				btrfsitem.INODE_ITEM_KEY,
 				0)
 		}
+		if body.UUID != (btrfsprim.UUID{}) {
+			key := btrfsitem.UUIDToKey(body.UUID)
+			o.wantOff(dlog.WithField(ctx, "wants", "uuid"),
+				btrfsprim.UUID_TREE_OBJECTID,
+				key.ObjectID,
+				key.ItemType,
+				key.Offset)
+		}
+		if body.ParentUUID != (btrfsprim.UUID{}) {
+			key := btrfsitem.UUIDToKey(body.ParentUUID)
+			o.wantOff(dlog.WithField(ctx, "wants", "parent uuid"),
+				btrfsprim.UUID_TREE_OBJECTID,
+				key.ObjectID,
+				key.ItemType,
+				key.Offset)
+		}
 	case btrfsitem.RootRef:
 		var otherType btrfsprim.ItemType
 		var parent, child btrfsprim.ObjID
