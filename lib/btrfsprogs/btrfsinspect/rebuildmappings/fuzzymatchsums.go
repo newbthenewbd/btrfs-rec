@@ -6,16 +6,17 @@ package rebuildmappings
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	"github.com/datawire/dlib/dlog"
+	"golang.org/x/text/number"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 const minFuzzyPct = 0.5
@@ -95,12 +96,12 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 			matchesStr = ""
 		case 1: // not sure how this can happen, but whatev
 			pct := float64(d-best.Dat[0].N) / float64(d)
-			matchesStr = fmt.Sprintf("%v%%", int(100*pct))
+			matchesStr = textui.Sprintf("%v", number.Percent(pct))
 			apply = pct > minFuzzyPct
 		case 2:
 			pct := float64(d-best.Dat[0].N) / float64(d)
 			pct2 := float64(d-best.Dat[1].N) / float64(d)
-			matchesStr = fmt.Sprintf("best=%v%% secondbest=%v%%", int(100*pct), int(100*pct2))
+			matchesStr = textui.Sprintf("best=%v secondbest=%v", number.Percent(pct), number.Percent(pct2))
 			apply = pct > minFuzzyPct && pct2 < minFuzzyPct
 		}
 		lvl := dlog.LogLevelError

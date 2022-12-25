@@ -6,7 +6,6 @@ package btrfsinspect
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -184,7 +183,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				case btrfsitem.ROOT_BACKREF_KEY:
 					tag = "backref"
 				default:
-					tag = fmt.Sprintf("(error: unhandled RootRef item type: %v)", item.Key.ItemType)
+					tag = textui.Sprintf("(error: unhandled RootRef item type: %v)", item.Key.ItemType)
 				}
 				textui.Fprintf(out, "\t\troot %v key dirid %v sequence %v name %s\n",
 					tag, body.DirID, body.Sequence, body.Name)
@@ -444,6 +443,6 @@ func fmtKey(key btrfsprim.Key) string {
 }
 
 func fmtTime(t btrfsprim.Time) string {
-	return fmt.Sprintf("%v.%v (%v)",
+	return textui.Sprintf("%v.%v (%v)",
 		t.Sec, t.NSec, t.ToStd().Format("2006-01-02 15:04:05"))
 }

@@ -65,7 +65,7 @@ func printText(out io.Writer, prefix string, isLast bool, name, text string) {
 	if isLast {
 		first, rest = tL, tS
 	}
-	for i, line := range strings.Split(fmt.Sprintf("%q %s", name, text), "\n") {
+	for i, line := range strings.Split(textui.Sprintf("%q %s", name, text), "\n") {
 		_, _ = io.WriteString(out, prefix)
 		if i == 0 {
 			_, _ = io.WriteString(out, first)
@@ -80,13 +80,13 @@ func printText(out io.Writer, prefix string, isLast bool, name, text string) {
 func printSubvol(out io.Writer, prefix string, isLast bool, name string, subvol *btrfs.Subvolume) {
 	rootInode, err := subvol.GetRootInode()
 	if err != nil {
-		printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v err=%v",
+		printText(out, prefix, isLast, name+"/", textui.Sprintf("subvol_id=%v err=%v",
 			subvol.TreeID, fmtErr(err)))
 		return
 	}
 	dir, err := subvol.LoadDir(rootInode)
 	if err != nil {
-		printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v err=%v",
+		printText(out, prefix, isLast, name+"/", textui.Sprintf("subvol_id=%v err=%v",
 			subvol.TreeID, fmtErr(err)))
 		return
 	}
@@ -94,7 +94,7 @@ func printSubvol(out io.Writer, prefix string, isLast bool, name string, subvol 
 		printDir(out, prefix, isLast, name, dir)
 		return
 	}
-	printText(out, prefix, isLast, name+"/", fmt.Sprintf("subvol_id=%v", subvol.TreeID))
+	printText(out, prefix, isLast, name+"/", textui.Sprintf("subvol_id=%v", subvol.TreeID))
 	if isLast {
 		prefix += tS
 	} else {
@@ -118,7 +118,7 @@ func fmtInode(inode btrfs.BareInode) string {
 	} else {
 		mode = inode.InodeItem.Mode
 	}
-	ret := fmt.Sprintf("ino=%v mode=%v", inode.Inode, mode)
+	ret := textui.Sprintf("ino=%v mode=%v", inode.Inode, mode)
 	if len(inode.Errs) > 0 {
 		ret += " err=" + fmtErr(inode.Errs)
 	}
@@ -153,7 +153,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		case btrfsitem.INODE_ITEM_KEY:
 			dir, err := subvol.LoadDir(entry.Location.ObjectID)
 			if err != nil {
-				printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
+				printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 				return
 			}
 			printDir(out, prefix, isLast, name, dir)
@@ -173,7 +173,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
+			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
 		printSymlink(out, prefix, isLast, name, file)
@@ -184,7 +184,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
+			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
 		printFile(out, prefix, isLast, name, file)
@@ -195,7 +195,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
+			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
 		printSocket(out, prefix, isLast, name, file)
@@ -206,7 +206,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		file, err := subvol.LoadFile(entry.Location.ObjectID)
 		if err != nil {
-			printText(out, prefix, isLast, name, fmt.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
+			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
 		printPipe(out, prefix, isLast, name, file)
@@ -225,7 +225,7 @@ func printSymlink(out io.Writer, prefix string, isLast bool, name string, file *
 			file.Errs = append(file.Errs, err)
 		}
 	}
-	printText(out, prefix, isLast, name, fmt.Sprintf(
+	printText(out, prefix, isLast, name, textui.Sprintf(
 		"-> %q : %s",
 		tgt,
 		fmtInode(file.BareInode)))

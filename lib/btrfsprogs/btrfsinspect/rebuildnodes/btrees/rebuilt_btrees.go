@@ -178,7 +178,7 @@ type rootStats struct {
 }
 
 func (s rootStats) String() string {
-	return fmt.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items, replaced %v items)",
+	return textui.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items, replaced %v items)",
 		s.TreeID, s.RootNode,
 		int(100*float64(s.DoneLeafs)/float64(s.TotalLeafs)),
 		s.DoneLeafs, s.TotalLeafs,
@@ -309,7 +309,7 @@ type indexStats struct {
 }
 
 func (s indexStats) String() string {
-	return fmt.Sprintf("tree %v: indexing leaf nodes: %v%% (%v/%v)",
+	return textui.Sprintf("tree %v: indexing leaf nodes: %v%% (%v/%v)",
 		s.TreeID,
 		int(100*float64(s.DoneNodes)/float64(s.TotalNodes)),
 		s.DoneNodes, s.TotalNodes)

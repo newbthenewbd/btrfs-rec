@@ -168,20 +168,20 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 			unmappedPhysical += region.End.Sub(region.Beg)
 		}
 	}
-	dlog.Info(ctx, fmt.Sprintf("... %d KiB of unmapped physical space (across %d regions)", textui.Humanized(int(unmappedPhysical/1024)), textui.Humanized(numUnmappedPhysical)))
+	dlog.Infof(ctx, "... %d KiB of unmapped physical space (across %d regions)", textui.Humanized(int(unmappedPhysical/1024)), textui.Humanized(numUnmappedPhysical))
 
 	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
 	var unmappedLogical btrfsvol.AddrDelta
 	for _, region := range unmappedLogicalRegions {
 		unmappedLogical += region.Size()
 	}
-	dlog.Info(ctx, fmt.Sprintf("... %d KiB of unmapped summed logical space (across %d regions)", textui.Humanized(int(unmappedLogical/1024)), textui.Humanized(len(unmappedLogicalRegions))))
+	dlog.Infof(ctx, "... %d KiB of unmapped summed logical space (across %d regions)", textui.Humanized(int(unmappedLogical/1024)), textui.Humanized(len(unmappedLogicalRegions)))
 
 	var unmappedBlockGroups btrfsvol.AddrDelta
 	for _, bg := range bgs {
 		unmappedBlockGroups += bg.Size
 	}
-	dlog.Info(ctx, fmt.Sprintf("... %d KiB of unmapped block groups (across %d groups)", textui.Humanized(int(unmappedBlockGroups/1024)), textui.Humanized(len(bgs))))
+	dlog.Infof(ctx, "... %d KiB of unmapped block groups (across %d groups)", textui.Humanized(int(unmappedBlockGroups/1024)), textui.Humanized(len(bgs)))
 
 	dlog.Info(ctx, "detailed report:")
 	for _, devID := range maps.SortedKeys(unmappedPhysicalRegions) {
