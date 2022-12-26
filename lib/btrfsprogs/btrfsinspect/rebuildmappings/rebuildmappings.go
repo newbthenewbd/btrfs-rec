@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
-	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func getNodeSize(fs *btrfs.FS) (btrfsvol.AddrDelta, error) {
@@ -168,20 +167,20 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 			unmappedPhysical += region.End.Sub(region.Beg)
 		}
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped physical space (across %d regions)", textui.Humanized(int(unmappedPhysical/1024)), textui.Humanized(numUnmappedPhysical))
+	dlog.Infof(ctx, "... %d KiB of unmapped physical space (across %d regions)", int(unmappedPhysical/1024), numUnmappedPhysical)
 
 	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
 	var unmappedLogical btrfsvol.AddrDelta
 	for _, region := range unmappedLogicalRegions {
 		unmappedLogical += region.Size()
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped summed logical space (across %d regions)", textui.Humanized(int(unmappedLogical/1024)), textui.Humanized(len(unmappedLogicalRegions)))
+	dlog.Infof(ctx, "... %d KiB of unmapped summed logical space (across %d regions)", int(unmappedLogical/1024), len(unmappedLogicalRegions))
 
 	var unmappedBlockGroups btrfsvol.AddrDelta
 	for _, bg := range bgs {
 		unmappedBlockGroups += bg.Size
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped block groups (across %d groups)", textui.Humanized(int(unmappedBlockGroups/1024)), textui.Humanized(len(bgs)))
+	dlog.Infof(ctx, "... %d KiB of unmapped block groups (across %d groups)", int(unmappedBlockGroups/1024), len(bgs))
 
 	dlog.Info(ctx, "detailed report:")
 	for _, devID := range maps.SortedKeys(unmappedPhysicalRegions) {
