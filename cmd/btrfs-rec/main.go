@@ -12,7 +12,6 @@ import (
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
@@ -30,7 +29,7 @@ var inspectors, repairers []subcommand
 
 func main() {
 	logLevelFlag := textui.LogLevelFlag{
-		Level: logrus.InfoLevel,
+		Level: dlog.LogLevelInfo,
 	}
 	var pvsFlag []string
 	var mappingsFlag string
@@ -101,7 +100,7 @@ func main() {
 			runE := child.RunE
 			cmd.RunE = func(cmd *cobra.Command, args []string) error {
 				ctx := cmd.Context()
-				ctx = dlog.WithLogger(ctx, textui.NewLogger(logLevelFlag.Level))
+				ctx = dlog.WithLogger(ctx, textui.NewLogger(os.Stderr, logLevelFlag.Level))
 
 				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
 					EnableSignalHandling: true,
