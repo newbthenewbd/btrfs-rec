@@ -43,7 +43,10 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	dlog.Info(ctx, "... Indexing physical regions...") // O(m)
+	_ctx := ctx
+
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "indexing")
+	dlog.Info(ctx, "Indexing physical regions...") // O(m)
 	regions := ListUnmappedPhysicalRegions(fs)
 	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
 	if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
@@ -57,9 +60,10 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	}); err != nil {
 		return err
 	}
-	dlog.Info(ctx, "... ... done indexing")
+	dlog.Info(ctx, "... done indexing")
 
-	dlog.Info(ctx, "... Searching...")
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "searching")
+	dlog.Info(ctx, "Searching...")
 	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
@@ -108,7 +112,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		if apply {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
 			i+1, numBlockgroups, bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if !apply {
 			continue
@@ -125,12 +129,12 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 			},
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
-			dlog.Errorf(ctx, "... error: %v", err)
+			dlog.Errorf(ctx, "error: %v", err)
 			continue
 		}
 		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... ... done searching")
+	dlog.Info(ctx, "done searching")
 
 	return nil
 }

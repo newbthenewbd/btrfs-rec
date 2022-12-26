@@ -280,6 +280,14 @@ func fieldOrd(key string) int {
 		return -4
 	case "dexec.err":
 		return -3
+
+	case "btrfsinspect.scandevices.dev":
+		return -1
+	case "btrfsinspect.rebuild-mappings.step":
+		return -2
+	case "btrfsinspect.rebuild-mappings.substep":
+		return -1
+
 	default:
 		return 1
 	}
@@ -290,6 +298,13 @@ func fieldName(key string) string {
 	case "THREAD":
 		return "thread"
 	default:
-		return key
+		switch {
+		case strings.HasPrefix(key, "btrfsinspect.scandevices."):
+			return strings.TrimPrefix(key, "btrfsinspect.scandevices.")
+		case strings.HasPrefix(key, "btrfsinspect.rebuild-mappings."):
+			return strings.TrimPrefix(key, "btrfsinspect.rebuild-mappings.")
+		default:
+			return key
+		}
 	}
 }
