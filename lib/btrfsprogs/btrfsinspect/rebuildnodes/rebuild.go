@@ -45,9 +45,10 @@ type rebuilder struct {
 	graph graph.Graph
 	keyIO *keyio.Handle
 
-	curKey          keyAndTree
-	queue           []keyAndTree
-	pendingAugments map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
+	curKey       keyAndTree
+	treeQueue    []btrfsprim.ObjID
+	itemQueue    []keyAndTree
+	augmentQueue map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
 func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
@@ -100,28 +101,42 @@ func (s rebuildStats) String() string {
 }
 
 func (o *rebuilder) rebuild(ctx context.Context) error {
-	passNum := 0
-	dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
+	// Initialize
+	o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
+
 	// Seed the queue
-	o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
-	o.rebuilt.AddTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
-	o.rebuilt.AddTree(ctx, btrfsprim.CHUNK_TREE_OBJECTID)
-	//o.rebuilt.AddTree(ctx, btrfsprim.TREE_LOG_OBJECTID) // TODO(lukeshu): Special LOG_TREE handling
-	o.rebuilt.AddTree(ctx, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
-	for {
-		// Handle items in the queue
-		queue := o.queue
-		o.queue = nil
+	o.treeQueue = []btrfsprim.ObjID{
+		btrfsprim.ROOT_TREE_OBJECTID,
+		btrfsprim.CHUNK_TREE_OBJECTID,
+		// btrfsprim.TREE_LOG_OBJECTID, // TODO(lukeshu): Special LOG_TREE handling
+		btrfsprim.BLOCK_GROUP_TREE_OBJECTID,
+	}
+
+	for passNum := 0; len(o.treeQueue) > 0 || len(o.itemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
+		// Add items to the queue (drain o.treeQueue, fill o.itemQueue)
+		dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
+		treeQueue := o.treeQueue
+		o.treeQueue = nil
+		sort.Slice(treeQueue, func(i, j int) bool {
+			return treeQueue[i] < treeQueue[j]
+		})
+		for _, treeID := range treeQueue {
+			o.rebuilt.AddTree(ctx, treeID)
+		}
+
+		// Handle items in the queue (drain o.itemQueue, fill o.augmentQueue and o.treeQueue)
+		itemQueue := o.itemQueue
+		o.itemQueue = nil
 		progressWriter := textui.NewProgress[rebuildStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 		queueProgress := func(done int) {
 			progressWriter.Set(rebuildStats{
 				PassNum: passNum,
 				Task:    "processing item queue",
 				N:       done,
-				D:       len(queue),
+				D:       len(itemQueue),
 			})
 		}
-		for i, key := range queue {
+		for i, key := range itemQueue {
 			queueProgress(i)
 			o.curKey = key
 			itemBody, ok := o.rebuilt.Load(ctx, key.TreeID, key.Key)
@@ -133,26 +148,21 @@ func (o *rebuilder) rebuild(ctx context.Context) error {
 				Body: itemBody,
 			})
 			if key.ItemType == btrfsitem.ROOT_ITEM_KEY {
-				o.rebuilt.AddTree(ctx, key.ObjectID)
+				o.treeQueue = append(o.treeQueue, key.ObjectID)
 			}
 		}
-		queueProgress(len(queue))
+		queueProgress(len(itemQueue))
 		progressWriter.Done()
 
-		// Check if we can bail
-		if len(o.queue) == 0 && len(o.pendingAugments) == 0 {
-			break
-		}
-
-		// Apply augments that were requested while handling items from the queue
-		resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.pendingAugments))
+		// Apply augments (drain o.augmentQueue, fill o.itemQueue)
+		resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.augmentQueue))
 		numAugments := 0
-		for _, treeID := range maps.SortedKeys(o.pendingAugments) {
+		for _, treeID := range maps.SortedKeys(o.augmentQueue) {
 			dlog.Infof(ctx, "... ... augments for tree %v:", treeID)
-			resolvedAugments[treeID] = o.resolveTreeAugments(ctx, o.pendingAugments[treeID])
+			resolvedAugments[treeID] = o.resolveTreeAugments(ctx, o.augmentQueue[treeID])
 			numAugments += len(resolvedAugments[treeID])
 		}
-		o.pendingAugments = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
+		o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
 		progressWriter = textui.NewProgress[rebuildStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 		numAugmented := 0
 		augmentProgress := func() {
@@ -172,15 +182,12 @@ func (o *rebuilder) rebuild(ctx context.Context) error {
 		}
 		augmentProgress()
 		progressWriter.Done()
-
-		passNum++
-		dlog.Infof(ctx, "... pass %d: scanning for implied items", passNum)
 	}
 	return nil
 }
 
 func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
-	o.queue = append(o.queue, keyAndTree{
+	o.itemQueue = append(o.itemQueue, keyAndTree{
 		TreeID: tree,
 		Key:    key,
 	})
@@ -189,7 +196,7 @@ func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key b
 func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
 	key, ok := o._want(ctx, btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY)
 	if !ok {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return 0, btrfsitem.Root{}, false
 	}
 	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.ROOT_TREE_OBJECTID, key)
@@ -212,7 +219,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
 	key := btrfsitem.UUIDToKey(uuid)
 	if ok := o._wantOff(ctx, btrfsprim.UUID_TREE_OBJECTID, key.ObjectID, key.ItemType, key.Offset); !ok {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return 0, false
 	}
 	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.UUID_TREE_OBJECTID, key)
@@ -367,7 +374,7 @@ func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, cho
 		choicesWithDist[choice] = dist
 	}
 	dlog.Infof(ctx, "augment(tree=%v): %v", treeID, maps.SortedKeys(choicesWithDist))
-	o.pendingAugments[treeID] = append(o.pendingAugments[treeID], choicesWithDist)
+	o.augmentQueue[treeID] = append(o.augmentQueue[treeID], choicesWithDist)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -383,7 +390,7 @@ func (o *rebuilder) want(ctx context.Context, treeID btrfsprim.ObjID, objID btrf
 }
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return btrfsprim.Key{}, false
 	}
 
@@ -420,7 +427,7 @@ func (o *rebuilder) wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID b
 }
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) (ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return false
 	}
 
@@ -452,7 +459,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, objID 
 // wantFunc implements rebuildCallbacks.
 func (o *rebuilder) wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return
 	}
 
@@ -501,7 +508,7 @@ func (o *rebuilder) _wantRange(
 	beg, end uint64,
 ) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.queue = append(o.queue, o.curKey)
+		o.itemQueue = append(o.itemQueue, o.curKey)
 		return
 	}
 
