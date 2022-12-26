@@ -5,7 +5,10 @@
 package keyio
 
 import (
+	"context"
 	"fmt"
+
+	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -85,8 +88,9 @@ func (o *Handle) SetGraph(graph graph.Graph) {
 	o.graph = graph
 }
 
-func (o *Handle) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
+func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
 	if cached, ok := o.cache.Get(laddr); ok {
+		dlog.Tracef(ctx, "cache-hit node@%v", laddr)
 		return cached
 	}
 
@@ -95,6 +99,7 @@ func (o *Handle) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.Logic
 		panic(fmt.Errorf("should not happen: node@%v is not mentioned in the in-memory graph", laddr))
 	}
 
+	dlog.Infof(ctx, "cache-miss node@%v, reading...", laddr)
 	ref, err := btrfstree.ReadNode(o.rawFile, o.sb, laddr, btrfstree.NodeExpectations{
 		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
@@ -118,11 +123,11 @@ func (o *Handle) readNode(laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.Logic
 	return ref
 }
 
-func (o *Handle) ReadItem(ptr ItemPtr) (item btrfsitem.Item, ok bool) {
+func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) (item btrfsitem.Item, ok bool) {
 	if o.graph.Nodes[ptr.Node].Level != 0 || ptr.Idx < 0 {
 		return nil, false
 	}
-	items := o.readNode(ptr.Node).Data.BodyLeaf
+	items := o.readNode(ctx, ptr.Node).Data.BodyLeaf
 	if ptr.Idx >= len(items) {
 		return nil, false
 	}

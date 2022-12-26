@@ -18,9 +18,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
@@ -219,7 +221,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 			nextField = i
 			break
 		}
-		printer.Fprintf(&logBuf, " %s=%v", fieldName(fieldKey), fields[fieldKey])
+		writeField(&logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// message /////////////////////////////////////////////////////////////
@@ -231,7 +233,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 		logBuf.WriteString(" :")
 	}
 	for _, fieldKey := range fieldKeys[nextField:] {
-		printer.Fprintf(&logBuf, " %s=%v", fieldName(fieldKey), fields[fieldKey])
+		writeField(&logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// caller //////////////////////////////////////////////////////////////
@@ -270,24 +272,65 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 // message, while values ≥0 should be on the right of the log message.
 func fieldOrd(key string) int {
 	switch key {
+	// dlib ////////////////////////////////////////////////////////////////
 	case "THREAD": // dgroup
-		return -7
+		return -99
 	case "dexec.pid":
-		return -6
+		return -98
 	case "dexec.stream":
-		return -5
+		return -97
 	case "dexec.data":
-		return -4
+		return -96
 	case "dexec.err":
-		return -3
+		return -95
 
+	// btrfsinspect scandevices ////////////////////////////////////////////
 	case "btrfsinspect.scandevices.dev":
 		return -1
+
+	// btrfsinspect rebuild-mappings ///////////////////////////////////////
 	case "btrfsinspect.rebuild-mappings.step":
 		return -2
 	case "btrfsinspect.rebuild-mappings.substep":
 		return -1
 
+	// btrfsinspect rebuild-nodes //////////////////////////////////////////
+	case "btrfsinspect.rebuild-nodes.step":
+		return -50
+	// step=read-fs-data
+	case "btrfsinspect.rebuild-nodes.read.substep":
+		return -1
+	// step=rebuild
+	case "btrfsinspect.rebuild-nodes.rebuild.pass":
+		return -49
+	case "btrfsinspect.rebuild-nodes.rebuild.substep":
+		return -48
+	case "btrfsinspect.rebuild-nodes.rebuild.substep.progress":
+		return -47
+	// step=rebuild, substep=collect-items (1/3)
+	// step=rebuild, substep=process-items (2/3)
+	case "btrfsinspect.rebuild-nodes.rebuild.process.item":
+		return -25
+	// step=rebuild, substep=apply-augments (3/3)
+	case "btrfsinspect.rebuild-nodes.rebuild.augment.tree":
+		return -25
+	// step=rebuild (any substep)
+	case "btrfsinspect.rebuild-nodes.rebuild.want.key":
+		return -7
+	case "btrfsinspect.rebuild-nodes.rebuild.want.reason":
+		return -6
+	case "btrfsinspect.rebuild-nodes.rebuild.add-tree":
+		return -5
+	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep":
+		return -4
+	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key":
+		return -3
+	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason":
+		return -2
+	case "btrfsinspect.rebuild-nodes.rebuild.add-root":
+		return -1
+
+	// other ///////////////////////////////////////////////////////////////
 	case "btrfs.read-json-file":
 		return -1
 	default:
@@ -295,20 +338,61 @@ func fieldOrd(key string) int {
 	}
 }
 
-func fieldName(key string) string {
-	switch key {
-	case "THREAD":
-		return "thread"
-	default:
-		switch {
-		case strings.HasPrefix(key, "btrfsinspect.scandevices."):
-			return strings.TrimPrefix(key, "btrfsinspect.scandevices.")
-		case strings.HasPrefix(key, "btrfsinspect.rebuild-mappings."):
-			return strings.TrimPrefix(key, "btrfsinspect.rebuild-mappings.")
-		case strings.HasPrefix(key, "btrfs."):
-			return strings.TrimPrefix(key, "btrfs.")
-		default:
-			return key
+func writeField(w io.Writer, key string, val any) {
+	valStr := printer.Sprint(val)
+	needsQuote := false
+	if strings.HasPrefix(valStr, `"`) {
+		needsQuote = true
+	} else {
+		for _, r := range valStr {
+			if !(unicode.IsPrint(r) && r != ' ') {
+				needsQuote = true
+				break
+			}
 		}
 	}
+	if needsQuote {
+		valStr = strconv.Quote(valStr)
+	}
+
+	name := key
+
+	switch {
+	case name == "THREAD":
+		name = "thread"
+		switch valStr {
+		case "", "/main":
+			return
+		default:
+			if strings.HasPrefix(valStr, "/main/") {
+				valStr = strings.TrimPrefix(valStr, "/main")
+			}
+		}
+	case strings.HasSuffix(name, ".pass"):
+		fmt.Fprintf(w, "/pass-%s", valStr)
+		return
+	case strings.HasSuffix(name, ".substep") && name != "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep":
+		fmt.Fprintf(w, "/%s", valStr)
+		return
+	case strings.HasPrefix(name, "btrfsinspect."):
+		name = strings.TrimPrefix(name, "btrfsinspect.")
+		switch {
+		case strings.HasPrefix(name, "scandevices."):
+			name = strings.TrimPrefix(name, "scandevices.")
+		case strings.HasPrefix(name, "rebuild-mappings."):
+			name = strings.TrimPrefix(name, "rebuild-mappings.")
+		case strings.HasPrefix(name, "rebuild-nodes."):
+			name = strings.TrimPrefix(name, "rebuild-nodes.")
+			switch {
+			case strings.HasPrefix(name, "read."):
+				name = strings.TrimPrefix(name, "read.")
+			case strings.HasPrefix(name, "rebuild."):
+				name = strings.TrimPrefix(name, "rebuild.")
+			}
+		}
+	case strings.HasPrefix(name, "btrfs."):
+		name = strings.TrimPrefix(name, "btrfs.")
+	}
+
+	fmt.Fprintf(w, " %s=%s", name, valStr)
 }

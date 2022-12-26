@@ -191,19 +191,13 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 	}
 }
 
-type progStats struct {
-	textui.Portion[int]
-}
-
-func (s progStats) String() string {
-	return "... " + s.Portion.String()
-}
-
 func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) error {
-	var stats progStats
+	var stats textui.Portion[int]
+	_ctx := ctx
 
-	dlog.Info(ctx, "Checking keypointers for dead-ends...")
-	progressWriter := textui.NewProgress[progStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.read.substep", "check-keypointers")
+	dlog.Info(_ctx, "Checking keypointers for dead-ends...")
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
 	stats.D = len(g.EdgesTo)
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
@@ -223,10 +217,11 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	progressWriter.Done()
 	dlog.Info(ctx, "... done checking keypointers")
 
-	dlog.Info(ctx, "Checking for btree loops...")
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.read.substep", "check-for-loops")
+	dlog.Info(_ctx, "Checking for btree loops...")
 	stats.D = len(g.Nodes)
 	stats.N = 0
-	progressWriter = textui.NewProgress[progStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progressWriter.Set(stats)
 	visited := make(containers.Set[btrfsvol.LogicalAddr], len(g.Nodes))
 	numLoops := 0
@@ -260,7 +255,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	if numLoops > 0 {
 		return fmt.Errorf("%d btree loops", numLoops)
 	}
-	dlog.Info(ctx, "... done checking for loops")
+	dlog.Info(_ctx, "... done checking for loops")
 
 	return nil
 }
