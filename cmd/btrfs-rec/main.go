@@ -100,7 +100,9 @@ func main() {
 			runE := child.RunE
 			cmd.RunE = func(cmd *cobra.Command, args []string) error {
 				ctx := cmd.Context()
-				ctx = dlog.WithLogger(ctx, textui.NewLogger(os.Stderr, logLevelFlag.Level))
+				logger := textui.NewLogger(os.Stderr, logLevelFlag.Level)
+				ctx = dlog.WithLogger(ctx, logger)
+				dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
 
 				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
 					EnableSignalHandling: true,
