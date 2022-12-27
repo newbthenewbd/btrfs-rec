@@ -7,7 +7,6 @@ package rebuildnodes
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -20,7 +19,7 @@ type rebuildCallbacks interface {
 	fsErr(ctx context.Context, e error)
 	want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
 	wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
-	wantFunc(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool)
+	wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte)
 	wantCSum(ctx context.Context, reason string, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
 	wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
 }
@@ -65,13 +64,10 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		// siblings
 		switch item.Key.ItemType {
 		case btrfsitem.DIR_ITEM_KEY:
-			o.wantFunc(ctx, "corresponding DIR_INDEX",
+			o.wantDirIndex(ctx, "corresponding DIR_INDEX",
 				treeID,
 				item.Key.ObjectID,
-				btrfsitem.DIR_INDEX_KEY,
-				func(peerItem btrfsitem.Item) bool {
-					return reflect.DeepEqual(item, peerItem)
-				})
+				body.Name)
 		case btrfsitem.DIR_INDEX_KEY:
 			o.wantOff(ctx, "corresponding DIR_ITEM",
 				treeID,

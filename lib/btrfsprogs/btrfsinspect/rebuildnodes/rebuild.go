@@ -5,6 +5,7 @@
 package rebuildnodes
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -456,12 +457,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 	return false
 }
 
-// wantFunc implements rebuildCallbacks.
-func (o *rebuilder) wantFunc(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
-		fmt.Sprintf("tree=%v key={%v %v ?} +func", treeID, objID, typ))
-
+func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(keyio.ItemPtr) bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.itemQueue = append(o.itemQueue, o.curKey)
 		return
@@ -478,11 +474,11 @@ func (o *rebuilder) wantFunc(ctx context.Context, reason string, treeID btrfspri
 		return tgt.Cmp(key)
 	})
 	for _, itemKey := range keys {
-		itemBody, ok := o.rebuilt.Load(ctx, treeID, itemKey)
+		itemPtr, ok := o.rebuilt.Resolve(ctx, treeID, itemKey)
 		if !ok {
-			o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", itemKey))
+			o.ioErr(ctx, fmt.Errorf("could not resolve previously read item: %v", itemKey))
 		}
-		if fn(itemBody) {
+		if fn(itemPtr) {
 			return
 		}
 	}
@@ -493,16 +489,24 @@ func (o *rebuilder) wantFunc(ctx context.Context, reason string, treeID btrfspri
 	o.rebuilt.Keys(treeID).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
-			itemBody, ok := o.keyIO.ReadItem(ctx, v)
-			if !ok {
-				o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v at %v", k, v))
-			}
-			if fn(itemBody) {
+			if fn(v) {
 				wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
 			}
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
+}
+
+// wantDirIndex implements rebuildCallbacks.
+func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
+	typ := btrfsitem.DIR_INDEX_KEY
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
+		fmt.Sprintf("tree=%v key={%v %v ?} name=%q", treeID, objID, typ, name))
+	o._wantFunc(ctx, treeID, objID, typ, func(ptr keyio.ItemPtr) bool {
+		itemName, ok := o.keyIO.Names[ptr]
+		return ok && bytes.Equal(itemName, name)
+	})
 }
 
 func (o *rebuilder) _wantRange(

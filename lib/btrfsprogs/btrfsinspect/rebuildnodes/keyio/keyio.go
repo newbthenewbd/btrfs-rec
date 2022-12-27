@@ -39,6 +39,7 @@ type Handle struct {
 	sb      btrfstree.Superblock
 	graph   graph.Graph
 
+	Names map[ItemPtr][]byte
 	Sizes map[ItemPtr]SizeAndErr
 
 	cache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
@@ -49,6 +50,7 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 		rawFile: file,
 		sb:      sb,
 
+		Names: make(map[ItemPtr][]byte),
 		Sizes: make(map[ItemPtr]SizeAndErr),
 
 		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](textui.Tunable(8)),
@@ -62,6 +64,10 @@ func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.
 			Idx:  i,
 		}
 		switch itemBody := item.Body.(type) {
+		case btrfsitem.DirEntry:
+			if item.Key.ItemType == btrfsprim.DIR_INDEX_KEY {
+				o.Names[ptr] = append([]byte(nil), itemBody.Name...)
+			}
 		case btrfsitem.ExtentCSum:
 			o.Sizes[ptr] = SizeAndErr{
 				Size: uint64(itemBody.Size()),

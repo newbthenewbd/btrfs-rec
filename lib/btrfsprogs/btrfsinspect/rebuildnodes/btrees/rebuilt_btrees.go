@@ -363,15 +363,23 @@ func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAd
 	}
 }
 
+// Resolve a key to a keyio.ItemPtr.
+//
+// It is not nescessary to call AddTree for that tree first; Resolve will
+// call it for you.
+func (ts *RebuiltTrees) Resolve(ctx context.Context, treeID btrfsprim.ObjID, key btrfsprim.Key) (ptr keyio.ItemPtr, ok bool) {
+	if !ts.AddTree(ctx, treeID) {
+		return keyio.ItemPtr{}, false
+	}
+	return ts.trees[treeID].Items.Load(key)
+}
+
 // Load reads an item from a tree.
 //
 // It is not nescessary to call AddTree for that tree first; Load will
 // call it for you.
 func (ts *RebuiltTrees) Load(ctx context.Context, treeID btrfsprim.ObjID, key btrfsprim.Key) (item btrfsitem.Item, ok bool) {
-	if !ts.AddTree(ctx, treeID) {
-		return nil, false
-	}
-	ptr, ok := ts.trees[treeID].Items.Load(key)
+	ptr, ok := ts.Resolve(ctx, treeID, key)
 	if !ok {
 		return nil, false
 	}
