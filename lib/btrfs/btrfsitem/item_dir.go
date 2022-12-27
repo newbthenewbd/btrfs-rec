@@ -30,7 +30,7 @@ type DirEntry struct { // DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
 	NameLen       uint16        `bin:"off=0x1b, siz=2"` // [ignored-when-writing]
 	Type          FileType      `bin:"off=0x1d, siz=1"`
 	binstruct.End `bin:"off=0x1e"`
-	Data          []byte `bin:"-"`
+	Data          []byte `bin:"-"` // xattr value (only for XATTR_ITEM)
 	Name          []byte `bin:"-"`
 }
 

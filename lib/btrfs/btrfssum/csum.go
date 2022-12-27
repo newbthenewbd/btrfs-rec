@@ -91,11 +91,11 @@ func (typ CSumType) Sum(data []byte) (CSum, error) {
 		binary.LittleEndian.PutUint32(ret[:], crc)
 		return ret, nil
 	case TYPE_XXHASH:
-		panic("not implemented")
+		panic("TODO: XXHASH not yet implemented")
 	case TYPE_SHA256:
-		panic("not implemented")
+		panic("TODO: SHA256 not yet implemented")
 	case TYPE_BLAKE2:
-		panic("not implemented")
+		panic("TODO: BLAKE2 not yet implemented")
 	default:
 		return CSum{}, fmt.Errorf("unknown checksum type: %v", typ)
 	}

@@ -427,7 +427,7 @@ func fmtKey(key btrfsprim.Key) string {
 	textui.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
 	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
-		panic("not implemented")
+		panic("TODO: printing qgroup items not yet implemented")
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
 		textui.Fprintf(&out, " %#08x)", key.Offset)
 	case btrfsitem.ROOT_ITEM_KEY:
