@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
@@ -31,7 +32,7 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			nodeScanResults, err := readScanResults(args[0])
+			nodeScanResults, err := readJSONFile[btrfsinspect.ScanDevicesResult](ctx, args[0])
 			if err != nil {
 				return err
 			}

@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 
 	"github.com/datawire/dlib/dgroup"
@@ -122,12 +121,8 @@ func main() {
 					}()
 
 					if mappingsFlag != "" {
-						bs, err := os.ReadFile(mappingsFlag)
+						mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, mappingsFlag)
 						if err != nil {
-							return err
-						}
-						var mappingsJSON []btrfsvol.Mapping
-						if err := json.Unmarshal(bs, &mappingsJSON); err != nil {
 							return err
 						}
 						for _, mapping := range mappingsJSON {

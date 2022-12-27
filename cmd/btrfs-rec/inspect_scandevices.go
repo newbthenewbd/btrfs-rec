@@ -58,17 +58,3 @@ func writeScanResults(w io.Writer, results btrfsinspect.ScanDevicesResult) (err 
 		CompactIfUnder:        16,
 	}, results)
 }
-
-func readScanResults(filename string) (btrfsinspect.ScanDevicesResult, error) {
-	fh, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	var scanResults btrfsinspect.ScanDevicesResult
-	buf := bufio.NewReader(fh)
-	if err := lowmemjson.DecodeThenEOF(buf, &scanResults); err != nil {
-		return nil, err
-	}
-	_ = fh.Close()
-	return scanResults, nil
-}

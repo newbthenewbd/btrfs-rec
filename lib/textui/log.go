@@ -288,6 +288,8 @@ func fieldOrd(key string) int {
 	case "btrfsinspect.rebuild-mappings.substep":
 		return -1
 
+	case "btrfs.read-json-file":
+		return -1
 	default:
 		return 1
 	}
@@ -303,6 +305,8 @@ func fieldName(key string) string {
 			return strings.TrimPrefix(key, "btrfsinspect.scandevices.")
 		case strings.HasPrefix(key, "btrfsinspect.rebuild-mappings."):
 			return strings.TrimPrefix(key, "btrfsinspect.rebuild-mappings.")
+		case strings.HasPrefix(key, "btrfs."):
+			return strings.TrimPrefix(key, "btrfs.")
 		default:
 			return key
 		}

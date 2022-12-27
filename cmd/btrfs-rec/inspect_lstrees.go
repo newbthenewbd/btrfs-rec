@@ -5,7 +5,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"strconv"
 	"text/tabwriter"
@@ -36,13 +35,12 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
-			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
+			ctx := cmd.Context()
+			var scanResults btrfsinspect.ScanDevicesResult
 			if scandevicesFilename != "" {
-				scanResultsBytes, err := os.ReadFile(scandevicesFilename)
+				var err error
+				scanResults, err = readJSONFile[btrfsinspect.ScanDevicesResult](ctx, scandevicesFilename)
 				if err != nil {
-					return err
-				}
-				if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
 					return err
 				}
 			}
@@ -65,7 +63,7 @@ func init() {
 				table.Flush()
 			}
 			visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
-			btrfsutil.WalkAllTrees(cmd.Context(), fs, btrfsutil.WalkAllTreesHandler{
+			btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 				PreTree: func(name string, treeID btrfsprim.ObjID) {
 					treeErrCnt = 0
 					treeItemCnt = make(map[btrfsitem.Type]int)
