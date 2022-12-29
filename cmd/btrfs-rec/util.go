@@ -18,6 +18,7 @@ import (
 )
 
 type runeScanner struct {
+	ctx            context.Context //nolint:containedctx // For detecting shutdown from methods
 	progress       textui.Portion[int64]
 	progressWriter *textui.Progress[textui.Portion[int64]]
 	unreadCnt      uint64
@@ -31,6 +32,7 @@ func newRuneScanner(ctx context.Context, fh *os.File) (*runeScanner, error) {
 		return nil, err
 	}
 	ret := &runeScanner{
+		ctx: ctx,
 		progress: textui.Portion[int64]{
 			D: fi.Size(),
 		},
@@ -42,6 +44,9 @@ func newRuneScanner(ctx context.Context, fh *os.File) (*runeScanner, error) {
 }
 
 func (rs *runeScanner) ReadRune() (r rune, size int, err error) {
+	if err := rs.ctx.Err(); err != nil {
+		return 0, 0, err
+	}
 	r, size, err = rs.reader.ReadRune()
 	if rs.unreadCnt > 0 {
 		rs.unreadCnt--
@@ -53,8 +58,14 @@ func (rs *runeScanner) ReadRune() (r rune, size int, err error) {
 }
 
 func (rs *runeScanner) UnreadRune() error {
+	if err := rs.ctx.Err(); err != nil {
+		return err
+	}
+	if err := rs.reader.UnreadRune(); err != nil {
+		return err
+	}
 	rs.unreadCnt++
-	return rs.reader.UnreadRune()
+	return nil
 }
 
 func (rs *runeScanner) Close() error {
@@ -69,6 +80,9 @@ func readJSONFile[T any](ctx context.Context, filename string) (T, error) {
 		return zero, err
 	}
 	buf, err := newRuneScanner(dlog.WithField(ctx, "btrfs.read-json-file", filename), fh)
+	defer func() {
+		_ = buf.Close()
+	}()
 	if err != nil {
 		var zero T
 		return zero, err
@@ -78,7 +92,6 @@ func readJSONFile[T any](ctx context.Context, filename string) (T, error) {
 		var zero T
 		return zero, err
 	}
-	_ = buf.Close()
 	return ret, nil
 }
 

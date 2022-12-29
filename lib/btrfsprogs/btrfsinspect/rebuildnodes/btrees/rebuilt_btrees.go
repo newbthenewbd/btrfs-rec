@@ -305,7 +305,7 @@ func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
 
 	progress()
 	for _, node := range maps.SortedKeys(graph.Nodes) {
-		tree.indexNode(graph, node, nodeToRoots, progress, nil)
+		tree.indexNode(ctx, graph, node, nodeToRoots, progress, nil)
 	}
 	progressWriter.Done()
 
@@ -317,8 +317,11 @@ func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
 	}
 }
 
-func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAddr, index map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr], progress func(), stack []btrfsvol.LogicalAddr) {
+func (tree *rebuiltTree) indexNode(ctx context.Context, graph pkggraph.Graph, node btrfsvol.LogicalAddr, index map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr], progress func(), stack []btrfsvol.LogicalAddr) {
 	defer progress()
+	if err := ctx.Err(); err != nil {
+		return
+	}
 	if _, done := index[node]; done {
 		return
 	}
@@ -339,7 +342,7 @@ func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAd
 		return !tree.isOwnerOK(graph.Nodes[kp.FromNode].Owner, graph.Nodes[kp.FromNode].Generation)
 	})
 	for _, kp := range kps {
-		tree.indexNode(graph, kp.FromNode, index, progress, stack)
+		tree.indexNode(ctx, graph, kp.FromNode, index, progress, stack)
 		if len(index[kp.FromNode]) > 0 {
 			if roots == nil {
 				roots = make(containers.Set[btrfsvol.LogicalAddr])

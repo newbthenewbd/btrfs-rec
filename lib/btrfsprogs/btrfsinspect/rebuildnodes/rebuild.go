@@ -44,11 +44,11 @@ func (o keyAndTree) String() string {
 }
 
 type rebuilder struct {
-	sb      btrfstree.Superblock
-	rebuilt *btrees.RebuiltTrees
-
+	sb    btrfstree.Superblock
 	graph graph.Graph
 	keyIO *keyio.Handle
+
+	rebuilt *btrees.RebuiltTrees
 
 	curKey       keyAndTree
 	treeQueue    containers.Set[btrfsprim.ObjID]
@@ -56,35 +56,26 @@ type rebuilder struct {
 	augmentQueue map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
-func RebuildNodes(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], error) {
-	_ctx := ctx
+type Rebuilder interface {
+	Rebuild(context.Context) error
+	ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
+}
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.step", "read-fs-data")
-	dlog.Info(ctx, "Reading superblock...")
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, err
-	}
-	nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
+func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (Rebuilder, error) {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.step", "read-fs-data")
+	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
-	dlog.Info(ctx, "Rebuilding node tree...")
 	o := &rebuilder{
-		sb: *sb,
-
+		sb:    sb,
 		graph: nodeGraph,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltTrees(*sb, nodeGraph, keyIO,
+	o.rebuilt = btrees.NewRebuiltTrees(sb, nodeGraph, keyIO,
 		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
-	if err := o.rebuild(ctx); err != nil {
-		return nil, err
-	}
-
-	return o.rebuilt.ListRoots(), nil
+	return o, nil
 }
 
 func (o *rebuilder) ioErr(ctx context.Context, err error) {
@@ -93,7 +84,13 @@ func (o *rebuilder) ioErr(ctx context.Context, err error) {
 	panic(err)
 }
 
-func (o *rebuilder) rebuild(_ctx context.Context) error {
+func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+	return o.rebuilt.ListRoots()
+}
+
+func (o *rebuilder) Rebuild(_ctx context.Context) error {
+	_ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
+
 	// Initialize
 	o.itemQueue = make(containers.Set[keyAndTree])
 	o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
@@ -116,6 +113,9 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		// Because trees can be wildly different sizes, it's impossible to have a meaningful
 		// progress percentage here.
 		for _, treeID := range maps.SortedKeys(treeQueue) {
+			if err := _ctx.Err(); err != nil {
+				return err
+			}
 			o.rebuilt.AddTree(stepCtx, treeID)
 		}
 
@@ -134,6 +134,10 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 			itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
 			progress.N = i
 			progressWriter.Set(progress)
+			if err := _ctx.Err(); err != nil {
+				progressWriter.Done()
+				return err
+			}
 			o.curKey = key
 			itemBody, ok := o.rebuilt.Load(itemCtx, key.TreeID, key.Key)
 			if !ok {
@@ -157,6 +161,9 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		progress.N = 0
 		progress.D = 0
 		for _, treeID := range maps.SortedKeys(o.augmentQueue) {
+			if err := _ctx.Err(); err != nil {
+				return err
+			}
 			treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
 			resolvedAugments[treeID] = o.resolveTreeAugments(treeCtx, o.augmentQueue[treeID])
 			progress.D += len(resolvedAugments[treeID])
@@ -167,6 +174,11 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		for _, treeID := range maps.SortedKeys(resolvedAugments) {
 			treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
 			for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
+				if err := _ctx.Err(); err != nil {
+					progressWriter.Set(progress)
+					progressWriter.Done()
+					return err
+				}
 				progressWriter.Set(progress)
 				o.rebuilt.AddRoot(treeCtx, treeID, nodeAddr)
 				progress.N++

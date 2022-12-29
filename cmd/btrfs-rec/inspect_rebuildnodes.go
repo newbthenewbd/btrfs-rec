@@ -33,21 +33,31 @@ func init() {
 			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			rebuiltNodes, err := rebuildnodes.RebuildNodes(ctx, fs, nodeScanResults)
+			rebuilder, err := rebuildnodes.NewRebuilder(ctx, fs, nodeScanResults)
 			if err != nil {
 				return err
 			}
 
-			dlog.Info(ctx, "Writing re-built nodes to stdout...")
-			if err := writeJSONFile(os.Stdout, rebuiltNodes, lowmemjson.ReEncoder{
+			dlog.Info(ctx, "Rebuilding node tree...")
+			rebuildErr := rebuilder.Rebuild(ctx)
+			dst := os.Stdout
+			if rebuildErr != nil {
+				dst = os.Stderr
+				dlog.Errorf(ctx, "rebuild error: %v", rebuildErr)
+			}
+			dlog.Infof(ctx, "Writing re-built nodes to %s...", dst.Name())
+			if err := writeJSONFile(dst, rebuilder.ListRoots(), lowmemjson.ReEncoder{
 				Indent:                "\t",
 				ForceTrailingNewlines: true,
 			}); err != nil {
+				if rebuildErr != nil {
+					return rebuildErr
+				}
 				return err
 			}
 			dlog.Info(ctx, "... done writing")
 
-			return nil
+			return rebuildErr
 		},
 	})
 }
