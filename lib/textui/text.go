@@ -7,6 +7,7 @@ package textui
 import (
 	"fmt"
 	"io"
+	"math"
 
 	"golang.org/x/exp/constraints"
 	"golang.org/x/text/language"
@@ -82,4 +83,122 @@ func (p Portion[T]) String() string {
 		pct = float64(p.N) / float64(p.D)
 	}
 	return printer.Sprintf("%v (%v/%v)", number.Percent(pct), uint64(p.N), uint64(p.D))
+}
+
+type metric[T constraints.Integer | constraints.Float] struct {
+	Val  T
+	Unit string
+}
+
+var (
+	_ fmt.Formatter = metric[int]{}
+	_ fmt.Stringer  = metric[int]{}
+)
+
+func Metric[T constraints.Integer | constraints.Float](x T, unit string) metric[T] {
+	return metric[T]{
+		Val:  x,
+		Unit: unit,
+	}
+}
+
+var metricSmallPrefixes = []string{
+	"m",
+	"μ",
+	"n",
+	"p",
+	"f",
+	"a",
+	"z",
+	"y",
+	"r",
+	"q",
+}
+
+var metricBigPrefixes = []string{
+	"k",
+	"M",
+	"G",
+	"T",
+	"P",
+	"E",
+	"Z",
+	"Y",
+	"R",
+	"Q",
+}
+
+// String implements fmt.Formatter.
+func (v metric[T]) Format(f fmt.State, verb rune) {
+	var prefix string
+	y := math.Abs(float64(v.Val))
+	if y < 1 {
+		for i := 0; y < 1 && i <= len(metricSmallPrefixes); i++ {
+			y *= 1000
+			prefix = metricSmallPrefixes[i]
+		}
+	} else {
+		for i := 0; y > 1000 && i <= len(metricBigPrefixes); i++ {
+			y /= 1000
+			prefix = metricBigPrefixes[i]
+		}
+	}
+	if v.Val < 0 {
+		y = -y
+	}
+	printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
+		y, prefix, v.Unit)
+}
+
+// String implements fmt.Stringer.
+func (v metric[T]) String() string {
+	return fmt.Sprint(v)
+}
+
+type iec[T constraints.Integer | constraints.Float] struct {
+	Val  T
+	Unit string
+}
+
+var (
+	_ fmt.Formatter = iec[int]{}
+	_ fmt.Stringer  = iec[int]{}
+)
+
+func IEC[T constraints.Integer | constraints.Float](x T, unit string) iec[T] {
+	return iec[T]{
+		Val:  x,
+		Unit: unit,
+	}
+}
+
+var iecPrefixes = []string{
+	"Ki",
+	"Mi",
+	"Gi",
+	"Ti",
+	"Pi",
+	"Ei",
+	"Zi",
+	"Yi",
+}
+
+// String implements fmt.Formatter.
+func (v iec[T]) Format(f fmt.State, verb rune) {
+	var prefix string
+	y := math.Abs(float64(v.Val))
+	for i := 0; y > 1024 && i <= len(iecPrefixes); i++ {
+		y /= 1024
+		prefix = iecPrefixes[i]
+	}
+	if v.Val < 0 {
+		y = -y
+	}
+	printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
+		number.Decimal(y), prefix, v.Unit)
+}
+
+// String implements fmt.Stringer.
+func (v iec[T]) String() string {
+	return fmt.Sprint(v)
 }

@@ -101,6 +101,7 @@ func main() {
 				ctx := cmd.Context()
 				logger := textui.NewLogger(os.Stderr, logLevelFlag.Level)
 				ctx = dlog.WithLogger(ctx, logger)
+				ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
 				dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
 
 				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
