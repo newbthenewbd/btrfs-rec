@@ -19,14 +19,14 @@ type LiveMemUse struct {
 
 var _ fmt.Stringer = (*LiveMemUse)(nil)
 
-var liveMemUseUpdateInterval = Tunable(1 * time.Second)
+var LiveMemUseUpdateInterval = Tunable(1 * time.Second)
 
 func (o *LiveMemUse) String() string {
 	o.mu.Lock()
 
 	// runtime.ReadMemStats() calls stopTheWorld(), so we want to
 	// rate-limit how often we call it.
-	if now := time.Now(); now.Sub(o.last) > liveMemUseUpdateInterval {
+	if now := time.Now(); now.Sub(o.last) > LiveMemUseUpdateInterval {
 		runtime.ReadMemStats(&o.stats)
 		o.last = now
 	}
