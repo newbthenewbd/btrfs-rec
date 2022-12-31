@@ -7,6 +7,7 @@ package btrees
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/datawire/dlib/dlog"
@@ -34,6 +35,7 @@ type RebuiltTree struct {
 	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
 
 	// mutable
+	mu    sync.Mutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	Leafs containers.Set[btrfsvol.LogicalAddr]
 }
@@ -137,6 +139,8 @@ func (s rootStats) String() string {
 // call .AddRoot() to re-attach part of the tree that has been broken
 // off.
 func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
+	tree.mu.Lock()
+	defer tree.mu.Unlock()
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	tree.Roots.Insert(rootNode)
 
@@ -205,6 +209,8 @@ func (s itemStats) String() string {
 }
 
 func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex], leafs []btrfsvol.LogicalAddr) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+	tree.mu.Lock()
+	defer tree.mu.Unlock()
 	index := cache.GetOrElse(tree.ID, func() *itemIndex {
 		return &itemIndex{
 			Leafs: make(containers.Set[btrfsvol.LogicalAddr]),

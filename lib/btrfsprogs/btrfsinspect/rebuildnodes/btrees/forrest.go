@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -62,7 +62,7 @@ type RebuiltForrest struct {
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
-	trees    map[btrfsprim.ObjID]*RebuiltTree
+	trees    containers.SyncMap[btrfsprim.ObjID, *RebuiltTree]
 	allItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 	incItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 }
@@ -84,7 +84,6 @@ func NewRebuiltForrest(
 		cbLookupRoot: cbLookupRoot,
 		cbLookupUUID: cbLookupUUID,
 
-		trees:    make(map[btrfsprim.ObjID]*RebuiltTree),
 		allItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
 		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
 	}
@@ -99,11 +98,12 @@ func (ts *RebuiltForrest) Tree(ctx context.Context, treeID btrfsprim.ObjID) *Reb
 	if !ts.addTree(ctx, treeID, nil) {
 		return nil
 	}
-	return ts.trees[treeID]
+	tree, _ := ts.trees.Load(treeID)
+	return tree
 }
 
 func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, stack []btrfsprim.ObjID) (ok bool) {
-	if _, ok := ts.trees[treeID]; ok {
+	if _, ok := ts.trees.Load(treeID); ok {
 		return true
 	}
 	if slices.Contains(treeID, stack) {
@@ -151,12 +151,12 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			if !ts.addTree(ctx, parentID, append(stack, treeID)) {
 				return false
 			}
-			tree.Parent = ts.trees[parentID]
+			tree.Parent, _ = ts.trees.Load(parentID)
 		}
 	}
 	tree.indexLeafs(ctx)
 
-	ts.trees[treeID] = tree
+	ts.trees.Store(treeID, tree)
 	if root != 0 {
 		tree.AddRoot(ctx, root)
 	}
@@ -170,9 +170,10 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 // Do not mutate the set of roots for a tree; it is a pointer to the
 // RebuiltForrest's internal set!
 func (ts *RebuiltForrest) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
-	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(ts.trees))
-	for treeID := range ts.trees {
-		ret[treeID] = ts.trees[treeID].Roots
-	}
+	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
+	ts.trees.Range(func(treeID btrfsprim.ObjID, tree *RebuiltTree) bool {
+		ret[treeID] = tree.Roots
+		return true
+	})
 	return ret
 }
