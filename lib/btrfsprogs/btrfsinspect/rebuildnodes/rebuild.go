@@ -48,7 +48,7 @@ type rebuilder struct {
 	graph graph.Graph
 	keyIO *keyio.Handle
 
-	rebuilt *btrees.RebuiltTrees
+	rebuilt *btrees.RebuiltForrest
 
 	curKey       keyAndTree
 	treeQueue    containers.Set[btrfsprim.ObjID]
@@ -73,7 +73,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		graph: nodeGraph,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltTrees(sb, nodeGraph, keyIO,
+	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO,
 		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
 	return o, nil
 }
@@ -116,7 +116,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			if err := _ctx.Err(); err != nil {
 				return err
 			}
-			o.rebuilt.AddTree(stepCtx, treeID)
+			o.rebuilt.Tree(stepCtx, treeID)
 		}
 
 		// Handle items in the queue (drain o.itemQueue, fill o.augmentQueue and o.treeQueue)
@@ -139,7 +139,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 				return err
 			}
 			o.curKey = key
-			itemBody, ok := o.rebuilt.Load(itemCtx, key.TreeID, key.Key)
+			itemBody, ok := o.rebuilt.Tree(itemCtx, key.TreeID).Load(itemCtx, key.Key)
 			if !ok {
 				o.ioErr(itemCtx, fmt.Errorf("could not read previously read item: %v", key))
 			}
@@ -180,7 +180,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 					return err
 				}
 				progressWriter.Set(progress)
-				o.rebuilt.AddRoot(treeCtx, treeID, nodeAddr)
+				o.rebuilt.Tree(treeCtx, treeID).AddRoot(treeCtx, nodeAddr)
 				progress.N++
 			}
 		}
@@ -206,7 +206,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 		o.itemQueue.Insert(o.curKey)
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.ROOT_TREE_OBJECTID, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.ROOT_TREE_OBJECTID).Load(ctx, key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -231,7 +231,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 		o.itemQueue.Insert(o.curKey)
 		return 0, false
 	}
-	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.UUID_TREE_OBJECTID, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.UUID_TREE_OBJECTID).Load(ctx, key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -376,7 +376,7 @@ func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, cho
 	}
 	choicesWithDist := make(map[btrfsvol.LogicalAddr]int, len(choices))
 	for choice := range choices {
-		dist, ok := o.rebuilt.COWDistance(ctx, treeID, o.graph.Nodes[choice].Owner)
+		dist, ok := o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)
 		if !ok {
 			panic(fmt.Errorf("should not happen: .wantAugment called for tree=%v with invalid choice=%v", treeID, choice))
 		}
@@ -402,7 +402,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 }
 
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
-	if !o.rebuilt.AddTree(ctx, treeID) {
+	if o.rebuilt.Tree(ctx, treeID) == nil {
 		o.itemQueue.Insert(o.curKey)
 		return btrfsprim.Key{}, false
 	}
@@ -413,7 +413,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	if key, ok := o.rebuilt.Search(ctx, treeID, func(key btrfsprim.Key) int {
+	if key, ok := o.rebuilt.Tree(ctx, treeID).Search(func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	}); ok {
@@ -423,10 +423,10 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Keys(treeID).Subrange(
+	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
+			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -446,24 +446,24 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 }
 
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt btrfsprim.Key) (ok bool) {
-	if !o.rebuilt.AddTree(ctx, treeID) {
+	if o.rebuilt.Tree(ctx, treeID) == nil {
 		o.itemQueue.Insert(o.curKey)
 		return false
 	}
 
 	// check if we already have it
 
-	if _, ok := o.rebuilt.Search(ctx, treeID, tgt.Cmp); ok {
+	if _, ok := o.rebuilt.Tree(ctx, treeID).Search(tgt.Cmp); ok {
 		return true
 	}
 
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Keys(treeID).Subrange(
+	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
+			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -471,7 +471,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 }
 
 func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(keyio.ItemPtr) bool) {
-	if !o.rebuilt.AddTree(ctx, treeID) {
+	if o.rebuilt.Tree(ctx, treeID) == nil {
 		o.itemQueue.Insert(o.curKey)
 		return
 	}
@@ -482,12 +482,12 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	keys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
+	keys := o.rebuilt.Tree(ctx, treeID).SearchAll(func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	})
 	for _, itemKey := range keys {
-		itemPtr, ok := o.rebuilt.Resolve(ctx, treeID, itemKey)
+		itemPtr, ok := o.rebuilt.Tree(ctx, treeID).Resolve(itemKey)
 		if !ok {
 			o.ioErr(ctx, fmt.Errorf("could not resolve previously read item: %v", itemKey))
 		}
@@ -499,11 +499,11 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Keys(treeID).Subrange(
+	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 			if fn(v) {
-				wants.InsertFrom(o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
+				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
 			}
 			return true
 		})
@@ -530,13 +530,13 @@ func (o *rebuilder) _wantRange(
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
 		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 
-	if !o.rebuilt.AddTree(ctx, treeID) {
+	if o.rebuilt.Tree(ctx, treeID) == nil {
 		o.itemQueue.Insert(o.curKey)
 		return
 	}
 
 	sizeFn := func(key btrfsprim.Key) (uint64, error) {
-		ptr, ok := o.rebuilt.Keys(treeID).Load(key)
+		ptr, ok := o.rebuilt.Tree(ctx, treeID).Keys().Load(key)
 		if !ok {
 			panic(fmt.Errorf("should not happen: could not load key: %v", key))
 		}
@@ -558,7 +558,7 @@ func (o *rebuilder) _wantRange(
 		ItemType: typ,
 		Offset:   end - 1,
 	}
-	runKeys := o.rebuilt.SearchAll(ctx, treeID, func(key btrfsprim.Key) int {
+	runKeys := o.rebuilt.Tree(ctx, treeID).SearchAll(func(key btrfsprim.Key) int {
 		switch {
 		case runMin.Cmp(key) < 0:
 			return 1
@@ -645,7 +645,7 @@ func (o *rebuilder) _wantRange(
 			ItemType: typ,
 			Offset:   gap.End - 1,
 		}
-		o.rebuilt.Keys(treeID).Subrange(
+		o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
 			func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 				switch {
 				case runMin.Cmp(key) < 0:
@@ -680,7 +680,7 @@ func (o *rebuilder) _wantRange(
 				}
 				wantCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
 					fmt.Sprintf("tree=%v key={%v %v %v-%v}", treeID, objID, typ, gap.Beg, gap.End))
-				o.wantAugment(wantCtx, treeID, o.rebuilt.LeafToRoots(ctx, treeID, v.Node))
+				o.wantAugment(wantCtx, treeID, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(v.Node))
 				last = runEnd
 
 				return true
