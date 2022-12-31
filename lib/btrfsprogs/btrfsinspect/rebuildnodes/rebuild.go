@@ -440,7 +440,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 
 	// check if we already have it
 
-	if _, ok := o.rebuilt.Load(ctx, treeID, tgt); ok {
+	if _, ok := o.rebuilt.Search(ctx, treeID, tgt.Cmp); ok {
 		return true
 	}
 
