@@ -300,41 +300,13 @@ func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 	}
 }
 
-// Resolve a key to a keyio.ItemPtr.
-func (tree *RebuiltTree) Resolve(ctx context.Context, key btrfsprim.Key) (ptr keyio.ItemPtr, ok bool) {
-	return tree.Items(ctx).Load(key)
-}
-
-// Load reads an item from a tree.
-func (tree *RebuiltTree) Load(ctx context.Context, key btrfsprim.Key) (item btrfsitem.Item, ok bool) {
-	ptr, ok := tree.Resolve(ctx, key)
+// ReadItem reads an item from a tree.
+func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) (item btrfsitem.Item, ok bool) {
+	ptr, ok := tree.Items(ctx).Load(key)
 	if !ok {
 		return nil, false
 	}
 	return tree.forrest.keyIO.ReadItem(ctx, ptr)
-}
-
-// Search searches for an item from a tree.
-func (tree *RebuiltTree) Search(ctx context.Context, fn func(btrfsprim.Key) int) (key btrfsprim.Key, ok bool) {
-	k, _, ok := tree.Items(ctx).Search(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
-		return fn(k)
-	})
-	return k, ok
-}
-
-// Search searches for a range of items from a tree.
-func (tree *RebuiltTree) SearchAll(ctx context.Context, fn func(btrfsprim.Key) int) []btrfsprim.Key {
-	kvs := tree.Items(ctx).SearchAll(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
-		return fn(k)
-	})
-	if len(kvs) == 0 {
-		return nil
-	}
-	ret := make([]btrfsprim.Key, len(kvs))
-	for i := range kvs {
-		ret[i] = kvs[i].K
-	}
-	return ret
 }
 
 // LeafToRoots returns the list of potential roots (to pass to

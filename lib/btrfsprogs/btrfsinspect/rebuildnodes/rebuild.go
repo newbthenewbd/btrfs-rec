@@ -139,7 +139,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 				return err
 			}
 			o.curKey = key
-			itemBody, ok := o.rebuilt.Tree(itemCtx, key.TreeID).Load(itemCtx, key.Key)
+			itemBody, ok := o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key)
 			if !ok {
 				o.ioErr(itemCtx, fmt.Errorf("could not read previously read item: %v", key))
 			}
@@ -206,7 +206,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 		o.itemQueue.Insert(o.curKey)
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.ROOT_TREE_OBJECTID).Load(ctx, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.ROOT_TREE_OBJECTID).ReadItem(ctx, key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -231,7 +231,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 		o.itemQueue.Insert(o.curKey)
 		return 0, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.UUID_TREE_OBJECTID).Load(ctx, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.UUID_TREE_OBJECTID).ReadItem(ctx, key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -413,7 +413,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	if key, ok := o.rebuilt.Tree(ctx, treeID).Search(ctx, func(key btrfsprim.Key) int {
+	if key, _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Search(func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	}); ok {
@@ -453,7 +453,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 
 	// check if we already have it
 
-	if _, ok := o.rebuilt.Tree(ctx, treeID).Search(ctx, tgt.Cmp); ok {
+	if _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Load(tgt); ok {
 		return true
 	}
 
@@ -482,18 +482,20 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	keys := o.rebuilt.Tree(ctx, treeID).SearchAll(ctx, func(key btrfsprim.Key) int {
-		key.Offset = 0
-		return tgt.Cmp(key)
-	})
-	for _, itemKey := range keys {
-		itemPtr, ok := o.rebuilt.Tree(ctx, treeID).Resolve(ctx, itemKey)
-		if !ok {
-			o.ioErr(ctx, fmt.Errorf("could not resolve previously read item: %v", itemKey))
-		}
-		if fn(itemPtr) {
-			return
-		}
+	found := false
+	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
+		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
+			key.Offset = 0
+			return tgt.Cmp(key)
+		},
+		func(_ btrfsprim.Key, itemPtr keyio.ItemPtr) bool {
+			if fn(itemPtr) {
+				found = true
+			}
+			return !found
+		})
+	if found {
+		return
 	}
 
 	// OK, we need to insert it
@@ -558,16 +560,6 @@ func (o *rebuilder) _wantRange(
 		ItemType: typ,
 		Offset:   end - 1,
 	}
-	runKeys := o.rebuilt.Tree(ctx, treeID).SearchAll(ctx, func(key btrfsprim.Key) int {
-		switch {
-		case runMin.Cmp(key) < 0:
-			return 1
-		case runMax.Cmp(key) > 0:
-			return -1
-		default:
-			return 0
-		}
-	})
 
 	// Step 2: Build a listing of the gaps.
 	//
@@ -586,50 +578,63 @@ func (o *rebuilder) _wantRange(
 		Beg: beg,
 		End: end,
 	})
-	for _, runKey := range runKeys {
-		runSize, err := sizeFn(runKey)
-		if err != nil {
-			o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, runKey, err))
-		}
-		if runSize == 0 {
-			continue
-		}
-		runBeg := runKey.Offset
-		runEnd := runBeg + runSize
-		if runEnd <= beg {
-			continue
-		}
-		overlappingGaps := gaps.SearchRange(func(gap gap) int {
+	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
+		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 			switch {
-			case gap.End <= runBeg:
+			case runMin.Cmp(key) < 0:
 				return 1
-			case runEnd <= gap.Beg:
+			case runMax.Cmp(key) > 0:
 				return -1
 			default:
 				return 0
 			}
+		},
+		func(runKey btrfsprim.Key, _ keyio.ItemPtr) bool {
+			runSize, err := sizeFn(runKey)
+			if err != nil {
+				o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, runKey, err))
+				return true
+			}
+			if runSize == 0 {
+				return true
+			}
+			runBeg := runKey.Offset
+			runEnd := runBeg + runSize
+			if runEnd <= beg {
+				return true
+			}
+			overlappingGaps := gaps.SearchRange(func(gap gap) int {
+				switch {
+				case gap.End <= runBeg:
+					return 1
+				case runEnd <= gap.Beg:
+					return -1
+				default:
+					return 0
+				}
+			})
+			if len(overlappingGaps) == 0 {
+				return true
+			}
+			gapsBeg := overlappingGaps[0].Beg
+			gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
+			for _, gap := range overlappingGaps {
+				gaps.Delete(containers.NativeOrdered[uint64]{Val: gap.Beg})
+			}
+			if gapsBeg < runBeg {
+				gaps.Insert(gap{
+					Beg: gapsBeg,
+					End: runBeg,
+				})
+			}
+			if gapsEnd > runEnd {
+				gaps.Insert(gap{
+					Beg: runEnd,
+					End: gapsEnd,
+				})
+			}
+			return true
 		})
-		if len(overlappingGaps) == 0 {
-			continue
-		}
-		gapsBeg := overlappingGaps[0].Beg
-		gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
-		for _, gap := range overlappingGaps {
-			gaps.Delete(containers.NativeOrdered[uint64]{Val: gap.Beg})
-		}
-		if gapsBeg < runBeg {
-			gaps.Insert(gap{
-				Beg: gapsBeg,
-				End: runBeg,
-			})
-		}
-		if gapsEnd > runEnd {
-			gaps.Insert(gap{
-				Beg: runEnd,
-				End: gapsEnd,
-			})
-		}
-	}
 
 	// Step 2: Fill each gap.
 	_ = gaps.Walk(func(rbNode *containers.RBNode[gap]) error {
