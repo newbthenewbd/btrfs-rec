@@ -197,7 +197,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 
 	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.read.substep", "check-keypointers")
 	dlog.Info(_ctx, "Checking keypointers for dead-ends...")
-	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	stats.D = len(g.EdgesTo)
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
@@ -221,7 +221,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	dlog.Info(_ctx, "Checking for btree loops...")
 	stats.D = len(g.Nodes)
 	stats.N = 0
-	progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	progressWriter.Set(stats)
 	visited := make(containers.Set[btrfsvol.LogicalAddr], len(g.Nodes))
 	numLoops := 0

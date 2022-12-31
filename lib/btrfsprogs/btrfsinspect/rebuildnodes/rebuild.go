@@ -126,7 +126,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		o.itemQueue = nil
 		var progress textui.Portion[int]
 		progress.D = len(itemQueue)
-		progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, 1*time.Second)
+		progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 		stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 		for i, key := range itemQueue {
 			itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
@@ -160,7 +160,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 			progress.D += len(resolvedAugments[treeID])
 		}
 		o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
-		progressWriter = textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, 1*time.Second)
+		progressWriter = textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 		stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 		for _, treeID := range maps.SortedKeys(resolvedAugments) {
 			treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)

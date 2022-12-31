@@ -19,7 +19,7 @@ type LiveMemUse struct {
 
 var _ fmt.Stringer = (*LiveMemUse)(nil)
 
-const liveMemUseUpdateInterval = 1 * time.Second
+var liveMemUseUpdateInterval = Tunable(1 * time.Second)
 
 func (o *LiveMemUse) String() string {
 	o.mu.Lock()

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -191,7 +191,7 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 
 	var stats rootStats
 	stats.Leafs.D = len(tree.leafToRoots)
-	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
@@ -297,7 +297,7 @@ func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
 
 	var stats textui.Portion[int]
 	stats.D = len(graph.Nodes)
-	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	progress := func() {
 		stats.N = len(nodeToRoots)
 		progressWriter.Set(stats)

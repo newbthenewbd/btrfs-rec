@@ -126,7 +126,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 	var sums strings.Builder
 	sums.Grow(numSums * csumSize)
 
-	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	progress := func(pos btrfsvol.PhysicalAddr) {
 		progressWriter.Set(scanStats{
 			Portion: textui.Portion[btrfsvol.PhysicalAddr]{

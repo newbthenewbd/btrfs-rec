@@ -19,7 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-const minFuzzyPct = 0.5
+var minFuzzyPct = textui.Tunable(0.5)
 
 type fuzzyRecord struct {
 	PAddr btrfsvol.QualifiedPhysicalAddr

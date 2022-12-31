@@ -14,6 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error) {
@@ -30,8 +31,8 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 		}
 		bufFile := diskio.NewBufferedFile[btrfsvol.PhysicalAddr](
 			typedFile,
-			16384, // block size: 16KiB
-			1024,  // number of blocks to buffer; total of 16MiB
+			textui.Tunable[btrfsvol.PhysicalAddr](16384), // block size: 16KiB
+			textui.Tunable(1024),                         // number of blocks to buffer; total of 16MiB
 		)
 		devFile := &btrfs.Device{
 			File: bufFile,

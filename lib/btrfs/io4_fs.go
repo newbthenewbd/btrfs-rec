@@ -22,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type BareInode struct {
@@ -69,32 +70,37 @@ type Subvolume struct {
 	TreeID      btrfsprim.ObjID
 	NoChecksums bool
 
-	rootOnce sync.Once
-	rootVal  btrfsitem.Root
-	rootErr  error
+	initOnce sync.Once
 
-	bareInodeCache containers.LRUCache[btrfsprim.ObjID, *BareInode]
-	fullInodeCache containers.LRUCache[btrfsprim.ObjID, *FullInode]
-	dirCache       containers.LRUCache[btrfsprim.ObjID, *Dir]
-	fileCache      containers.LRUCache[btrfsprim.ObjID, *File]
+	rootVal btrfsitem.Root
+	rootErr error
+
+	bareInodeCache *containers.LRUCache[btrfsprim.ObjID, *BareInode]
+	fullInodeCache *containers.LRUCache[btrfsprim.ObjID, *FullInode]
+	dirCache       *containers.LRUCache[btrfsprim.ObjID, *Dir]
+	fileCache      *containers.LRUCache[btrfsprim.ObjID, *File]
 }
 
 func (sv *Subvolume) init() {
-	sv.rootOnce.Do(func() {
+	sv.initOnce.Do(func() {
 		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.RootItemSearchFn(sv.TreeID))
 		if err != nil {
 			sv.rootErr = err
-			return
+		} else {
+			switch rootBody := root.Body.(type) {
+			case btrfsitem.Root:
+				sv.rootVal = rootBody
+			case btrfsitem.Error:
+				sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
+			default:
+				panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
+			}
 		}
 
-		switch rootBody := root.Body.(type) {
-		case btrfsitem.Root:
-			sv.rootVal = rootBody
-		case btrfsitem.Error:
-			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
-		default:
-			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
-		}
+		sv.bareInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *BareInode](textui.Tunable(128))
+		sv.fullInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *FullInode](textui.Tunable(128))
+		sv.dirCache = containers.NewLRUCache[btrfsprim.ObjID, *Dir](textui.Tunable(128))
+		sv.fileCache = containers.NewLRUCache[btrfsprim.ObjID, *File](textui.Tunable(128))
 	})
 }
 
@@ -104,6 +110,7 @@ func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
 }
 
 func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
+	sv.init()
 	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
@@ -136,6 +143,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 }
 
 func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
+	sv.init()
 	val := sv.fullInodeCache.GetOrElse(inode, func() (val *FullInode) {
 		val = &FullInode{
 			BareInode: BareInode{
@@ -191,6 +199,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 }
 
 func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
+	sv.init()
 	val := sv.dirCache.GetOrElse(inode, func() (val *Dir) {
 		val = new(Dir)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -326,6 +335,7 @@ func (dir *Dir) AbsPath() (string, error) {
 }
 
 func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
+	sv.init()
 	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
 		val = new(File)
 		fullInode, err := sv.LoadFullInode(inode)

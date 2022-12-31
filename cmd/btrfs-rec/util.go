@@ -34,7 +34,7 @@ func newRuneScanner(ctx context.Context, fh *os.File) (*runeScanner, error) {
 		progress: textui.Portion[int64]{
 			D: fi.Size(),
 		},
-		progressWriter: textui.NewProgress[textui.Portion[int64]](ctx, dlog.LogLevelInfo, 1*time.Second),
+		progressWriter: textui.NewProgress[textui.Portion[int64]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second)),
 		reader:         bufio.NewReader(fh),
 		closer:         fh,
 	}
