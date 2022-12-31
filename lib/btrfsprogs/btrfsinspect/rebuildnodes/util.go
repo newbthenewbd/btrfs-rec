@@ -25,3 +25,7 @@ func roundDown[T constraints.Integer](n, d T) T {
 func roundUp[T constraints.Integer](n, d T) T {
 	return ((n + d - 1) / d) * d
 }
+
+func discardOK[T any](val T, _ bool) T {
+	return val
+}
