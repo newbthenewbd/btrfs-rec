@@ -85,8 +85,8 @@ func NewRebuiltForrest(
 		cbLookupUUID: cbLookupUUID,
 
 		trees:    make(map[btrfsprim.ObjID]*RebuiltTree),
-		allItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(16)),
-		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(16)),
+		allItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
+		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
 	}
 }
 
