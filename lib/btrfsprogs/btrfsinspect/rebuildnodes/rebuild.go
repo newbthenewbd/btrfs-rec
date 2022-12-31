@@ -33,10 +33,10 @@ type keyAndTree struct {
 }
 
 func (a keyAndTree) Cmp(b keyAndTree) int {
-	if d := a.Key.Cmp(b.Key); d != 0 {
+	if d := containers.NativeCmp(a.TreeID, b.TreeID); d != 0 {
 		return d
 	}
-	return containers.NativeCmp(a.TreeID, b.TreeID)
+	return a.Key.Cmp(b.Key)
 }
 
 func (o keyAndTree) String() string {
@@ -51,8 +51,8 @@ type rebuilder struct {
 	keyIO *keyio.Handle
 
 	curKey       keyAndTree
-	treeQueue    []btrfsprim.ObjID
-	itemQueue    []keyAndTree
+	treeQueue    containers.Set[btrfsprim.ObjID]
+	itemQueue    containers.Set[keyAndTree]
 	augmentQueue map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int
 }
 
@@ -95,15 +95,16 @@ func (o *rebuilder) ioErr(ctx context.Context, err error) {
 
 func (o *rebuilder) rebuild(_ctx context.Context) error {
 	// Initialize
+	o.itemQueue = make(containers.Set[keyAndTree])
 	o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
 
 	// Seed the queue
-	o.treeQueue = []btrfsprim.ObjID{
+	o.treeQueue = containers.NewSet[btrfsprim.ObjID](
 		btrfsprim.ROOT_TREE_OBJECTID,
 		btrfsprim.CHUNK_TREE_OBJECTID,
 		// btrfsprim.TREE_LOG_OBJECTID, // TODO(lukeshu): Special LOG_TREE handling
 		btrfsprim.BLOCK_GROUP_TREE_OBJECTID,
-	}
+	)
 
 	for passNum := 0; len(o.treeQueue) > 0 || len(o.itemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
 		passCtx := dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.rebuild.pass", passNum)
@@ -111,20 +112,20 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		// Add items to the queue (drain o.treeQueue, fill o.itemQueue)
 		stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
 		treeQueue := o.treeQueue
-		o.treeQueue = nil
-		sort.Slice(treeQueue, func(i, j int) bool {
-			return treeQueue[i] < treeQueue[j]
-		})
+		o.treeQueue = make(containers.Set[btrfsprim.ObjID])
 		// Because trees can be wildly different sizes, it's impossible to have a meaningful
 		// progress percentage here.
-		for _, treeID := range treeQueue {
+		for _, treeID := range maps.SortedKeys(treeQueue) {
 			o.rebuilt.AddTree(stepCtx, treeID)
 		}
 
 		// Handle items in the queue (drain o.itemQueue, fill o.augmentQueue and o.treeQueue)
 		stepCtx = dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
-		itemQueue := o.itemQueue
-		o.itemQueue = nil
+		itemQueue := maps.Keys(o.itemQueue)
+		o.itemQueue = make(containers.Set[keyAndTree])
+		sort.Slice(itemQueue, func(i, j int) bool {
+			return itemQueue[i].Cmp(itemQueue[j]) < 0
+		})
 		var progress textui.Portion[int]
 		progress.D = len(itemQueue)
 		progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
@@ -143,7 +144,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 				Body: itemBody,
 			})
 			if key.ItemType == btrfsitem.ROOT_ITEM_KEY {
-				o.treeQueue = append(o.treeQueue, key.ObjectID)
+				o.treeQueue.Insert(key.ObjectID)
 			}
 		}
 		progress.N = len(itemQueue)
@@ -178,7 +179,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 }
 
 func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
-	o.itemQueue = append(o.itemQueue, keyAndTree{
+	o.itemQueue.Insert(keyAndTree{
 		TreeID: tree,
 		Key:    key,
 	})
@@ -190,7 +191,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 		fmt.Sprintf("tree=%v key={%v %v ?}", btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY))
 	key, ok := o._want(ctx, btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY)
 	if !ok {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return 0, btrfsitem.Root{}, false
 	}
 	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.ROOT_TREE_OBJECTID, key)
@@ -215,7 +216,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "resolve parent UUID")
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: key})
 	if ok := o._wantOff(ctx, btrfsprim.UUID_TREE_OBJECTID, key); !ok {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return 0, false
 	}
 	itemBody, ok := o.rebuilt.Load(ctx, btrfsprim.UUID_TREE_OBJECTID, key)
@@ -390,7 +391,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return btrfsprim.Key{}, false
 	}
 
@@ -434,7 +435,7 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt btrfsprim.Key) (ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return false
 	}
 
@@ -459,7 +460,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 
 func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(keyio.ItemPtr) bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return
 	}
 
@@ -518,7 +519,7 @@ func (o *rebuilder) _wantRange(
 		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 
 	if !o.rebuilt.AddTree(ctx, treeID) {
-		o.itemQueue = append(o.itemQueue, o.curKey)
+		o.itemQueue.Insert(o.curKey)
 		return
 	}
 
