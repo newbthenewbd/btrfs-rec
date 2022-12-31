@@ -30,14 +30,12 @@ type RebuiltTree struct {
 	ParentGen btrfsprim.Generation // offset of this tree's root item
 	forrest   *RebuiltForrest
 
-	// all leafs (lvl=0) that pass .isOwnerOK, even if not in the tree
+	// all leafs (lvl=0) that pass .isOwnerOK, whether or not they're  in the tree
 	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
-	keys        containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 
 	// mutable
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	Leafs containers.Set[btrfsvol.LogicalAddr]
-	Items containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 }
 
 // initializaton (called by `RebuiltForrest.Tree()`) ///////////////////////////////////////////////////////////////////
@@ -106,16 +104,6 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 		roots = containers.NewSet[btrfsvol.LogicalAddr](node)
 	}
 	index[node] = roots
-
-	// tree.keys
-	for i, key := range tree.forrest.graph.Nodes[node].Items {
-		if oldPtr, ok := tree.keys.Load(key); !ok || tree.shouldReplace(oldPtr.Node, node) {
-			tree.keys.Store(key, keyio.ItemPtr{
-				Node: node,
-				Idx:  i,
-			})
-		}
-	}
 }
 
 // isOwnerOK returns whether it is permissible for a node with
@@ -135,14 +123,14 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 // .AddRoot() //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 type rootStats struct {
-	Leafs         textui.Portion[int]
-	AddedItems    int
-	ReplacedItems int
+	Leafs      textui.Portion[int]
+	AddedLeafs int
+	AddedItems int
 }
 
 func (s rootStats) String() string {
-	return textui.Sprintf("%v (added %v items, replaced %v items)",
-		s.Leafs, s.AddedItems, s.ReplacedItems)
+	return textui.Sprintf("%v (added %v leafs, added %v items)",
+		s.Leafs, s.AddedLeafs, s.AddedItems)
 }
 
 // AddRoot adds an additional root node to the tree.  It is useful to
@@ -158,29 +146,109 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
+
 		if tree.Leafs.Has(leaf) || !tree.leafToRoots[leaf].Has(rootNode) {
 			continue
 		}
+
 		tree.Leafs.Insert(leaf)
-		for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			newPtr := keyio.ItemPtr{
-				Node: leaf,
-				Idx:  j,
-			}
-			if oldPtr, exists := tree.Items.Load(itemKey); !exists {
-				tree.Items.Store(itemKey, newPtr)
-				stats.AddedItems++
-			} else if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
-				tree.Items.Store(itemKey, newPtr)
-				stats.ReplacedItems++
-			}
+		stats.AddedLeafs++
+		progressWriter.Set(stats)
+
+		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
 			tree.forrest.cbAddedItem(ctx, tree.ID, itemKey)
+			stats.AddedItems++
 			progressWriter.Set(stats)
 		}
 	}
 	stats.Leafs.N = len(tree.leafToRoots)
 	progressWriter.Set(stats)
 	progressWriter.Done()
+}
+
+// .Items() and .PotentialItems() //////////////////////////////////////////////////////////////////////////////////////
+
+// Items returns a map of the items contained in this tree.
+//
+// Do not mutate the returned map; it is a pointer to the
+// RebuiltTree's internal map!
+func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
+	return tree.items(ctx, tree.forrest.incItems, maps.SortedKeys(tree.Leafs))
+}
+
+// PotentialItems returns a map of items that could be added to this
+// tree with .AddRoot().
+//
+// Do not mutate the returned map; it is a pointer to the
+// RebuiltTree's internal map!
+func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-all-items", fmt.Sprintf("tree=%v", tree.ID))
+	return tree.items(ctx, tree.forrest.allItems, maps.SortedKeys(tree.leafToRoots))
+}
+
+type itemIndex struct {
+	NumDups int
+	Leafs   containers.Set[btrfsvol.LogicalAddr]
+	Items   containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
+}
+
+type itemStats struct {
+	Leafs    textui.Portion[int]
+	NumItems int
+	NumDups  int
+}
+
+func (s itemStats) String() string {
+	return textui.Sprintf("%v (%v items, %v dups)",
+		s.Leafs, s.NumItems, s.NumDups)
+}
+
+func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex], leafs []btrfsvol.LogicalAddr) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+	index := cache.GetOrElse(tree.ID, func() *itemIndex {
+		return &itemIndex{
+			Leafs: make(containers.Set[btrfsvol.LogicalAddr]),
+		}
+	})
+
+	var stats itemStats
+	stats.Leafs.D = len(leafs)
+	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progress := func(doneLeafs int) {
+		stats.Leafs.N = doneLeafs
+		stats.NumItems = index.Items.Len()
+		stats.NumDups = index.NumDups
+		progressWriter.Set(stats)
+	}
+
+	for i, leaf := range leafs {
+		if index.Leafs.Has(leaf) {
+			continue
+		}
+		progress(i)
+		index.Leafs.Insert(leaf)
+		for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+			newPtr := keyio.ItemPtr{
+				Node: leaf,
+				Idx:  j,
+			}
+			if oldPtr, exists := index.Items.Load(itemKey); !exists {
+				index.Items.Store(itemKey, newPtr)
+			} else {
+				index.NumDups++
+				if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
+					index.Items.Store(itemKey, newPtr)
+				}
+			}
+			progress(i)
+		}
+	}
+	if stats.Leafs.N > 0 {
+		progress(len(leafs))
+		progressWriter.Done()
+	}
+
+	return &index.Items
 }
 
 func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
@@ -233,13 +301,13 @@ func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 }
 
 // Resolve a key to a keyio.ItemPtr.
-func (tree *RebuiltTree) Resolve(key btrfsprim.Key) (ptr keyio.ItemPtr, ok bool) {
-	return tree.Items.Load(key)
+func (tree *RebuiltTree) Resolve(ctx context.Context, key btrfsprim.Key) (ptr keyio.ItemPtr, ok bool) {
+	return tree.Items(ctx).Load(key)
 }
 
 // Load reads an item from a tree.
 func (tree *RebuiltTree) Load(ctx context.Context, key btrfsprim.Key) (item btrfsitem.Item, ok bool) {
-	ptr, ok := tree.Resolve(key)
+	ptr, ok := tree.Resolve(ctx, key)
 	if !ok {
 		return nil, false
 	}
@@ -247,16 +315,16 @@ func (tree *RebuiltTree) Load(ctx context.Context, key btrfsprim.Key) (item btrf
 }
 
 // Search searches for an item from a tree.
-func (tree *RebuiltTree) Search(fn func(btrfsprim.Key) int) (key btrfsprim.Key, ok bool) {
-	k, _, ok := tree.Items.Search(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
+func (tree *RebuiltTree) Search(ctx context.Context, fn func(btrfsprim.Key) int) (key btrfsprim.Key, ok bool) {
+	k, _, ok := tree.Items(ctx).Search(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
 		return fn(k)
 	})
 	return k, ok
 }
 
 // Search searches for a range of items from a tree.
-func (tree *RebuiltTree) SearchAll(fn func(btrfsprim.Key) int) []btrfsprim.Key {
-	kvs := tree.Items.SearchAll(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
+func (tree *RebuiltTree) SearchAll(ctx context.Context, fn func(btrfsprim.Key) int) []btrfsprim.Key {
+	kvs := tree.Items(ctx).SearchAll(func(k btrfsprim.Key, _ keyio.ItemPtr) int {
 		return fn(k)
 	})
 	if len(kvs) == 0 {
@@ -288,12 +356,4 @@ func (tree *RebuiltTree) LeafToRoots(leaf btrfsvol.LogicalAddr) containers.Set[b
 		return nil
 	}
 	return ret
-}
-
-// Keys returns a map of all keys in node that would be valid in this tree.
-//
-// Do not mutate the returned map; it is a pointer to the
-// RebuiltTree's internal map!
-func (tree *RebuiltTree) Keys() *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
-	return &tree.keys
 }

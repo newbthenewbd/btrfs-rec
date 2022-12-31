@@ -92,3 +92,7 @@ func (m *SortedMap[K, V]) SearchAll(fn func(K, V) int) []OrderedKV[K, V] {
 		return fn(kv.K, kv.V)
 	})
 }
+
+func (m *SortedMap[K, V]) Len() int {
+	return m.inner.Len()
+}

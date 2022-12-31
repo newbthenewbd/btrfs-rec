@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 // RebuiltForrest is an abstraction for rebuilding and accessing
@@ -61,7 +62,9 @@ type RebuiltForrest struct {
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
-	trees map[btrfsprim.ObjID]*RebuiltTree
+	trees    map[btrfsprim.ObjID]*RebuiltTree
+	allItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
+	incItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
@@ -81,7 +84,9 @@ func NewRebuiltForrest(
 		cbLookupRoot: cbLookupRoot,
 		cbLookupUUID: cbLookupUUID,
 
-		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
+		trees:    make(map[btrfsprim.ObjID]*RebuiltTree),
+		allItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(16)),
+		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(16)),
 	}
 }
 

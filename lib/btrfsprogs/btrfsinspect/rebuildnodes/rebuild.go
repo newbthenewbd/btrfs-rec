@@ -413,7 +413,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	if key, ok := o.rebuilt.Tree(ctx, treeID).Search(func(key btrfsprim.Key) int {
+	if key, ok := o.rebuilt.Tree(ctx, treeID).Search(ctx, func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	}); ok {
@@ -423,7 +423,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
+	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
@@ -453,14 +453,14 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 
 	// check if we already have it
 
-	if _, ok := o.rebuilt.Tree(ctx, treeID).Search(tgt.Cmp); ok {
+	if _, ok := o.rebuilt.Tree(ctx, treeID).Search(ctx, tgt.Cmp); ok {
 		return true
 	}
 
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
+	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
@@ -482,12 +482,12 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 		ObjectID: objID,
 		ItemType: typ,
 	}
-	keys := o.rebuilt.Tree(ctx, treeID).SearchAll(func(key btrfsprim.Key) int {
+	keys := o.rebuilt.Tree(ctx, treeID).SearchAll(ctx, func(key btrfsprim.Key) int {
 		key.Offset = 0
 		return tgt.Cmp(key)
 	})
 	for _, itemKey := range keys {
-		itemPtr, ok := o.rebuilt.Tree(ctx, treeID).Resolve(itemKey)
+		itemPtr, ok := o.rebuilt.Tree(ctx, treeID).Resolve(ctx, itemKey)
 		if !ok {
 			o.ioErr(ctx, fmt.Errorf("could not resolve previously read item: %v", itemKey))
 		}
@@ -499,7 +499,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 	// OK, we need to insert it
 
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
+	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 			if fn(v) {
@@ -536,7 +536,7 @@ func (o *rebuilder) _wantRange(
 	}
 
 	sizeFn := func(key btrfsprim.Key) (uint64, error) {
-		ptr, ok := o.rebuilt.Tree(ctx, treeID).Keys().Load(key)
+		ptr, ok := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Load(key)
 		if !ok {
 			panic(fmt.Errorf("should not happen: could not load key: %v", key))
 		}
@@ -558,7 +558,7 @@ func (o *rebuilder) _wantRange(
 		ItemType: typ,
 		Offset:   end - 1,
 	}
-	runKeys := o.rebuilt.Tree(ctx, treeID).SearchAll(func(key btrfsprim.Key) int {
+	runKeys := o.rebuilt.Tree(ctx, treeID).SearchAll(ctx, func(key btrfsprim.Key) int {
 		switch {
 		case runMin.Cmp(key) < 0:
 			return 1
@@ -645,7 +645,7 @@ func (o *rebuilder) _wantRange(
 			ItemType: typ,
 			Offset:   gap.End - 1,
 		}
-		o.rebuilt.Tree(ctx, treeID).Keys().Subrange(
+		o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 			func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 				switch {
 				case runMin.Cmp(key) < 0:

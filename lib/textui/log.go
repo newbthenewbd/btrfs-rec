@@ -317,18 +317,22 @@ func fieldOrd(key string) int {
 		return -25
 	// step=rebuild (any substep)
 	case "btrfsinspect.rebuild-nodes.rebuild.want.key":
-		return -7
+		return -9
 	case "btrfsinspect.rebuild-nodes.rebuild.want.reason":
-		return -6
+		return -8
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree":
-		return -5
+		return -7
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep":
-		return -4
+		return -6
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key":
-		return -3
+		return -5
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason":
-		return -2
+		return -4
 	case "btrfsinspect.rebuild-nodes.rebuild.add-root":
+		return -3
+	case "btrfsinspect.rebuild-nodes.rebuild.index-inc-items":
+		return -2
+	case "btrfsinspect.rebuild-nodes.rebuild.index-all-items":
 		return -1
 
 	// other ///////////////////////////////////////////////////////////////
