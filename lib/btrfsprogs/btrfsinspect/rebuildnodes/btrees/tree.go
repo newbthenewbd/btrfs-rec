@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -31,42 +31,44 @@ type RebuiltTree struct {
 	ParentGen btrfsprim.Generation // offset of this tree's root item
 	forrest   *RebuiltForrest
 
-	// all leafs (lvl=0) that pass .isOwnerOK, whether or not they're  in the tree
-	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
-
 	// mutable
 	mu    sync.Mutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	Leafs containers.Set[btrfsvol.LogicalAddr]
 }
 
-// initializaton (called by `RebuiltForrest.Tree()`) ///////////////////////////////////////////////////////////////////
+// .leafToRoots() //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (tree *RebuiltTree) indexLeafs(ctx context.Context) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep", "index-nodes")
+// leafToRoots returns all leafs (lvl=0) in the filesystem that pass
+// .isOwnerOK, whether or not they're in the tree.
+func (tree *RebuiltTree) leafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+	return tree.forrest.leafs.GetOrElse(tree.ID, func() map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+		ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
 
-	nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
+		nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
 
-	var stats textui.Portion[int]
-	stats.D = len(tree.forrest.graph.Nodes)
-	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	progress := func() {
-		stats.N = len(nodeToRoots)
-		progressWriter.Set(stats)
-	}
-
-	progress()
-	for _, node := range maps.SortedKeys(tree.forrest.graph.Nodes) {
-		tree.indexNode(ctx, node, nodeToRoots, progress, nil)
-	}
-	progressWriter.Done()
-
-	tree.leafToRoots = make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
-	for node, roots := range nodeToRoots {
-		if tree.forrest.graph.Nodes[node].Level == 0 && len(roots) > 0 {
-			tree.leafToRoots[node] = roots
+		var stats textui.Portion[int]
+		stats.D = len(tree.forrest.graph.Nodes)
+		progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+		progress := func() {
+			stats.N = len(nodeToRoots)
+			progressWriter.Set(stats)
 		}
-	}
+
+		progress()
+		for _, node := range maps.SortedKeys(tree.forrest.graph.Nodes) {
+			tree.indexNode(ctx, node, nodeToRoots, progress, nil)
+		}
+		progressWriter.Done()
+
+		ret := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
+		for node, roots := range nodeToRoots {
+			if tree.forrest.graph.Nodes[node].Level == 0 && len(roots) > 0 {
+				ret[node] = roots
+			}
+		}
+		return ret
+	})
 }
 
 func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAddr, index map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr], progress func(), stack []btrfsvol.LogicalAddr) {
@@ -145,13 +147,14 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.Roots.Insert(rootNode)
 
 	var stats rootStats
-	stats.Leafs.D = len(tree.leafToRoots)
+	leafToRoots := tree.leafToRoots(ctx)
+	stats.Leafs.D = len(leafToRoots)
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
+	for i, leaf := range maps.SortedKeys(leafToRoots) {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
 
-		if tree.Leafs.Has(leaf) || !tree.leafToRoots[leaf].Has(rootNode) {
+		if tree.Leafs.Has(leaf) || !leafToRoots[leaf].Has(rootNode) {
 			continue
 		}
 
@@ -165,7 +168,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 			progressWriter.Set(stats)
 		}
 	}
-	stats.Leafs.N = len(tree.leafToRoots)
+	stats.Leafs.N = len(leafToRoots)
 	progressWriter.Set(stats)
 	progressWriter.Done()
 }
@@ -188,7 +191,7 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-all-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.allItems, maps.SortedKeys(tree.leafToRoots))
+	return tree.items(ctx, tree.forrest.allItems, maps.SortedKeys(tree.leafToRoots(ctx)))
 }
 
 type itemIndex struct {
@@ -317,13 +320,15 @@ func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) (item 
 
 // LeafToRoots returns the list of potential roots (to pass to
 // .AddRoot) that include a given leaf-node.
-func (tree *RebuiltTree) LeafToRoots(leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
+func (tree *RebuiltTree) LeafToRoots(ctx context.Context, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
 	if tree.forrest.graph.Nodes[leaf].Level != 0 {
 		panic(fmt.Errorf("should not happen: (tree=%v).LeafToRoots(leaf=%v): not a leaf",
 			tree.ID, leaf))
 	}
+	tree.mu.Lock()
+	defer tree.mu.Unlock()
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
-	for root := range tree.leafToRoots[leaf] {
+	for root := range tree.leafToRoots(ctx)[leaf] {
 		if tree.Roots.Has(root) {
 			panic(fmt.Errorf("should not happen: (tree=%v).LeafToRoots(leaf=%v): tree contains root=%v but not leaf",
 				tree.ID, leaf, root))

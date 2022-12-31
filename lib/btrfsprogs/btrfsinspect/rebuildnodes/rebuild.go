@@ -447,7 +447,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btr
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
+			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -484,7 +484,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt bt
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Cmp(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
+			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, treeID, wants)
@@ -526,7 +526,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, objID
 		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 			if fn(v) {
-				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(v.Node))
+				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			}
 			return true
 		})
@@ -706,7 +706,7 @@ func (o *rebuilder) _wantRange(
 				}
 				wantCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
 					fmt.Sprintf("tree=%v key={%v %v %v-%v}", treeID, objID, typ, gap.Beg, gap.End))
-				o.wantAugment(wantCtx, treeID, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(v.Node))
+				o.wantAugment(wantCtx, treeID, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(wantCtx, v.Node))
 				last = runEnd
 
 				return true
