@@ -34,7 +34,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS) (ScanDevicesResult, error) {
 	for id, dev := range fs.LV.PhysicalVolumes() {
 		id := id
 		dev := dev
-		grp.Go(dev.Name(), func(ctx context.Context) error {
+		grp.Go(fmt.Sprintf("dev-%d", id), func(ctx context.Context) error {
 			sb, err := dev.Superblock()
 			if err != nil {
 				return err
@@ -80,10 +80,7 @@ type SysExtentCSum struct {
 }
 
 type scanStats struct {
-	DevName string
-	DevSize btrfsvol.PhysicalAddr
-
-	Pos btrfsvol.PhysicalAddr
+	textui.Portion[btrfsvol.PhysicalAddr]
 
 	NumFoundNodes       int
 	NumFoundChunks      int
@@ -93,10 +90,8 @@ type scanStats struct {
 }
 
 func (s scanStats) String() string {
-	return fmt.Sprintf("... dev[%q] scanned %v%% (%d/%d) (found: %v nodes, %v chunks, %v block groups, %v dev extents, %v sum items)",
-		s.DevName,
-		int(100*float64(s.Pos)/float64(s.DevSize)),
-		s.Pos, s.DevSize,
+	return textui.Sprintf("scanned %v (found: %v nodes, %v chunks, %v block groups, %v dev extents, %v sum items)",
+		s.Portion,
 		s.NumFoundNodes,
 		s.NumFoundChunks,
 		s.NumFoundBlockGroups,
@@ -107,6 +102,8 @@ func (s scanStats) String() string {
 // ScanOneDevice mostly mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device().
 func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblock) (ScanOneDeviceResult, error) {
+	ctx = dlog.WithField(ctx, "btrfsinspect.scandevices.dev", dev.Name())
+
 	result := ScanOneDeviceResult{
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),
 	}
@@ -132,9 +129,10 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress := func(pos btrfsvol.PhysicalAddr) {
 		progressWriter.Set(scanStats{
-			DevName:             dev.Name(),
-			DevSize:             devSize,
-			Pos:                 pos,
+			Portion: textui.Portion[btrfsvol.PhysicalAddr]{
+				N: pos,
+				D: devSize,
+			},
 			NumFoundNodes:       len(result.FoundNodes),
 			NumFoundChunks:      len(result.FoundChunks),
 			NumFoundBlockGroups: len(result.FoundBlockGroups),
@@ -171,7 +169,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 			nodeRef, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, sb, pos, btrfstree.NodeExpectations{})
 			if err != nil {
 				if !errors.Is(err, btrfstree.ErrNotANode) {
-					dlog.Errorf(ctx, "... dev[%q] error: %v", dev.Name(), err)
+					dlog.Errorf(ctx, "error: %v", err)
 				}
 			} else {
 				result.FoundNodes[nodeRef.Data.Head.Addr] = append(result.FoundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
@@ -180,12 +178,12 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 					case btrfsitem.CHUNK_ITEM_KEY:
 						chunk, ok := item.Body.(btrfsitem.Chunk)
 						if !ok {
-							dlog.Errorf(ctx, "... dev[%q] node@%v: item %v: error: type is CHUNK_ITEM_KEY, but struct is %T",
-								dev.Name(), nodeRef.Addr, i, item.Body)
+							dlog.Errorf(ctx, "node@%v: item %v: error: type is CHUNK_ITEM_KEY, but struct is %T",
+								nodeRef.Addr, i, item.Body)
 							continue
 						}
-						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found chunk",
-						//	dev.Name(), nodeRef.Addr, i)
+						dlog.Tracef(ctx, "node@%v: item %v: found chunk",
+							nodeRef.Addr, i)
 						result.FoundChunks = append(result.FoundChunks, btrfstree.SysChunk{
 							Key:   item.Key,
 							Chunk: chunk,
@@ -193,12 +191,12 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 					case btrfsitem.BLOCK_GROUP_ITEM_KEY:
 						bg, ok := item.Body.(btrfsitem.BlockGroup)
 						if !ok {
-							dlog.Errorf(ctx, "... dev[%q] node@%v: item %v: error: type is BLOCK_GROUP_ITEM_KEY, but struct is %T",
-								dev.Name(), nodeRef.Addr, i, item.Body)
+							dlog.Errorf(ctx, "node@%v: item %v: error: type is BLOCK_GROUP_ITEM_KEY, but struct is %T",
+								nodeRef.Addr, i, item.Body)
 							continue
 						}
-						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found block group",
-						//	dev.Name(), nodeRef.Addr, i)
+						dlog.Tracef(ctx, "node@%v: item %v: found block group",
+							nodeRef.Addr, i)
 						result.FoundBlockGroups = append(result.FoundBlockGroups, SysBlockGroup{
 							Key: item.Key,
 							BG:  bg,
@@ -206,12 +204,12 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 					case btrfsitem.DEV_EXTENT_KEY:
 						devext, ok := item.Body.(btrfsitem.DevExtent)
 						if !ok {
-							dlog.Errorf(ctx, "... dev[%q] node@%v: item %v: error: type is DEV_EXTENT_KEY, but struct is %T",
-								dev.Name(), nodeRef.Addr, i, item.Body)
+							dlog.Errorf(ctx, "node@%v: item %v: error: type is DEV_EXTENT_KEY, but struct is %T",
+								nodeRef.Addr, i, item.Body)
 							continue
 						}
-						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found dev extent",
-						//	dev.Name(), nodeRef.Addr, i)
+						dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
+							nodeRef.Addr, i)
 						result.FoundDevExtents = append(result.FoundDevExtents, SysDevExtent{
 							Key:    item.Key,
 							DevExt: devext,
@@ -219,12 +217,12 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 					case btrfsitem.EXTENT_CSUM_KEY:
 						sums, ok := item.Body.(btrfsitem.ExtentCSum)
 						if !ok {
-							dlog.Errorf(ctx, "... dev[%q] node@%v: item %v: error: type is EXTENT_CSUM_OBJECTID, but struct is %T",
-								dev.Name(), nodeRef.Addr, i, item.Body)
+							dlog.Errorf(ctx, "node@%v: item %v: error: type is EXTENT_CSUM_OBJECTID, but struct is %T",
+								nodeRef.Addr, i, item.Body)
 							continue
 						}
-						//dlog.Tracef(ctx, "... dev[%q] node@%v: item %v: found csums",
-						//	dev.Name(), nodeRef.Addr, i)
+						dlog.Tracef(ctx, "node@%v: item %v: found csums",
+							nodeRef.Addr, i)
 						result.FoundExtentCSums = append(result.FoundExtentCSums, SysExtentCSum{
 							Generation: nodeRef.Data.Head.Generation,
 							Sums:       sums,

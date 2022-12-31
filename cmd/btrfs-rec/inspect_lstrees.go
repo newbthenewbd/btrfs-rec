@@ -5,8 +5,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"strconv"
 	"text/tabwriter"
@@ -25,6 +23,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
@@ -36,13 +35,12 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
-			var scanResults map[btrfsvol.DeviceID]btrfsinspect.ScanOneDeviceResult
+			ctx := cmd.Context()
+			var scanResults btrfsinspect.ScanDevicesResult
 			if scandevicesFilename != "" {
-				scanResultsBytes, err := os.ReadFile(scandevicesFilename)
+				var err error
+				scanResults, err = readJSONFile[btrfsinspect.ScanDevicesResult](ctx, scandevicesFilename)
 				if err != nil {
-					return err
-				}
-				if err := json.Unmarshal(scanResultsBytes, &scanResults); err != nil {
 					return err
 				}
 			}
@@ -57,19 +55,19 @@ func init() {
 				numWidth := len(strconv.Itoa(slices.Max(treeErrCnt, totalItems)))
 
 				table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-				fmt.Fprintf(table, "        errors\t% *s\n", numWidth, strconv.Itoa(treeErrCnt))
+				textui.Fprintf(table, "        errors\t% *s\n", numWidth, strconv.Itoa(treeErrCnt))
 				for _, typ := range maps.SortedKeys(treeItemCnt) {
-					fmt.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
+					textui.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
 				}
-				fmt.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))
+				textui.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))
 				table.Flush()
 			}
 			visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
-			btrfsutil.WalkAllTrees(cmd.Context(), fs, btrfsutil.WalkAllTreesHandler{
+			btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
 				PreTree: func(name string, treeID btrfsprim.ObjID) {
 					treeErrCnt = 0
 					treeItemCnt = make(map[btrfsitem.Type]int)
-					fmt.Printf("tree id=%v name=%q\n", treeID, name)
+					textui.Fprintf(os.Stdout, "tree id=%v name=%q\n", treeID, name)
 				},
 				Err: func(_ *btrfsutil.WalkError) {
 					treeErrCnt++
@@ -98,7 +96,7 @@ func init() {
 			if scandevicesFilename != "" {
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
-				fmt.Printf("lost+found\n")
+				textui.Fprintf(os.Stdout, "lost+found\n")
 				sb, _ := fs.Superblock()
 				for _, devResults := range scanResults {
 					for laddr := range devResults.FoundNodes {

@@ -29,7 +29,7 @@ func matchBlockGroupSums(ctx context.Context,
 		blockgroup := blockgroups[bgLAddr]
 		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 		if len(bgRun.Runs) == 0 {
-			dlog.Errorf(ctx, "... (%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
+			dlog.Errorf(ctx, "(%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
 				i+1, numBlockgroups, bgLAddr)
 			continue
 		}
@@ -55,7 +55,7 @@ func matchBlockGroupSums(ctx context.Context,
 		if len(matches) == 1 {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage from %v runs",
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage from %v runs",
 			i+1, numBlockgroups, bgLAddr, len(matches), int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if len(matches) != 1 {
 			continue
@@ -72,7 +72,7 @@ func matchBlockGroupSums(ctx context.Context,
 			},
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
-			dlog.Errorf(ctx, "... error: %v", err)
+			dlog.Errorf(ctx, "error: %v", err)
 			continue
 		}
 		delete(blockgroups, bgLAddr)

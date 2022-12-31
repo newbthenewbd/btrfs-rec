@@ -13,7 +13,7 @@ gen() (
 )
 
 set -x
-go build ./cmd/btrfs-rec
+CGO_ENABLED=0 go build -trimpath ./cmd/btrfs-rec
 mkdir -p "$b.gen"
 { set +x; } &>/dev/null
 

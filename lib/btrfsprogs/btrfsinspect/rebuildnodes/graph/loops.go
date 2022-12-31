@@ -6,47 +6,18 @@ package graph
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/datawire/dlib/derror"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
-	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func (g Graph) ShowLoops(out io.Writer) {
-	orphans := make(containers.Set[btrfsvol.LogicalAddr])
-	for node := range g.Nodes {
-		if len(g.EdgesTo[node]) == 0 {
-			orphans.Insert(node)
-		}
-	}
-
-	loopWalk(out, g, 0)
-	for _, orphan := range maps.SortedKeys(orphans) {
-		loopWalk(out, g, orphan)
-	}
-}
-
-func loopWalk(out io.Writer, scanData Graph, stack ...btrfsvol.LogicalAddr) {
-	for _, kp := range scanData.EdgesFrom[stack[len(stack)-1]] {
-		childStack := append(stack, kp.ToNode)
-		if slices.Contains(kp.ToNode, stack) {
-			loopRender(out, scanData, childStack...)
-		} else {
-			loopWalk(out, scanData, childStack...)
-		}
-	}
-}
-
-func nodeRender(scanData Graph, node btrfsvol.LogicalAddr) []string {
+func (g Graph) renderNode(node btrfsvol.LogicalAddr) []string {
 	if node == 0 {
 		return []string{"root"}
-	} else if nodeData, ok := scanData.Nodes[node]; ok {
+	} else if nodeData, ok := g.Nodes[node]; ok {
 		return []string{
 			fmt.Sprintf("{addr:      %v,", node),
 			fmt.Sprintf(" level:     %v,", nodeData.Level),
@@ -61,7 +32,7 @@ func nodeRender(scanData Graph, node btrfsvol.LogicalAddr) []string {
 				nodeData.MaxItem.ItemType,
 				nodeData.MaxItem.Offset),
 		}
-	} else if nodeErr, ok := scanData.BadNodes[node]; ok {
+	} else if nodeErr, ok := g.BadNodes[node]; ok {
 		return []string{
 			fmt.Sprintf("{addr:%v,", node),
 			fmt.Sprintf(" err:%q}", nodeErr.Error()),
@@ -71,7 +42,7 @@ func nodeRender(scanData Graph, node btrfsvol.LogicalAddr) []string {
 	}
 }
 
-func edgeRender(scanData Graph, kp Edge) []string {
+func (g Graph) renderEdge(kp Edge) []string {
 	a := fmt.Sprintf("[%d]={", kp.FromItem)
 	b := strings.Repeat(" ", len(a))
 	ret := []string{
@@ -85,8 +56,8 @@ func edgeRender(scanData Graph, kp Edge) []string {
 	}
 
 	var err error
-	if toNode, ok := scanData.Nodes[kp.ToNode]; !ok {
-		err = scanData.BadNodes[kp.ToNode]
+	if toNode, ok := g.Nodes[kp.ToNode]; !ok {
+		err = g.BadNodes[kp.ToNode]
 	} else {
 		err = checkNodeExpectations(kp, toNode)
 	}
@@ -100,7 +71,7 @@ func edgeRender(scanData Graph, kp Edge) []string {
 	return ret
 }
 
-func loopRender(out io.Writer, scanData Graph, stack ...btrfsvol.LogicalAddr) {
+func (g Graph) renderLoop(stack []btrfsvol.LogicalAddr) []string {
 	var lines []string
 	add := func(suffixes []string) {
 		curLen := 0
@@ -126,20 +97,17 @@ func loopRender(out io.Writer, scanData Graph, stack ...btrfsvol.LogicalAddr) {
 
 	for i, node := range stack {
 		if i > 0 {
-			for _, kp := range scanData.EdgesTo[node] {
+			for _, kp := range g.EdgesTo[node] {
 				if kp.FromNode == stack[i-1] {
-					add(edgeRender(scanData, *kp))
+					add(g.renderEdge(*kp))
 					break
 				}
 			}
 		}
-		add(nodeRender(scanData, node))
+		add(g.renderNode(node))
 	}
 
-	fmt.Fprintln(out, "loop:")
-	for _, line := range lines {
-		fmt.Fprintln(out, "    "+line)
-	}
+	return lines
 }
 
 func checkNodeExpectations(kp Edge, toNode Node) error {

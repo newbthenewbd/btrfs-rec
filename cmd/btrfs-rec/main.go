@@ -6,34 +6,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 	"github.com/datawire/ocibuild/pkg/cliutil"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
-
-type logLevelFlag struct {
-	logrus.Level
-}
-
-func (lvl *logLevelFlag) Type() string { return "loglevel" }
-func (lvl *logLevelFlag) Set(str string) error {
-	var err error
-	lvl.Level, err = logrus.ParseLevel(str)
-	return err
-}
-
-var _ pflag.Value = (*logLevelFlag)(nil)
 
 type subcommand struct {
 	cobra.Command
@@ -43,8 +27,8 @@ type subcommand struct {
 var inspectors, repairers []subcommand
 
 func main() {
-	logLevelFlag := logLevelFlag{
-		Level: logrus.InfoLevel,
+	logLevelFlag := textui.LogLevelFlag{
+		Level: dlog.LogLevelInfo,
 	}
 	var pvsFlag []string
 	var mappingsFlag string
@@ -115,9 +99,10 @@ func main() {
 			runE := child.RunE
 			cmd.RunE = func(cmd *cobra.Command, args []string) error {
 				ctx := cmd.Context()
-				logger := logrus.New()
-				logger.SetLevel(logLevelFlag.Level)
-				ctx = dlog.WithLogger(ctx, dlog.WrapLogrus(logger))
+				logger := textui.NewLogger(os.Stderr, logLevelFlag.Level)
+				ctx = dlog.WithLogger(ctx, logger)
+				ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
+				dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
 
 				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
 					EnableSignalHandling: true,
@@ -137,12 +122,8 @@ func main() {
 					}()
 
 					if mappingsFlag != "" {
-						bs, err := os.ReadFile(mappingsFlag)
+						mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, mappingsFlag)
 						if err != nil {
-							return err
-						}
-						var mappingsJSON []btrfsvol.Mapping
-						if err := json.Unmarshal(bs, &mappingsJSON); err != nil {
 							return err
 						}
 						for _, mapping := range mappingsJSON {
@@ -162,7 +143,7 @@ func main() {
 	}
 
 	if err := argparser.ExecuteContext(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
+		textui.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
 		os.Exit(1)
 	}
 }

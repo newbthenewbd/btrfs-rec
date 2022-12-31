@@ -6,16 +6,17 @@ package rebuildmappings
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	"github.com/datawire/dlib/dlog"
+	"golang.org/x/text/number"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 const minFuzzyPct = 0.5
@@ -42,7 +43,10 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
 	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	dlog.Info(ctx, "... Indexing physical regions...") // O(m)
+	_ctx := ctx
+
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "indexing")
+	dlog.Info(ctx, "Indexing physical regions...") // O(m)
 	regions := ListUnmappedPhysicalRegions(fs)
 	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
 	if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
@@ -56,9 +60,10 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	}); err != nil {
 		return err
 	}
-	dlog.Info(ctx, "... ... done indexing")
+	dlog.Info(ctx, "... done indexing")
 
-	dlog.Info(ctx, "... Searching...")
+	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "searching")
+	dlog.Info(ctx, "Searching...")
 	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
@@ -95,19 +100,19 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 			matchesStr = ""
 		case 1: // not sure how this can happen, but whatev
 			pct := float64(d-best.Dat[0].N) / float64(d)
-			matchesStr = fmt.Sprintf("%v%%", int(100*pct))
+			matchesStr = textui.Sprintf("%v", number.Percent(pct))
 			apply = pct > minFuzzyPct
 		case 2:
 			pct := float64(d-best.Dat[0].N) / float64(d)
 			pct2 := float64(d-best.Dat[1].N) / float64(d)
-			matchesStr = fmt.Sprintf("best=%v%% secondbest=%v%%", int(100*pct), int(100*pct2))
+			matchesStr = textui.Sprintf("best=%v secondbest=%v", number.Percent(pct), number.Percent(pct2))
 			apply = pct > minFuzzyPct && pct2 < minFuzzyPct
 		}
 		lvl := dlog.LogLevelError
 		if apply {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "... (%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
 			i+1, numBlockgroups, bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
 		if !apply {
 			continue
@@ -124,12 +129,12 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 			},
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
-			dlog.Errorf(ctx, "... error: %v", err)
+			dlog.Errorf(ctx, "error: %v", err)
 			continue
 		}
 		delete(blockgroups, bgLAddr)
 	}
-	dlog.Info(ctx, "... ... done searching")
+	dlog.Info(ctx, "done searching")
 
 	return nil
 }

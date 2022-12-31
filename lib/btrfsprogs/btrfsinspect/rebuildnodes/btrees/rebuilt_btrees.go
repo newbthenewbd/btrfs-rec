@@ -168,21 +168,14 @@ func NewRebuiltTrees(
 }
 
 type rootStats struct {
-	TreeID   btrfsprim.ObjID
-	RootNode btrfsvol.LogicalAddr
-
-	DoneLeafs     int
-	TotalLeafs    int
+	Leafs         textui.Portion[int]
 	AddedItems    int
 	ReplacedItems int
 }
 
 func (s rootStats) String() string {
-	return fmt.Sprintf("tree %v: adding root node@%v: %v%% (%v/%v) (added %v items, replaced %v items)",
-		s.TreeID, s.RootNode,
-		int(100*float64(s.DoneLeafs)/float64(s.TotalLeafs)),
-		s.DoneLeafs, s.TotalLeafs,
-		s.AddedItems, s.ReplacedItems)
+	return textui.Sprintf("%v (added %v items, replaced %v items)",
+		s.Leafs, s.AddedItems, s.ReplacedItems)
 }
 
 // AddRoot adds an additional root node to an existing tree.  It is
@@ -192,24 +185,16 @@ func (s rootStats) String() string {
 // It is invalid (panic) to call AddRoot for a tree without having
 // called AddTree first.
 func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, rootNode btrfsvol.LogicalAddr) {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", treeID, rootNode))
 	tree := ts.trees[treeID]
 	tree.Roots.Insert(rootNode)
 
+	var stats rootStats
+	stats.Leafs.D = len(tree.leafToRoots)
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, 1*time.Second)
-	numAdded := 0
-	numReplaced := 0
-	progress := func(done int) {
-		progressWriter.Set(rootStats{
-			TreeID:        treeID,
-			RootNode:      rootNode,
-			DoneLeafs:     done,
-			TotalLeafs:    len(tree.leafToRoots),
-			AddedItems:    numAdded,
-			ReplacedItems: numReplaced,
-		})
-	}
 	for i, leaf := range maps.SortedKeys(tree.leafToRoots) {
-		progress(i)
+		stats.Leafs.N = i
+		progressWriter.Set(stats)
 		if tree.Leafs.Has(leaf) || !tree.leafToRoots[leaf].Has(rootNode) {
 			continue
 		}
@@ -221,16 +206,17 @@ func (ts *RebuiltTrees) AddRoot(ctx context.Context, treeID btrfsprim.ObjID, roo
 			}
 			if oldPtr, exists := tree.Items.Load(itemKey); !exists {
 				tree.Items.Store(itemKey, newPtr)
-				numAdded++
+				stats.AddedItems++
 			} else if tree.shouldReplace(ts.graph, oldPtr.Node, newPtr.Node) {
 				tree.Items.Store(itemKey, newPtr)
-				numReplaced++
+				stats.ReplacedItems++
 			}
 			ts.cbAddedItem(ctx, treeID, itemKey)
-			progress(i)
+			progressWriter.Set(stats)
 		}
 	}
-	progress(len(tree.leafToRoots))
+	stats.Leafs.N = len(tree.leafToRoots)
+	progressWriter.Set(stats)
 	progressWriter.Done()
 }
 
@@ -250,6 +236,9 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 	if slices.Contains(treeID, stack) {
 		return false
 	}
+	stack = append(stack, treeID)
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree", stack)
+	dlog.Info(ctx, "adding tree...")
 
 	tree := &rebuiltTree{
 		ID:    treeID,
@@ -267,7 +256,6 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
 		root = ts.sb.BlockGroupRoot
 	default:
-		stack := append(stack, treeID)
 		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
 			return false
 		}
@@ -279,7 +267,7 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 		tree.UUID = rootItem.UUID
 		if rootItem.ParentUUID != (btrfsprim.UUID{}) {
 			tree.ParentGen = rootOff
-			if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
+			if !ts.addTree(ctx, btrfsprim.UUID_TREE_OBJECTID, stack) {
 				return false
 			}
 			parentID, ok := ts.cbLookupUUID(ctx, rootItem.ParentUUID)
@@ -299,32 +287,22 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 		ts.AddRoot(ctx, treeID, root)
 	}
 
-	return true
-}
-
-type indexStats struct {
-	TreeID     btrfsprim.ObjID
-	DoneNodes  int
-	TotalNodes int
-}
-
-func (s indexStats) String() string {
-	return fmt.Sprintf("tree %v: indexing leaf nodes: %v%% (%v/%v)",
-		s.TreeID,
-		int(100*float64(s.DoneNodes)/float64(s.TotalNodes)),
-		s.DoneNodes, s.TotalNodes)
+	return
 }
 
 func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep", "index-nodes")
+
 	nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
-	progressWriter := textui.NewProgress[indexStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+
+	var stats textui.Portion[int]
+	stats.D = len(graph.Nodes)
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, 1*time.Second)
 	progress := func() {
-		progressWriter.Set(indexStats{
-			TreeID:     tree.ID,
-			DoneNodes:  len(nodeToRoots),
-			TotalNodes: len(graph.Nodes),
-		})
+		stats.N = len(nodeToRoots)
+		progressWriter.Set(stats)
 	}
+
 	progress()
 	for _, node := range maps.SortedKeys(graph.Nodes) {
 		tree.indexNode(graph, node, nodeToRoots, progress, nil)
@@ -345,6 +323,8 @@ func (tree *rebuiltTree) indexNode(graph pkggraph.Graph, node btrfsvol.LogicalAd
 		return
 	}
 	if slices.Contains(node, stack) {
+		// This is a panic because graph.FinalCheck() should
+		// have already checked for loops.
 		panic("loop")
 	}
 	if !tree.isOwnerOK(graph.Nodes[node].Owner, graph.Nodes[node].Generation) {
@@ -395,7 +375,7 @@ func (ts *RebuiltTrees) Load(ctx context.Context, treeID btrfsprim.ObjID, key bt
 	if !ok {
 		return nil, false
 	}
-	return ts.keyIO.ReadItem(ptr)
+	return ts.keyIO.ReadItem(ctx, ptr)
 }
 
 // Search searches for an item from a tree.

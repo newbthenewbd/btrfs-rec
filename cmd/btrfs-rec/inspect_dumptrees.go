@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/datawire/ocibuild/pkg/cliutil"
@@ -13,6 +12,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
@@ -24,8 +24,9 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			const version = "5.18.1"
-			fmt.Printf("btrfs-progs v%v\n", version)
-			btrfsinspect.DumpTrees(cmd.Context(), os.Stdout, fs)
+			out := os.Stdout
+			textui.Fprintf(out, "btrfs-progs v%v\n", version)
+			btrfsinspect.DumpTrees(cmd.Context(), out, fs)
 			return nil
 		},
 	})

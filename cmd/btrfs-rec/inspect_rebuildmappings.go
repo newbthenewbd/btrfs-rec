@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildmappings"
 )
 
@@ -37,7 +38,7 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			scanResults, err := readScanResults(args[0])
+			scanResults, err := readJSONFile[btrfsinspect.ScanDevicesResult](ctx, args[0])
 			if err != nil {
 				return err
 			}

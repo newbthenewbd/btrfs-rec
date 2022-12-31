@@ -6,7 +6,6 @@ package rebuildnodes
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/datawire/dlib/dlog"
@@ -21,16 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type scanStats struct {
-	N, D int
-}
-
-func (s scanStats) String() string {
-	return fmt.Sprintf("... %v%% (%v/%v)",
-		int(100*float64(s.N)/float64(s.D)),
-		s.N, s.D)
-}
-
 func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) (graph.Graph, *keyio.Handle, error) {
 	dlog.Infof(ctx, "Reading node data from FS...")
 
@@ -39,17 +28,16 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 		return graph.Graph{}, nil, err
 	}
 
-	total := countNodes(scanResults)
-	done := 0
-	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
-	progress := func(done, total int) {
-		progressWriter.Set(scanStats{N: done, D: total})
-	}
+	var stats textui.Portion[int]
+	stats.D = countNodes(scanResults)
+	progressWriter := textui.NewProgress[textui.Portion[int]](
+		dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.read.substep", "read-nodes"),
+		dlog.LogLevelInfo, 1*time.Second)
 
 	nodeGraph := graph.New(*sb)
 	keyIO := keyio.NewHandle(fs, *sb)
 
-	progress(done, total)
+	progressWriter.Set(stats)
 	for _, devResults := range scanResults {
 		for laddr := range devResults.FoundNodes {
 			nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
@@ -62,24 +50,19 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 			nodeGraph.InsertNode(nodeRef)
 			keyIO.InsertNode(nodeRef)
 
-			done++
-			progress(done, total)
+			stats.N++
+			progressWriter.Set(stats)
 		}
 	}
-	if done != total {
+	if stats.N != stats.D {
 		panic("should not happen")
 	}
 	progressWriter.Done()
 	dlog.Info(ctx, "... done reading node data")
 
-	progressWriter = textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
-	dlog.Infof(ctx, "Checking keypointers for dead-ends...")
-	if err := nodeGraph.FinalCheck(fs, *sb, progress); err != nil {
+	if err := nodeGraph.FinalCheck(ctx, fs, *sb); err != nil {
 		return graph.Graph{}, nil, err
 	}
-	progressWriter.Done()
-	dlog.Info(ctx, "... done checking keypointers")
-
 	keyIO.SetGraph(*nodeGraph)
 
 	return *nodeGraph, keyIO, nil
