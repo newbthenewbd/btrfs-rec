@@ -55,7 +55,12 @@ type rebuilder struct {
 	curKey       keyAndTree
 	treeQueue    containers.Set[btrfsprim.ObjID]
 	itemQueue    containers.Set[keyAndTree]
-	augmentQueue map[btrfsprim.ObjID]map[string]containers.Set[btrfsvol.LogicalAddr]
+	augmentQueue map[btrfsprim.ObjID]*treeAugmentQueue
+}
+
+type treeAugmentQueue struct {
+	single map[string]btrfsvol.LogicalAddr
+	multi  map[string]containers.Set[btrfsvol.LogicalAddr]
 }
 
 type Rebuilder interface {
@@ -95,7 +100,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 
 	// Initialize
 	o.itemQueue = make(containers.Set[keyAndTree])
-	o.augmentQueue = make(map[btrfsprim.ObjID]map[string]containers.Set[btrfsvol.LogicalAddr])
+	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
 
 	// Seed the queue
 	o.treeQueue = containers.NewSet[btrfsprim.ObjID](
@@ -196,7 +201,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 				resolvedAugments[treeID] = o.resolveTreeAugments(treeCtx, treeID)
 				progress.D += len(resolvedAugments[treeID])
 			}
-			o.augmentQueue = make(map[btrfsprim.ObjID]map[string]containers.Set[btrfsvol.LogicalAddr])
+			o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
 			runtime.GC()
 			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
@@ -292,7 +297,22 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		Generation btrfsprim.Generation
 	}
 	choices := make(map[btrfsvol.LogicalAddr]ChoiceInfo)
-	for _, list := range o.augmentQueue[treeID] {
+	// o.augmentQueue[treeID].single is optimized storage for
+	// lists with exactly 1 item.
+	for _, choice := range o.augmentQueue[treeID].single {
+		if old, ok := choices[choice]; ok {
+			old.Count++
+			choices[choice] = old
+		} else {
+			choices[choice] = ChoiceInfo{
+				Count:      1,
+				Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)),
+				Generation: o.graph.Nodes[choice].Generation,
+			}
+		}
+	}
+	// o.augmentQueue[treeID].multi is the main list storage.
+	for _, list := range o.augmentQueue[treeID].multi {
 		for choice := range list {
 			if old, ok := choices[choice]; ok {
 				old.Count++
@@ -362,7 +382,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	illegal := make(containers.Set[btrfsvol.LogicalAddr]) // cannot-be-accepted and already-accepted
 	accept := func(item btrfsvol.LogicalAddr) {
 		ret.Insert(item)
-		for _, list := range o.augmentQueue[treeID] {
+		for _, list := range o.augmentQueue[treeID].multi {
 			if list.Has(item) {
 				illegal.InsertFrom(list)
 			}
@@ -390,7 +410,15 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	}
 
 	// Log our result
-	for wantKey, list := range o.augmentQueue[treeID] {
+	wantKeys := append(
+		maps.Keys(o.augmentQueue[treeID].single),
+		maps.Keys(o.augmentQueue[treeID].multi)...)
+	sort.Strings(wantKeys)
+	for _, wantKey := range wantKeys {
+		list, ok := o.augmentQueue[treeID].multi[wantKey]
+		if !ok {
+			list = containers.NewSet[btrfsvol.LogicalAddr](o.augmentQueue[treeID].single[wantKey])
+		}
 		chose := list.Intersection(ret)
 		if len(chose) == 0 {
 			dlog.Infof(ctx, "lists[%q]: chose (none) from %v", wantKey, maps.SortedKeys(list))
@@ -399,18 +427,29 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		}
 	}
 
+	// Free some memory
+	o.augmentQueue[treeID].single = nil
+	o.augmentQueue[treeID].multi = nil
+
 	return ret
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (o *rebuilder) hasAugment(treeID btrfsprim.ObjID, wantKey string) bool {
-	treeQueue, ok := o.augmentQueue[treeID]
-	if !ok {
-		return false
+	if treeQueue, ok := o.augmentQueue[treeID]; ok {
+		if treeQueue.single != nil {
+			if _, ok := treeQueue.single[wantKey]; ok {
+				return true
+			}
+		}
+		if treeQueue.multi != nil {
+			if _, ok := treeQueue.multi[wantKey]; ok {
+				return true
+			}
+		}
 	}
-	_, ok = treeQueue[wantKey]
-	return ok
+	return false
 }
 
 func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
@@ -421,9 +460,19 @@ func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wan
 		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
 	}
 	if o.augmentQueue[treeID] == nil {
-		o.augmentQueue[treeID] = make(map[string]containers.Set[btrfsvol.LogicalAddr])
+		o.augmentQueue[treeID] = new(treeAugmentQueue)
 	}
-	o.augmentQueue[treeID][wantKey] = choices
+	if len(choices) == 1 {
+		if o.augmentQueue[treeID].single == nil {
+			o.augmentQueue[treeID].single = make(map[string]btrfsvol.LogicalAddr)
+		}
+		o.augmentQueue[treeID].single[wantKey] = choices.TakeOne()
+	} else {
+		if o.augmentQueue[treeID].multi == nil {
+			o.augmentQueue[treeID].multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
+		}
+		o.augmentQueue[treeID].multi[wantKey] = choices
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
