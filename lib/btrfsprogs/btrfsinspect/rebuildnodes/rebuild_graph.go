@@ -10,7 +10,6 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
@@ -20,7 +19,7 @@ type rebuildCallbacks interface {
 	want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
 	wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
 	wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte)
-	wantCSum(ctx context.Context, reason string, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
+	wantCSum(ctx context.Context, reason string, inodeTree, inodeItem btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
 	wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
 }
 
@@ -165,10 +164,11 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		case btrfsitem.FILE_EXTENT_INLINE:
 			// nothing
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			// TODO: Check if inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM)
+			// NB: o.wantCSum checks inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) for us.
 			o.wantCSum(ctx, "data sum",
-				roundDown(body.BodyExtent.DiskByteNr, btrfssum.BlockSize),
-				roundUp(body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes), btrfssum.BlockSize))
+				treeID, item.Key.ObjectID,
+				body.BodyExtent.DiskByteNr,
+				body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes))
 		default:
 			o.fsErr(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
 		}

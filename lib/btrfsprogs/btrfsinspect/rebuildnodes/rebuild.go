@@ -18,6 +18,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
@@ -814,11 +815,43 @@ func (o *rebuilder) _wantRange(
 // func implements rebuildCallbacks.
 //
 // interval is [beg, end)
-func (o *rebuilder) wantCSum(ctx context.Context, reason string, beg, end btrfsvol.LogicalAddr) {
+func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	const treeID = btrfsprim.CSUM_TREE_OBJECTID
-	o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
-		uint64(beg), uint64(end))
+
+	inodeKey := keyAndTree{
+		TreeID: inodeTree,
+		Key: btrfsprim.Key{
+			ObjectID: inode,
+			ItemType: btrfsitem.INODE_ITEM_KEY,
+			Offset:   0,
+		},
+	}
+	inodeCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", inodeKey.String())
+	if !o._wantOff(inodeCtx, inodeKey.TreeID, inodeKey.String(), inodeKey.Key) {
+		o.itemQueue.Insert(o.curKey)
+		return
+	}
+	inodeBody, ok := o.rebuilt.Tree(inodeCtx, inodeKey.TreeID).ReadItem(inodeCtx, inodeKey.Key)
+	if !ok {
+		o.ioErr(inodeCtx, fmt.Errorf("could not read previously read item: %v", inodeKey))
+	}
+	switch inodeBody := inodeBody.(type) {
+	case btrfsitem.Inode:
+		if inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) {
+			return
+		}
+		beg = roundDown(beg, btrfssum.BlockSize)
+		end = roundUp(end, btrfssum.BlockSize)
+		const treeID = btrfsprim.CSUM_TREE_OBJECTID
+		o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
+			uint64(beg), uint64(end))
+	case btrfsitem.Error:
+		o.fsErr(inodeCtx, fmt.Errorf("error decoding item: %v: %w", inodeKey, inodeBody.Err))
+	default:
+		// This is a panic because the item decoder should not emit INODE_ITEM items as anything but
+		// btrfsitem.Inode or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: INODE_ITEM item has unexpected type: %T", inodeBody))
+	}
 }
 
 // wantFileExt implements rebuildCallbacks.
