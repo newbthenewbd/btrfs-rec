@@ -235,14 +235,21 @@ func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key b
 
 func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "tree Root")
-	wantKey := fmt.Sprintf("tree=%v key={%v %v ?}", btrfsprim.ROOT_TREE_OBJECTID, tree, btrfsitem.ROOT_ITEM_KEY)
+	key := keyAndTree{
+		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
+		Key: btrfsprim.Key{
+			ObjectID: tree,
+			ItemType: btrfsitem.ROOT_ITEM_KEY,
+		},
+	}
+	wantKey := fmt.Sprintf("tree=%v key={%v %v ?}", key.TreeID, key.ObjectID, key.ItemType)
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", wantKey)
-	key, ok := o._want(ctx, btrfsprim.ROOT_TREE_OBJECTID, wantKey, tree, btrfsitem.ROOT_ITEM_KEY)
+	key.Key, ok = o._want(ctx, key.TreeID, wantKey, key.ObjectID, key.ItemType)
 	if !ok {
 		o.itemQueue.Insert(o.curKey)
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.ROOT_TREE_OBJECTID).ReadItem(ctx, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -250,7 +257,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 	case btrfsitem.Root:
 		return btrfsprim.Generation(key.Offset), itemBody, true
 	case btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", btrfsprim.ROOT_TREE_OBJECTID, key, itemBody.Err))
+		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
 		return 0, btrfsitem.Root{}, false
 	default:
 		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
@@ -260,15 +267,14 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 }
 
 func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	key := btrfsitem.UUIDToKey(uuid)
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "resolve parent UUID")
-	wantKey := keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: key}.String()
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", wantKey)
-	if ok := o._wantOff(ctx, btrfsprim.UUID_TREE_OBJECTID, wantKey, key); !ok {
+	key := keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: btrfsitem.UUIDToKey(uuid)}
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", key.String())
+	if !o._wantOff(ctx, key.TreeID, key.String(), key.Key) {
 		o.itemQueue.Insert(o.curKey)
 		return 0, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, btrfsprim.UUID_TREE_OBJECTID).ReadItem(ctx, key)
+	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
 	if !ok {
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
@@ -276,7 +282,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 	case btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: tree=%v key=%v: %w", btrfsprim.UUID_TREE_OBJECTID, key, itemBody.Err))
+		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
 		return 0, false
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
@@ -639,7 +645,7 @@ func (o *rebuilder) _wantRange(
 	sizeFn := func(key btrfsprim.Key) (uint64, error) {
 		ptr, ok := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Load(key)
 		if !ok {
-			panic(fmt.Errorf("should not happen: could not load key: %v", key))
+			panic(fmt.Errorf("should not happen: could not load key: %v", keyAndTree{TreeID: treeID, Key: key}))
 		}
 		sizeAndErr, ok := o.keyIO.Sizes[ptr]
 		if !ok {
@@ -691,7 +697,7 @@ func (o *rebuilder) _wantRange(
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr) bool {
 			runSize, err := sizeFn(runKey)
 			if err != nil {
-				o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, runKey, err))
+				o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: runKey}, err))
 				return true
 			}
 			if runSize == 0 {
@@ -763,7 +769,7 @@ func (o *rebuilder) _wantRange(
 			func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 				runSize, err := sizeFn(k)
 				if err != nil {
-					o.fsErr(ctx, fmt.Errorf("tree=%v key=%v: %w", treeID, k, err))
+					o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: k}, err))
 					return true
 				}
 				if runSize == 0 {
