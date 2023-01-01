@@ -57,6 +57,7 @@ type rebuilder struct {
 	treeQueue    containers.Set[btrfsprim.ObjID]
 	itemQueue    containers.Set[keyAndTree]
 	augmentQueue map[btrfsprim.ObjID]*treeAugmentQueue
+	numAugments  int
 }
 
 type treeAugmentQueue struct {
@@ -94,6 +95,17 @@ func (o *rebuilder) ioErr(ctx context.Context, err error) {
 
 func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
 	return o.rebuilt.ListRoots()
+}
+
+type itemStats struct {
+	textui.Portion[int]
+	NumAugments     int
+	NumAugmentTrees int
+}
+
+func (s itemStats) String() string {
+	return textui.Sprintf("%v (queued %v augments across %v trees)",
+		s.Portion, s.NumAugments, s.NumAugmentTrees)
 }
 
 func (o *rebuilder) Rebuild(_ctx context.Context) error {
@@ -138,9 +150,9 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			sort.Slice(itemQueue, func(i, j int) bool {
 				return itemQueue[i].Cmp(itemQueue[j]) < 0
 			})
-			var progress textui.Portion[int]
+			var progress itemStats
 			progress.D = len(itemQueue)
-			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+			progressWriter := textui.NewProgress[itemStats](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 			type keyAndBody struct {
 				keyAndTree
@@ -179,6 +191,8 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 						o.treeQueue.Insert(item.ObjectID)
 					}
 					progress.N++
+					progress.NumAugments = o.numAugments
+					progress.NumAugmentTrees = len(o.augmentQueue)
 					progressWriter.Set(progress)
 				}
 				return nil
@@ -203,6 +217,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 				progress.D += len(resolvedAugments[treeID])
 			}
 			o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
+			o.numAugments = 0
 			runtime.GC()
 			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
@@ -480,6 +495,7 @@ func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wan
 		}
 		o.augmentQueue[treeID].multi[wantKey] = choices
 	}
+	o.numAugments++
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
