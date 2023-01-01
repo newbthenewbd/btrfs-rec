@@ -17,6 +17,8 @@ CGO_ENABLED=0 go build -trimpath ./cmd/btrfs-rec
 mkdir -p "$b.gen"
 { set +x; } &>/dev/null
 
+export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
+
 gen $b.gen/0.scandevices.json \
     ./btrfs-rec --pv=$b.img \
     inspect scandevices
