@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -156,14 +156,12 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 	}
 	if err != nil {
 		errHandle(&TreeError{Path: path, Err: err})
-	} else {
-		if cbs.Node != nil {
-			if err := cbs.Node(path, node); err != nil {
-				if errors.Is(err, iofs.SkipDir) {
-					return
-				}
-				errHandle(&TreeError{Path: path, Err: err})
+	} else if cbs.Node != nil {
+		if err := cbs.Node(path, node); err != nil {
+			if errors.Is(err, iofs.SkipDir) {
+				return
 			}
+			errHandle(&TreeError{Path: path, Err: err})
 		}
 	}
 	if ctx.Err() != nil {
@@ -506,7 +504,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 	}
 	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).FromItemIdx]
 
-	var ret = []Item{middleItem}
+	ret := []Item{middleItem}
 	var errs derror.MultiError
 	for prevPath, prevNode := middlePath, middleNode; true; {
 		prevPath, prevNode, err = fs.prev(prevPath, prevNode)

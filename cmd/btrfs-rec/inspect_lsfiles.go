@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -34,7 +34,11 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			out := bufio.NewWriter(os.Stdout)
-			defer out.Flush()
+			defer func() {
+				if _err := out.Flush(); _err != nil && err == nil {
+					err = _err
+				}
+			}()
 			defer func() {
 				if r := derror.PanicToError(recover()); r != nil {
 					textui.Fprintf(out, "\n\n%+v\n", r)

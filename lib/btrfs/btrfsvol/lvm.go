@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -82,6 +82,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Close() error {
 	}
 	return nil
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev PhysicalVolume) error {
 	lv.init()
 	if other, exists := lv.id2pv[id]; exists {
@@ -121,9 +122,11 @@ type Mapping struct {
 func (lv *LogicalVolume[PhysicalVolume]) CouldAddMapping(m Mapping) bool {
 	return lv.addMapping(m, true) == nil
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 	return lv.addMapping(m, false)
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) error {
 	lv.init()
 	// sanity check
@@ -335,10 +338,8 @@ func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr Logi
 		}
 		if first {
 			copy(dat, buf)
-		} else {
-			if !bytes.Equal(dat, buf) {
-				return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
-			}
+		} else if !bytes.Equal(dat, buf) {
+			return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
 		}
 	}
 	return len(dat), nil

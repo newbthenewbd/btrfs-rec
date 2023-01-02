@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type ItemPtr struct {
@@ -50,7 +51,7 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 
 		Sizes: make(map[ItemPtr]SizeAndErr),
 
-		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](8),
+		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](textui.Tunable(8)),
 	}
 }
 

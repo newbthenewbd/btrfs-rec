@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -20,6 +20,7 @@ func logLineRegexp(inner string) string {
 }
 
 func TestLogFormat(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	ctx := dlog.WithLogger(context.Background(), textui.NewLogger(&out, dlog.LogLevelTrace))
 	dlog.Debugf(ctx, "foo %d", 12345)
@@ -29,6 +30,7 @@ func TestLogFormat(t *testing.T) {
 }
 
 func TestLogLevel(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	ctx := dlog.WithLogger(context.Background(), textui.NewLogger(&out, dlog.LogLevelInfo))
 	dlog.Error(ctx, "Error")
@@ -54,6 +56,7 @@ func TestLogLevel(t *testing.T) {
 }
 
 func TestLogField(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	ctx := dlog.WithLogger(context.Background(), textui.NewLogger(&out, dlog.LogLevelInfo))
 	ctx = dlog.WithField(ctx, "foo", 12345)

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -22,7 +22,10 @@ var (
 	_ lowmemjson.Decodable = (*Set[int])(nil)
 )
 
-func cast[T any](x any) T { return x.(T) }
+func cast[T any](x any) T {
+	//nolint:forcetypeassert // Only called within a type switch.
+	return x.(T)
+}
 
 func (o Set[T]) EncodeJSON(w io.Writer) error {
 	var less func(a, b T) bool

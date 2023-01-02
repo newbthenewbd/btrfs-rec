@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -23,19 +23,23 @@ import (
 
 type NodeFlags uint64
 
+const sizeofNodeFlags = 7
+
 func (NodeFlags) BinaryStaticSize() int {
-	return 7
+	return sizeofNodeFlags
 }
+
 func (f NodeFlags) MarshalBinary() ([]byte, error) {
 	var bs [8]byte
 	binary.LittleEndian.PutUint64(bs[:], uint64(f))
-	return bs[:7], nil
+	return bs[:sizeofNodeFlags], nil
 }
+
 func (f *NodeFlags) UnmarshalBinary(dat []byte) (int, error) {
 	var bs [8]byte
-	copy(bs[:7], dat[:7])
+	copy(bs[:sizeofNodeFlags], dat[:sizeofNodeFlags])
 	*f = NodeFlags(binary.LittleEndian.Uint64(bs[:]))
-	return 7, nil
+	return sizeofNodeFlags, nil
 }
 
 var (
@@ -212,10 +216,11 @@ func (node Node) MarshalBinary() ([]byte, error) {
 
 	if bs, err := binstruct.Marshal(node.Head); err != nil {
 		return buf, err
-	} else if len(bs) != binstruct.StaticSize(NodeHeader{}) {
-		return nil, fmt.Errorf("header is %v bytes but expected %v",
-			len(bs), binstruct.StaticSize(NodeHeader{}))
 	} else {
+		if len(bs) != binstruct.StaticSize(NodeHeader{}) {
+			return nil, fmt.Errorf("header is %v bytes but expected %v",
+				len(bs), binstruct.StaticSize(NodeHeader{}))
+		}
 		copy(buf, bs)
 	}
 
@@ -417,9 +422,11 @@ func (e *IOError) Unwrap() error { return e.Err }
 // NodeError are ErrNotANode and *IOError.
 func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
 	if int(sb.NodeSize) < binstruct.StaticSize(NodeHeader{}) {
-		return nil, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+		return nil, &NodeError[Addr]{
+			Op: "btrfstree.ReadNode", NodeAddr: addr,
 			Err: fmt.Errorf("superblock.NodeSize=%v is too small to contain even a node header (%v bytes)",
-				sb.NodeSize, binstruct.StaticSize(NodeHeader{}))}
+				sb.NodeSize, binstruct.StaticSize(NodeHeader{})),
+		}
 	}
 	nodeBuf := make([]byte, sb.NodeSize)
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
@@ -455,9 +462,11 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 	if stored != calced {
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr,
+		return nodeRef, &NodeError[Addr]{
+			Op: "btrfstree.ReadNode", NodeAddr: addr,
 			Err: fmt.Errorf("looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
-				stored, calced)}
+				stored, calced),
+		}
 	}
 
 	// parse (main)

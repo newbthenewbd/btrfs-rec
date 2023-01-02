@@ -11,6 +11,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type skinnyItem struct {
@@ -42,7 +43,7 @@ func (a *SkinnyPathArena) init() {
 		// which is a good number for me.  Then I tought it to do a
 		// better job of recovering trees, and so the memory grew, and I
 		// cut it to 64K.  Then to 8K.  Then grew it to 128K.
-		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](128 * 1024)
+		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](textui.Tunable(128 * 1024))
 	}
 }
 

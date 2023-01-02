@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -19,7 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-const minFuzzyPct = 0.5
+var minFuzzyPct = textui.Tunable(0.5)
 
 type fuzzyRecord struct {
 	PAddr btrfsvol.QualifiedPhysicalAddr
@@ -78,7 +78,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 					Dev:  paddr.Dev,
 					Addr: paddr.Addr.Add(-off),
 				}
-				matches[key] = matches[key] + 1
+				matches[key]++
 			}
 			return nil
 		}); err != nil {
@@ -112,8 +112,8 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		if apply {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
-			i+1, numBlockgroups, bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v (based on %v runs)",
+			i+1, numBlockgroups, bgLAddr, matchesStr, number.Percent(bgRun.PctFull()), len(bgRun.Runs))
 		if !apply {
 			continue
 		}
@@ -145,11 +145,12 @@ type lowestN[T containers.Ordered[T]] struct {
 }
 
 func (l *lowestN[T]) Insert(v T) {
-	if len(l.Dat) < l.N {
+	switch {
+	case len(l.Dat) < l.N:
 		l.Dat = append(l.Dat, v)
-	} else if v.Cmp(l.Dat[0]) < 0 {
+	case v.Cmp(l.Dat[0]) < 0:
 		l.Dat[0] = v
-	} else {
+	default:
 		return
 	}
 	sort.Slice(l.Dat, func(i, j int) bool {

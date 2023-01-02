@@ -1,12 +1,10 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package main
 
 import (
-	"bufio"
-	"io"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -49,7 +47,11 @@ func init() {
 			}
 
 			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
-			if err := writeMappingsJSON(os.Stdout, fs); err != nil {
+			if err := writeJSONFile(os.Stdout, fs, lowmemjson.ReEncoder{
+				Indent:                "\t",
+				ForceTrailingNewlines: true,
+				CompactIfUnder:        120, //nolint:gomnd // This is what looks Nice.
+			}); err != nil {
 				return err
 			}
 			dlog.Info(ctx, "... done writing")
@@ -57,20 +59,4 @@ func init() {
 			return nil
 		},
 	})
-}
-
-func writeMappingsJSON(w io.Writer, fs *btrfs.FS) (err error) {
-	buffer := bufio.NewWriter(w)
-	defer func() {
-		if _err := buffer.Flush(); err == nil && _err != nil {
-			err = _err
-		}
-	}()
-	return lowmemjson.Encode(&lowmemjson.ReEncoder{
-		Out: buffer,
-
-		Indent:                "\t",
-		ForceTrailingNewlines: true,
-		CompactIfUnder:        120,
-	}, fs.LV.Mappings())
 }

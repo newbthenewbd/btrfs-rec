@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -19,7 +19,7 @@ type Stats interface {
 }
 
 type Progress[T Stats] struct {
-	ctx      context.Context
+	ctx      context.Context //nolint:containedctx // captured for separate goroutine
 	lvl      dlog.LogLevel
 	interval time.Duration
 
@@ -56,6 +56,7 @@ func (p *Progress[T]) Done() {
 }
 
 func (p *Progress[T]) flush(force bool) {
+	//nolint:forcetypeassert // It wasn't worth it to me (yet?) to make a typed wrapper around atomic.Value.
 	cur := p.cur.Load().(T)
 	if !force && cur == p.oldStat {
 		return

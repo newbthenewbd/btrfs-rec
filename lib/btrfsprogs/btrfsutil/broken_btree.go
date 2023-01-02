@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -57,7 +57,7 @@ func newTreeIndex(arena *SkinnyPathArena) treeIndex {
 }
 
 type brokenTrees struct {
-	ctx   context.Context
+	ctx   context.Context //nolint:containedctx // don't have an option while keeping the same API
 	inner *btrfs.FS
 
 	arena *SkinnyPathArena
@@ -304,7 +304,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 				node, err = bt.inner.ReadNode(itemPath.Parent())
 				if err != nil {
 					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-					return nil
+					return nil //nolint:nilerr // We already called errHandle().
 				}
 			}
 			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]

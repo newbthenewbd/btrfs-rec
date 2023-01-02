@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -126,7 +126,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 	var sums strings.Builder
 	sums.Grow(numSums * csumSize)
 
-	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, 1*time.Second)
+	progressWriter := textui.NewProgress[scanStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	progress := func(pos btrfsvol.PhysicalAddr) {
 		progressWriter.Set(scanStats{
 			Portion: textui.Portion[btrfsvol.PhysicalAddr]{
@@ -176,57 +176,65 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 				for i, item := range nodeRef.Data.BodyLeaf {
 					switch item.Key.ItemType {
 					case btrfsitem.CHUNK_ITEM_KEY:
-						chunk, ok := item.Body.(btrfsitem.Chunk)
-						if !ok {
-							dlog.Errorf(ctx, "node@%v: item %v: error: type is CHUNK_ITEM_KEY, but struct is %T",
-								nodeRef.Addr, i, item.Body)
-							continue
+						switch itemBody := item.Body.(type) {
+						case btrfsitem.Chunk:
+							dlog.Tracef(ctx, "node@%v: item %v: found chunk",
+								nodeRef.Addr, i)
+							result.FoundChunks = append(result.FoundChunks, btrfstree.SysChunk{
+								Key:   item.Key,
+								Chunk: itemBody,
+							})
+						case btrfsitem.Error:
+							dlog.Errorf(ctx, "node@%v: item %v: error: malformed CHUNK_ITEM: %v",
+								nodeRef.Addr, i, itemBody.Err)
+						default:
+							panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
 						}
-						dlog.Tracef(ctx, "node@%v: item %v: found chunk",
-							nodeRef.Addr, i)
-						result.FoundChunks = append(result.FoundChunks, btrfstree.SysChunk{
-							Key:   item.Key,
-							Chunk: chunk,
-						})
 					case btrfsitem.BLOCK_GROUP_ITEM_KEY:
-						bg, ok := item.Body.(btrfsitem.BlockGroup)
-						if !ok {
-							dlog.Errorf(ctx, "node@%v: item %v: error: type is BLOCK_GROUP_ITEM_KEY, but struct is %T",
-								nodeRef.Addr, i, item.Body)
-							continue
+						switch itemBody := item.Body.(type) {
+						case btrfsitem.BlockGroup:
+							dlog.Tracef(ctx, "node@%v: item %v: found block group",
+								nodeRef.Addr, i)
+							result.FoundBlockGroups = append(result.FoundBlockGroups, SysBlockGroup{
+								Key: item.Key,
+								BG:  itemBody,
+							})
+						case btrfsitem.Error:
+							dlog.Errorf(ctx, "node@%v: item %v: error: malformed BLOCK_GROUP_ITEM: %v",
+								nodeRef.Addr, i, itemBody.Err)
+						default:
+							panic(fmt.Errorf("should not happen: BLOCK_GROUP_ITEM has unexpected item type: %T", itemBody))
 						}
-						dlog.Tracef(ctx, "node@%v: item %v: found block group",
-							nodeRef.Addr, i)
-						result.FoundBlockGroups = append(result.FoundBlockGroups, SysBlockGroup{
-							Key: item.Key,
-							BG:  bg,
-						})
 					case btrfsitem.DEV_EXTENT_KEY:
-						devext, ok := item.Body.(btrfsitem.DevExtent)
-						if !ok {
-							dlog.Errorf(ctx, "node@%v: item %v: error: type is DEV_EXTENT_KEY, but struct is %T",
-								nodeRef.Addr, i, item.Body)
-							continue
+						switch itemBody := item.Body.(type) {
+						case btrfsitem.DevExtent:
+							dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
+								nodeRef.Addr, i)
+							result.FoundDevExtents = append(result.FoundDevExtents, SysDevExtent{
+								Key:    item.Key,
+								DevExt: itemBody,
+							})
+						case btrfsitem.Error:
+							dlog.Errorf(ctx, "node@%v: item %v: error: malformed DEV_EXTENT: %v",
+								nodeRef.Addr, i, itemBody.Err)
+						default:
+							panic(fmt.Errorf("should not happen: DEV_EXTENT has unexpected item type: %T", itemBody))
 						}
-						dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
-							nodeRef.Addr, i)
-						result.FoundDevExtents = append(result.FoundDevExtents, SysDevExtent{
-							Key:    item.Key,
-							DevExt: devext,
-						})
 					case btrfsitem.EXTENT_CSUM_KEY:
-						sums, ok := item.Body.(btrfsitem.ExtentCSum)
-						if !ok {
-							dlog.Errorf(ctx, "node@%v: item %v: error: type is EXTENT_CSUM_OBJECTID, but struct is %T",
-								nodeRef.Addr, i, item.Body)
-							continue
+						switch itemBody := item.Body.(type) {
+						case btrfsitem.ExtentCSum:
+							dlog.Tracef(ctx, "node@%v: item %v: found csums",
+								nodeRef.Addr, i)
+							result.FoundExtentCSums = append(result.FoundExtentCSums, SysExtentCSum{
+								Generation: nodeRef.Data.Head.Generation,
+								Sums:       itemBody,
+							})
+						case btrfsitem.Error:
+							dlog.Errorf(ctx, "node@%v: item %v: error: malformed is EXTENT_CSUM: %v",
+								nodeRef.Addr, i, itemBody.Err)
+						default:
+							panic(fmt.Errorf("should not happen: EXTENT_CSUM has unexpected item type: %T", itemBody))
 						}
-						dlog.Tracef(ctx, "node@%v: item %v: found csums",
-							nodeRef.Addr, i)
-						result.FoundExtentCSums = append(result.FoundExtentCSums, SysExtentCSum{
-							Generation: nodeRef.Data.Head.Generation,
-							Sums:       sums,
-						})
 					}
 				}
 				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)

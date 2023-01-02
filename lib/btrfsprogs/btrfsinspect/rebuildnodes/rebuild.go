@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -126,7 +126,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 		o.itemQueue = nil
 		var progress textui.Portion[int]
 		progress.D = len(itemQueue)
-		progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, 1*time.Second)
+		progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 		stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 		for i, key := range itemQueue {
 			itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
@@ -160,7 +160,7 @@ func (o *rebuilder) rebuild(_ctx context.Context) error {
 			progress.D += len(resolvedAugments[treeID])
 		}
 		o.augmentQueue = make(map[btrfsprim.ObjID][]map[btrfsvol.LogicalAddr]int)
-		progressWriter = textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, 1*time.Second)
+		progressWriter = textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 		stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 		for _, treeID := range maps.SortedKeys(resolvedAugments) {
 			treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
@@ -266,14 +266,14 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	// >     2: [A]
 	// >     3: [B]
 	// >
-	// > legal solution woudl be `[]`, `[A]` or `[B]`.  It would not be legal
+	// > legal solution would be `[]`, `[A]` or `[B]`.  It would not be legal
 	// > to return `[A, B]`.
 	//
 	// The algorithm should optimize for the following goals:
 	//
 	//  - We prefer that each input list have an item in the return set.
 	//
-	//    > In Example 1, while `[]`, `[B]`, and `[C]` are permissable
+	//    > In Example 1, while `[]`, `[B]`, and `[C]` are permissible
 	//    > solutions, they are not optimal, because one or both of the input
 	//    > lists are not represented.
 	//    >
@@ -299,7 +299,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	//  - We prefer items that appear in more lists over items that appear in
 	//    fewer lists.
 	//
-	// The relative priority of these 4 goals is undefined; preferrably the
+	// The relative priority of these 4 goals is undefined; preferably the
 	// algorithm should be defined in a way that makes it easy to adjust the
 	// relative priorities.
 
@@ -317,7 +317,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	counts := make(map[btrfsvol.LogicalAddr]int)
 	for _, list := range lists {
 		for item := range list {
-			counts[item] = counts[item] + 1
+			counts[item]++
 		}
 	}
 
@@ -386,6 +386,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 	o._want(ctx, treeID, objID, typ)
 }
+
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.itemQueue = append(o.itemQueue, o.curKey)
@@ -429,6 +430,7 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", keyAndTree{TreeID: treeID, Key: key})
 	o._wantOff(ctx, treeID, key)
 }
+
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt btrfsprim.Key) (ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.itemQueue = append(o.itemQueue, o.curKey)

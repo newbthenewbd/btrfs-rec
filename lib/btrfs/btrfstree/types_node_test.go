@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -23,13 +23,12 @@ func FuzzRoundTripNode(f *testing.F) {
 		n, err := binstruct.Unmarshal(inDat, &node)
 		if err != nil {
 			t.Logf("err=%v", err)
-			//require.Equal(t, 0, n)
 		} else {
 			require.Equal(t, len(inDat), n)
 
 			outDat, err := binstruct.Marshal(node)
 			require.NoError(t, err)
-			require.Equal(t, inDat[:], outDat)
+			require.Equal(t, inDat, outDat)
 		}
 	})
 }

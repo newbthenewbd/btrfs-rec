@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -139,4 +139,4 @@ func (t *IntervalTree[K, V]) SearchAll(fn func(K) int) []V {
 	return ret
 }
 
-//func (t *IntervalTree[K, V]) Walk(fn func(*RBNode[V]) error) error
+// TODO: func (t *IntervalTree[K, V]) Walk(fn func(*RBNode[V]) error) error

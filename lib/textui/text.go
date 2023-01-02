@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -53,7 +53,7 @@ var (
 
 // String implements fmt.Formatter.
 func (h humanized) Format(f fmt.State, verb rune) {
-	printer.Fprintf(f, fmtutil.FmtStateString(f, verb), h.val)
+	_, _ = printer.Fprintf(f, fmtutil.FmtStateString(f, verb), h.val)
 }
 
 // String implements fmt.Stringer.
@@ -72,9 +72,7 @@ type Portion[T constraints.Integer] struct {
 	N, D T
 }
 
-var (
-	_ fmt.Stringer = Portion[int]{}
-)
+var _ fmt.Stringer = Portion[int]{}
 
 // String implements fmt.Stringer.
 func (p Portion[T]) String() string {
@@ -146,7 +144,7 @@ func (v metric[T]) Format(f fmt.State, verb rune) {
 	if v.Val < 0 {
 		y = -y
 	}
-	printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
+	_, _ = printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
 		y, prefix, v.Unit)
 }
 
@@ -194,7 +192,7 @@ func (v iec[T]) Format(f fmt.State, verb rune) {
 	if v.Val < 0 {
 		y = -y
 	}
-	printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
+	_, _ = printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
 		number.Decimal(y), prefix, v.Unit)
 }
 

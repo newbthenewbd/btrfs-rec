@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -54,13 +54,13 @@ func init() {
 				}
 				numWidth := len(strconv.Itoa(slices.Max(treeErrCnt, totalItems)))
 
-				table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+				table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0) //nolint:gomnd // This is what looks Nice.
 				textui.Fprintf(table, "        errors\t% *s\n", numWidth, strconv.Itoa(treeErrCnt))
 				for _, typ := range maps.SortedKeys(treeItemCnt) {
 					textui.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
 				}
 				textui.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))
-				table.Flush()
+				_ = table.Flush()
 			}
 			visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
 			btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
@@ -79,12 +79,12 @@ func init() {
 					},
 					Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
-						treeItemCnt[typ] = treeItemCnt[typ] + 1
+						treeItemCnt[typ]++
 						return nil
 					},
 					BadItem: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
-						treeItemCnt[typ] = treeItemCnt[typ] + 1
+						treeItemCnt[typ]++
 						return nil
 					},
 				},
@@ -113,7 +113,7 @@ func init() {
 						}
 						for _, item := range node.Data.BodyLeaf {
 							typ := item.Key.ItemType
-							treeItemCnt[typ] = treeItemCnt[typ] + 1
+							treeItemCnt[typ]++
 						}
 					}
 				}

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -22,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type BareInode struct {
@@ -69,31 +70,37 @@ type Subvolume struct {
 	TreeID      btrfsprim.ObjID
 	NoChecksums bool
 
-	rootOnce sync.Once
-	rootVal  btrfsitem.Root
-	rootErr  error
+	initOnce sync.Once
 
-	bareInodeCache containers.LRUCache[btrfsprim.ObjID, *BareInode]
-	fullInodeCache containers.LRUCache[btrfsprim.ObjID, *FullInode]
-	dirCache       containers.LRUCache[btrfsprim.ObjID, *Dir]
-	fileCache      containers.LRUCache[btrfsprim.ObjID, *File]
+	rootVal btrfsitem.Root
+	rootErr error
+
+	bareInodeCache *containers.LRUCache[btrfsprim.ObjID, *BareInode]
+	fullInodeCache *containers.LRUCache[btrfsprim.ObjID, *FullInode]
+	dirCache       *containers.LRUCache[btrfsprim.ObjID, *Dir]
+	fileCache      *containers.LRUCache[btrfsprim.ObjID, *File]
 }
 
 func (sv *Subvolume) init() {
-	sv.rootOnce.Do(func() {
+	sv.initOnce.Do(func() {
 		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.RootItemSearchFn(sv.TreeID))
 		if err != nil {
 			sv.rootErr = err
-			return
+		} else {
+			switch rootBody := root.Body.(type) {
+			case btrfsitem.Root:
+				sv.rootVal = rootBody
+			case btrfsitem.Error:
+				sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
+			default:
+				panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
+			}
 		}
 
-		rootBody, ok := root.Body.(btrfsitem.Root)
-		if !ok {
-			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body")
-			return
-		}
-
-		sv.rootVal = rootBody
+		sv.bareInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *BareInode](textui.Tunable(128))
+		sv.fullInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *FullInode](textui.Tunable(128))
+		sv.dirCache = containers.NewLRUCache[btrfsprim.ObjID, *Dir](textui.Tunable(128))
+		sv.fileCache = containers.NewLRUCache[btrfsprim.ObjID, *File](textui.Tunable(128))
 	})
 }
 
@@ -103,6 +110,7 @@ func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
 }
 
 func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
+	sv.init()
 	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
@@ -117,12 +125,14 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 			return
 		}
 
-		itemBody, ok := item.Body.(btrfsitem.Inode)
-		if !ok {
-			val.Errs = append(val.Errs, fmt.Errorf("malformed inode"))
-			return
+		switch itemBody := item.Body.(type) {
+		case btrfsitem.Inode:
+			val.InodeItem = &itemBody
+		case btrfsitem.Error:
+			val.Errs = append(val.Errs, fmt.Errorf("malformed inode: %w", itemBody.Err))
+		default:
+			panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
 		}
-		val.InodeItem = &itemBody
 
 		return
 	})
@@ -133,6 +143,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 }
 
 func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
+	sv.init()
 	val := sv.fullInodeCache.GetOrElse(inode, func() (val *FullInode) {
 		val = &FullInode{
 			BareInode: BareInode{
@@ -152,17 +163,29 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 		for _, item := range items {
 			switch item.Key.ItemType {
 			case btrfsitem.INODE_ITEM_KEY:
-				itemBody := item.Body.(btrfsitem.Inode)
-				if val.InodeItem != nil {
-					if !reflect.DeepEqual(itemBody, *val.InodeItem) {
-						val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.Inode:
+					if val.InodeItem != nil {
+						if !reflect.DeepEqual(itemBody, *val.InodeItem) {
+							val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
+						}
+						continue
 					}
-					continue
+					val.InodeItem = &itemBody
+				case btrfsitem.Error:
+					val.Errs = append(val.Errs, fmt.Errorf("malformed INODE_ITEM: %w", itemBody.Err))
+				default:
+					panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
 				}
-				val.InodeItem = &itemBody
 			case btrfsitem.XATTR_ITEM_KEY:
-				itemBody := item.Body.(btrfsitem.DirEntry)
-				val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.DirEntry:
+					val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
+				case btrfsitem.Error:
+					val.Errs = append(val.Errs, fmt.Errorf("malformed XATTR_ITEM: %w", itemBody.Err))
+				default:
+					panic(fmt.Errorf("should not happen: XATTR_ITEM has unexpected item type: %T", itemBody))
+				}
 			default:
 				val.OtherItems = append(val.OtherItems, item)
 			}
@@ -176,6 +199,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 }
 
 func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
+	sv.init()
 	val := sv.dirCache.GetOrElse(inode, func() (val *Dir) {
 		val = new(Dir)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -194,77 +218,95 @@ func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
 	return val, nil
 }
 
-func (ret *Dir) populate() {
-	ret.ChildrenByName = make(map[string]btrfsitem.DirEntry)
-	ret.ChildrenByIndex = make(map[uint64]btrfsitem.DirEntry)
-	for _, item := range ret.OtherItems {
+func (dir *Dir) populate() {
+	dir.ChildrenByName = make(map[string]btrfsitem.DirEntry)
+	dir.ChildrenByIndex = make(map[uint64]btrfsitem.DirEntry)
+	for _, item := range dir.OtherItems {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
-			body := item.Body.(btrfsitem.InodeRefs)
-			if len(body) != 1 {
-				ret.Errs = append(ret.Errs, fmt.Errorf("INODE_REF item with %d entries on a directory",
-					len(body)))
-				continue
-			}
-			ref := InodeRef{
-				Inode:    btrfsprim.ObjID(item.Key.Offset),
-				InodeRef: body[0],
-			}
-			if ret.DotDot != nil {
-				if !reflect.DeepEqual(ref, *ret.DotDot) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple INODE_REF items on a directory"))
+			switch body := item.Body.(type) {
+			case btrfsitem.InodeRefs:
+				if len(body) != 1 {
+					dir.Errs = append(dir.Errs, fmt.Errorf("INODE_REF item with %d entries on a directory",
+						len(body)))
+					continue
 				}
-				continue
+				ref := InodeRef{
+					Inode:    btrfsprim.ObjID(item.Key.Offset),
+					InodeRef: body[0],
+				}
+				if dir.DotDot != nil {
+					if !reflect.DeepEqual(ref, *dir.DotDot) {
+						dir.Errs = append(dir.Errs, fmt.Errorf("multiple INODE_REF items on a directory"))
+					}
+					continue
+				}
+				dir.DotDot = &ref
+			case btrfsitem.Error:
+				dir.Errs = append(dir.Errs, fmt.Errorf("malformed INODE_REF: %w", body.Err))
+			default:
+				panic(fmt.Errorf("should not happen: INODE_REF has unexpected item type: %T", body))
 			}
-			ret.DotDot = &ref
 		case btrfsitem.DIR_ITEM_KEY:
-			entry := item.Body.(btrfsitem.DirEntry)
-			namehash := btrfsitem.NameHash(entry.Name)
-			if namehash != item.Key.Offset {
-				ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-					item.Key.Offset, entry.Name, namehash))
-				continue
-			}
-			if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
-				if !reflect.DeepEqual(entry, other) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
+			switch entry := item.Body.(type) {
+			case btrfsitem.DirEntry:
+				namehash := btrfsitem.NameHash(entry.Name)
+				if namehash != item.Key.Offset {
+					dir.Errs = append(dir.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
+						item.Key.Offset, entry.Name, namehash))
+					continue
 				}
-				continue
+				if other, exists := dir.ChildrenByName[string(entry.Name)]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						dir.Errs = append(dir.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
+					}
+					continue
+				}
+				dir.ChildrenByName[string(entry.Name)] = entry
+			case btrfsitem.Error:
+				dir.Errs = append(dir.Errs, fmt.Errorf("malformed DIR_ITEM: %w", entry.Err))
+			default:
+				panic(fmt.Errorf("should not happen: DIR_ITEM has unexpected item type: %T", entry))
 			}
-			ret.ChildrenByName[string(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
 			index := item.Key.Offset
-			entry := item.Body.(btrfsitem.DirEntry)
-			if other, exists := ret.ChildrenByIndex[index]; exists {
-				if !reflect.DeepEqual(entry, other) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+			switch entry := item.Body.(type) {
+			case btrfsitem.DirEntry:
+				if other, exists := dir.ChildrenByIndex[index]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						dir.Errs = append(dir.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+					}
+					continue
 				}
-				continue
+				dir.ChildrenByIndex[index] = entry
+			case btrfsitem.Error:
+				dir.Errs = append(dir.Errs, fmt.Errorf("malformed DIR_INDEX: %w", entry.Err))
+			default:
+				panic(fmt.Errorf("should not happen: DIR_INDEX has unexpected item type: %T", entry))
 			}
-			ret.ChildrenByIndex[index] = entry
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
 	}
 	entriesWithIndexes := make(containers.Set[string])
 	nextIndex := uint64(2)
-	for index, entry := range ret.ChildrenByIndex {
+	for index, entry := range dir.ChildrenByIndex {
 		if index+1 > nextIndex {
 			nextIndex = index + 1
 		}
 		entriesWithIndexes.Insert(string(entry.Name))
-		if other, exists := ret.ChildrenByName[string(entry.Name)]; !exists {
-			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-name direntry for %q", entry.Name))
-			ret.ChildrenByName[string(entry.Name)] = entry
+		if other, exists := dir.ChildrenByName[string(entry.Name)]; !exists {
+			dir.Errs = append(dir.Errs, fmt.Errorf("missing by-name direntry for %q", entry.Name))
+			dir.ChildrenByName[string(entry.Name)] = entry
 		} else if !reflect.DeepEqual(entry, other) {
-			ret.Errs = append(ret.Errs, fmt.Errorf("direntry index %v and direntry name %q disagree", index, entry.Name))
-			ret.ChildrenByName[string(entry.Name)] = entry
+			dir.Errs = append(dir.Errs, fmt.Errorf("direntry index %v and direntry name %q disagree", index, entry.Name))
+			dir.ChildrenByName[string(entry.Name)] = entry
 		}
 	}
-	for _, name := range maps.SortedKeys(ret.ChildrenByName) {
+	for _, name := range maps.SortedKeys(dir.ChildrenByName) {
 		if !entriesWithIndexes.Has(name) {
-			ret.Errs = append(ret.Errs, fmt.Errorf("missing by-index direntry for %q", name))
-			ret.ChildrenByIndex[nextIndex] = ret.ChildrenByName[name]
+			dir.Errs = append(dir.Errs, fmt.Errorf("missing by-index direntry for %q", name))
+			dir.ChildrenByIndex[nextIndex] = dir.ChildrenByName[name]
 			nextIndex++
 		}
 	}
@@ -293,6 +335,7 @@ func (dir *Dir) AbsPath() (string, error) {
 }
 
 func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
+	sv.init()
 	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
 		val = new(File)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -311,16 +354,23 @@ func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
 	return val, nil
 }
 
-func (ret *File) populate() {
-	for _, item := range ret.OtherItems {
+func (file *File) populate() {
+	for _, item := range file.OtherItems {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
 			// TODO
 		case btrfsitem.EXTENT_DATA_KEY:
-			ret.Extents = append(ret.Extents, FileExtent{
-				OffsetWithinFile: int64(item.Key.Offset),
-				FileExtent:       item.Body.(btrfsitem.FileExtent),
-			})
+			switch itemBody := item.Body.(type) {
+			case btrfsitem.FileExtent:
+				file.Extents = append(file.Extents, FileExtent{
+					OffsetWithinFile: int64(item.Key.Offset),
+					FileExtent:       itemBody,
+				})
+			case btrfsitem.Error:
+				file.Errs = append(file.Errs, fmt.Errorf("malformed EXTENT_DATA: %w", itemBody.Err))
+			default:
+				panic(fmt.Errorf("should not happen: EXTENT_DATA has unexpected item type: %T", itemBody))
+			}
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
@@ -329,34 +379,34 @@ func (ret *File) populate() {
 	// These should already be sorted, because of the nature of
 	// the btree; but this is a recovery tool for corrupt
 	// filesystems, so go ahead and ensure that it's sorted.
-	sort.Slice(ret.Extents, func(i, j int) bool {
-		return ret.Extents[i].OffsetWithinFile < ret.Extents[j].OffsetWithinFile
+	sort.Slice(file.Extents, func(i, j int) bool {
+		return file.Extents[i].OffsetWithinFile < file.Extents[j].OffsetWithinFile
 	})
 
 	pos := int64(0)
-	for _, extent := range ret.Extents {
+	for _, extent := range file.Extents {
 		if extent.OffsetWithinFile != pos {
 			if extent.OffsetWithinFile > pos {
-				ret.Errs = append(ret.Errs, fmt.Errorf("extent gap from %v to %v",
+				file.Errs = append(file.Errs, fmt.Errorf("extent gap from %v to %v",
 					pos, extent.OffsetWithinFile))
 			} else {
-				ret.Errs = append(ret.Errs, fmt.Errorf("extent overlap from %v to %v",
+				file.Errs = append(file.Errs, fmt.Errorf("extent overlap from %v to %v",
 					extent.OffsetWithinFile, pos))
 			}
 		}
 		size, err := extent.Size()
 		if err != nil {
-			ret.Errs = append(ret.Errs, fmt.Errorf("extent %v: %w", extent.OffsetWithinFile, err))
+			file.Errs = append(file.Errs, fmt.Errorf("extent %v: %w", extent.OffsetWithinFile, err))
 		}
 		pos += size
 	}
-	if ret.InodeItem != nil && pos != ret.InodeItem.NumBytes {
-		if ret.InodeItem.NumBytes > pos {
-			ret.Errs = append(ret.Errs, fmt.Errorf("extent gap from %v to %v",
-				pos, ret.InodeItem.NumBytes))
+	if file.InodeItem != nil && pos != file.InodeItem.NumBytes {
+		if file.InodeItem.NumBytes > pos {
+			file.Errs = append(file.Errs, fmt.Errorf("extent gap from %v to %v",
+				pos, file.InodeItem.NumBytes))
 		} else {
-			ret.Errs = append(ret.Errs, fmt.Errorf("extent mapped past end of file from %v to %v",
-				ret.InodeItem.NumBytes, pos))
+			file.Errs = append(file.Errs, fmt.Errorf("extent mapped past end of file from %v to %v",
+				file.InodeItem.NumBytes, pos))
 		}
 	}
 }
@@ -401,7 +451,7 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			var beg btrfsvol.LogicalAddr = extent.BodyExtent.DiskByteNr.
+			beg := extent.BodyExtent.DiskByteNr.
 				Add(extent.BodyExtent.Offset).
 				Add(btrfsvol.AddrDelta(offsetWithinExt))
 			var block [btrfssum.BlockSize]byte

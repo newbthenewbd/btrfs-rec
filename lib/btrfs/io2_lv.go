@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -70,6 +70,7 @@ func (fs *FS) Size() btrfsvol.LogicalAddr {
 func (fs *FS) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.ReadAt(p, off)
 }
+
 func (fs *FS) WriteAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return fs.LV.WriteAt(p, off)
 }
@@ -171,10 +172,20 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 					return nil
 				}
-				for _, mapping := range item.Body.(btrfsitem.Chunk).Mappings(item.Key) {
-					if err := fs.LV.AddMapping(mapping); err != nil {
-						return err
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.Chunk:
+					for _, mapping := range itemBody.Mappings(item.Key) {
+						if err := fs.LV.AddMapping(mapping); err != nil {
+							return err
+						}
 					}
+				case btrfsitem.Error:
+					// do nothing
+				default:
+					// This is a panic because the item decoder should not emit CHUNK_ITEM items as
+					// anything but btrfsitem.Chunk or btrfsitem.Error without this code also being
+					// updated.
+					panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
 				}
 				return nil
 			},

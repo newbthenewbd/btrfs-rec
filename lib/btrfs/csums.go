@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -56,9 +56,15 @@ func LookupCSum(fs btrfstree.TreeOperator, alg btrfssum.CSumType, laddr btrfsvol
 	if err != nil {
 		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, err
 	}
-	body, ok := item.Body.(btrfsitem.ExtentCSum)
-	if !ok {
-		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, fmt.Errorf("item body is %T not ExtentCSum", item.Body)
+	if item.Key.ItemType != btrfsitem.EXTENT_CSUM_KEY {
+		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, fmt.Errorf("item type is %v, not EXTENT_CSUM", item.Key.ItemType)
 	}
-	return body.SumRun, nil
+	switch body := item.Body.(type) {
+	case btrfsitem.ExtentCSum:
+		return body.SumRun, nil
+	case btrfsitem.Error:
+		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, body.Err
+	default:
+		panic(fmt.Errorf("should not happen: EXTENT_CSUM has unexpected item type: %T", body))
+	}
 }

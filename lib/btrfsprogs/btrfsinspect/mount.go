@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -144,11 +144,11 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 		Size:  uint64(itemBody.Size),
 		Nlink: uint32(itemBody.NLink),
 		Mode:  uint32(itemBody.Mode),
-		//RDev: itemBody.Rdev, // jacobsa/fuse doesn't expose rdev
+		// RDev: itemBody.Rdev, // jacobsa/fuse doesn't expose rdev
 		Atime: itemBody.ATime.ToStd(),
 		Mtime: itemBody.MTime.ToStd(),
 		Ctime: itemBody.CTime.ToStd(),
-		//Crtime: itemBody.OTime,
+		// Crtime: itemBody.OTime,
 		Uid: uint32(itemBody.UID),
 		Gid: uint32(itemBody.GID),
 	}
@@ -168,7 +168,7 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 		if haveSubvolumes {
 			abspath, _err := val.AbsPath()
 			if _err != nil {
-				return
+				return val, err
 			}
 			sv.subvolMu.Lock()
 			for _, index := range maps.SortedKeys(val.ChildrenByIndex) {
@@ -200,7 +200,7 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 			sv.subvolMu.Unlock()
 		}
 	}
-	return
+	return val, err
 }
 
 func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
@@ -213,7 +213,7 @@ func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 	op.IoSize = sb.SectorSize
 	op.BlockSize = sb.SectorSize
 	op.Blocks = sb.TotalBytes / uint64(sb.SectorSize) // TODO: adjust for RAID type
-	//op.BlocksFree = TODO
+	// op.BlocksFree = TODO
 
 	// btrfs doesn't have a fixed number of inodes
 	op.Inodes = 0
@@ -260,7 +260,7 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 			Child: 2, // an inode number that a real file will never have
 			Attributes: fuseops.InodeAttributes{
 				Nlink: 1,
-				Mode:  uint32(btrfsitem.ModeFmtDir | 0700),
+				Mode:  uint32(btrfsitem.ModeFmtDir | 0o700), //nolint:gomnd // TODO
 			},
 		}
 		return nil
@@ -315,6 +315,7 @@ func (sv *subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	op.Handle = handle
 	return nil
 }
+
 func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	state, ok := sv.dirHandles.Load(op.Handle)
 	if !ok {
@@ -348,6 +349,7 @@ func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	}
 	return nil
 }
+
 func (sv *subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error {
 	_, ok := sv.dirHandles.LoadAndDelete(op.Handle)
 	if !ok {
@@ -369,6 +371,7 @@ func (sv *subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
 	op.KeepPageCache = true
 	return nil
 }
+
 func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 	state, ok := sv.fileHandles.Load(op.Handle)
 	if !ok {
@@ -392,6 +395,7 @@ func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 
 	return err
 }
+
 func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
 	_, ok := sv.fileHandles.LoadAndDelete(op.Handle)
 	if !ok {

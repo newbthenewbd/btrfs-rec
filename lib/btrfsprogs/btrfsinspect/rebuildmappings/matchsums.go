@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/datawire/dlib/dlog"
+	"golang.org/x/text/number"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
@@ -55,8 +56,8 @@ func matchBlockGroupSums(ctx context.Context,
 		if len(matches) == 1 {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] has %v matches based on %v%% coverage from %v runs",
-			i+1, numBlockgroups, bgLAddr, len(matches), int(100*bgRun.PctFull()), len(bgRun.Runs))
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] has %v matches based on %v coverage from %v runs",
+			i+1, numBlockgroups, bgLAddr, len(matches), number.Percent(bgRun.PctFull()), len(bgRun.Runs))
 		if len(matches) != 1 {
 			continue
 		}

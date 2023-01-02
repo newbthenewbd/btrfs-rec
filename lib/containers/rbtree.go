@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -65,9 +65,9 @@ func (node *RBNode[V]) walk(fn func(*RBNode[V]) error) error {
 }
 
 // Search the tree for a value that satisfied the given callbackk
-// function.  A return value of 0 means to to return this value; <0
-// means to go left on the tree (the value is too high), >0 means to
-// go right on th etree (the value is too low).
+// function.  A return value of 0 means to return this value; <0 means
+// to go left on the tree (the value is too high), >0 means to go
+// right on th etree (the value is too low).
 //
 //	        +-----+
 //	        | v=8 | == 0 : this is it
@@ -287,6 +287,8 @@ func (t *RBTree[K, V]) leftRotate(x *RBNode[V]) {
 }
 
 func (t *RBTree[K, V]) rightRotate(y *RBNode[V]) {
+	//nolint:dupword
+	//
 	//           |                |
 	//         +---+            +---+
 	//         | y |            | x |
@@ -336,11 +338,12 @@ func (t *RBTree[K, V]) Insert(val V) {
 		Parent: parent,
 		Value:  val,
 	}
-	if parent == nil {
+	switch {
+	case parent == nil:
 		t.root = node
-	} else if key.Cmp(t.KeyFn(parent.Value)) < 0 {
+	case key.Cmp(t.KeyFn(parent.Value)) < 0:
 		parent.Left = node
-	} else {
+	default:
 		parent.Right = node
 	}
 	t.updateAttr(node)
@@ -388,10 +391,10 @@ func (t *RBTree[K, V]) Insert(val V) {
 	t.root.Color = Black
 }
 
-func (t *RBTree[K, V]) transplant(old, new *RBNode[V]) {
-	*t.parentChild(old) = new
-	if new != nil {
-		new.Parent = old.Parent
+func (t *RBTree[K, V]) transplant(oldNode, newNode *RBNode[V]) {
+	*t.parentChild(oldNode) = newNode
+	if newNode != nil {
+		newNode.Parent = oldNode.Parent
 	}
 }
 

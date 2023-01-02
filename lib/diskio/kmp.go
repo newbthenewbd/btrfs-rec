@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -15,6 +15,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 	aV, aErr := aS.Get(aI)
 	bV, bErr := bS.Get(bI)
 	if aErr != nil {
+		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
 		if aErr == ErrWildcard || errors.Is(aErr, ErrWildcard) {
 			aV = bV
 			aErr = nil
@@ -23,6 +24,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 		}
 	}
 	if bErr != nil {
+		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
 		if bErr == ErrWildcard || errors.Is(bErr, ErrWildcard) {
 			bV = aV
 			bErr = nil
@@ -39,6 +41,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
 	bV, bErr := bS.Get(bI)
 	if bErr != nil {
+		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
 		if bErr == ErrWildcard || errors.Is(bErr, ErrWildcard) {
 			return true
 		}
@@ -53,6 +56,7 @@ func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
 func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
 	var substrLen K
 	for {
+		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
 		if _, err := substr.Get(substrLen); err != nil && !(err == ErrWildcard || errors.Is(err, ErrWildcard)) {
 			if errors.Is(err, io.EOF) {
 				break
@@ -84,7 +88,7 @@ func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
 }
 
 // IndexAll returns the starting-position of all possibly-overlapping
-// occurances of 'substr' in the 'str' sequence.
+// occurrences of 'substr' in the 'str' sequence.
 //
 // Will hop around in 'substr', but will only get the natural sequence
 // [0...) in order from 'str'.  When hopping around in 'substr' it

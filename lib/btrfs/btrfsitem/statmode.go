@@ -1,5 +1,5 @@
 // Copyright (C) 2020-2021  Ambassador Labs
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -9,7 +9,6 @@ package btrfsitem
 
 type StatMode uint32
 
-//nolint:deadcode,varcheck // not all of these modes will be used
 const (
 	// 16 bits = 5⅓ octal characters
 
@@ -73,6 +72,7 @@ func (mode StatMode) IsRegular() bool {
 // 's' (GNU `ls` behavior; though POSIX notes that many
 // implementations use '=' for sockets).
 func (mode StatMode) String() string {
+	//nolint:gomnd // Magic numbers is all this is.
 	buf := [10]byte{
 		// type: This string is easy; it directly pairs with
 		// the above ModeFmtXXX list above; the character in

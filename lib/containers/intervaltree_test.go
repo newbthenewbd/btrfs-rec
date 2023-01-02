@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -35,6 +35,7 @@ func (ival SimpleInterval) String() string {
 }
 
 func TestIntervalTree(t *testing.T) {
+	t.Parallel()
 	tree := IntervalTree[NativeOrdered[int], SimpleInterval]{
 		MinFn: func(ival SimpleInterval) NativeOrdered[int] { return NativeOrdered[int]{ival.Min} },
 		MaxFn: func(ival SimpleInterval) NativeOrdered[int] { return NativeOrdered[int]{ival.Max} },

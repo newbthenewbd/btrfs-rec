@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -43,7 +43,7 @@ func main() {
 		SilenceErrors: true, // main() will handle this after .ExecuteContext() returns
 		SilenceUsage:  true, // our FlagErrorFunc will handle it
 
-		CompletionOptions: cobra.CompletionOptions{ //nolint:exhaustivestruct
+		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
 	}
@@ -62,7 +62,7 @@ func main() {
 		panic(err)
 	}
 
-	var openFlag int = os.O_RDONLY
+	openFlag := os.O_RDONLY
 
 	argparserInspect := &cobra.Command{
 		Use:   "inspect {[flags]|SUBCOMMAND}",

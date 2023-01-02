@@ -32,7 +32,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 	stats.D = countNodes(scanResults)
 	progressWriter := textui.NewProgress[textui.Portion[int]](
 		dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.read.substep", "read-nodes"),
-		dlog.LogLevelInfo, 1*time.Second)
+		dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 
 	nodeGraph := graph.New(*sb)
 	keyIO := keyio.NewHandle(fs, *sb)

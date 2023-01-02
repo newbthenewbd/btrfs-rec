@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -34,7 +34,7 @@ func newRuneScanner(ctx context.Context, fh *os.File) (*runeScanner, error) {
 		progress: textui.Portion[int64]{
 			D: fi.Size(),
 		},
-		progressWriter: textui.NewProgress[textui.Portion[int64]](ctx, dlog.LogLevelInfo, 1*time.Second),
+		progressWriter: textui.NewProgress[textui.Portion[int64]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second)),
 		reader:         bufio.NewReader(fh),
 		closer:         fh,
 	}
@@ -80,4 +80,15 @@ func readJSONFile[T any](ctx context.Context, filename string) (T, error) {
 	}
 	_ = buf.Close()
 	return ret, nil
+}
+
+func writeJSONFile(w io.Writer, obj any, cfg lowmemjson.ReEncoder) (err error) {
+	buffer := bufio.NewWriter(w)
+	defer func() {
+		if _err := buffer.Flush(); err == nil && _err != nil {
+			err = _err
+		}
+	}()
+	cfg.Out = buffer
+	return lowmemjson.Encode(&cfg, obj)
 }

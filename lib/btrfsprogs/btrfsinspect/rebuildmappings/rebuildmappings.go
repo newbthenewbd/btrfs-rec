@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -15,6 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func getNodeSize(fs *btrfs.FS) (btrfsvol.AddrDelta, error) {
@@ -189,20 +190,20 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 			unmappedPhysical += region.End.Sub(region.Beg)
 		}
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped physical space (across %d regions)", int(unmappedPhysical/1024), numUnmappedPhysical)
+	dlog.Infof(ctx, "... %d of unmapped physical space (across %d regions)", textui.IEC(unmappedPhysical, "B"), numUnmappedPhysical)
 
 	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
 	var unmappedLogical btrfsvol.AddrDelta
 	for _, region := range unmappedLogicalRegions {
 		unmappedLogical += region.Size()
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped summed logical space (across %d regions)", int(unmappedLogical/1024), len(unmappedLogicalRegions))
+	dlog.Infof(ctx, "... %d of unmapped summed logical space (across %d regions)", textui.IEC(unmappedLogical, "B"), len(unmappedLogicalRegions))
 
 	var unmappedBlockGroups btrfsvol.AddrDelta
 	for _, bg := range bgs {
 		unmappedBlockGroups += bg.Size
 	}
-	dlog.Infof(ctx, "... %d KiB of unmapped block groups (across %d groups)", int(unmappedBlockGroups/1024), len(bgs))
+	dlog.Infof(ctx, "... %d of unmapped block groups (across %d groups)", textui.IEC(unmappedBlockGroups, "B"), len(bgs))
 
 	dlog.Info(_ctx, "detailed report:")
 	for _, devID := range maps.SortedKeys(unmappedPhysicalRegions) {

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -70,6 +70,7 @@ func (typ CSumType) String() string {
 }
 
 func (typ CSumType) Size() int {
+	//nolint:gomnd // This is where we define the magic numbers.
 	sizes := map[CSumType]int{
 		TYPE_CRC32:  4,
 		TYPE_XXHASH: 8,

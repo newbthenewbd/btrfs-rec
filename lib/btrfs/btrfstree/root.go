@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -71,15 +71,18 @@ func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*Tr
 		if err != nil {
 			return nil, err
 		}
-		rootItemBody, ok := rootItem.Body.(btrfsitem.Root)
-		if !ok {
-			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v", treeID)
+		switch rootItemBody := rootItem.Body.(type) {
+		case btrfsitem.Root:
+			return &TreeRoot{
+				TreeID:     treeID,
+				RootNode:   rootItemBody.ByteNr,
+				Level:      rootItemBody.Level,
+				Generation: rootItemBody.Generation,
+			}, nil
+		case btrfsitem.Error:
+			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v: %w", treeID, rootItemBody.Err)
+		default:
+			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootItemBody))
 		}
-		return &TreeRoot{
-			TreeID:     treeID,
-			RootNode:   rootItemBody.ByteNr,
-			Level:      rootItemBody.Level,
-			Generation: rootItemBody.Generation,
-		}, nil
 	}
 }
