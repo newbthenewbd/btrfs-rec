@@ -21,33 +21,39 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - wastedassign
+    - ireturn # golangci-lint doesn't claim it doesn't, but it doesn't
 
-    # These are disabled not because I think they're bad, but because
-    # they currently don't pass, and I haven't evaluated them yet.
+    # Style
+    - godot
+    - lll
+    - nlreturn
+    - nonamedreturns # I name returns for godoc purposes.
+    - wsl
+
+    # Complexity; sometimes code is just complex.
     - cyclop
-    - exhaustive
-    - exhaustruct
     - funlen
-    - gochecknoglobals
-    - gochecknoinits
     - gocognit
     - gocyclo
-    - godot
-    - godox
-    - goerr113
-    - ireturn
-    - lll
     - maintidx
     - nestif
-    - nlreturn
-    - nonamedreturns
+
+    # Miscellaneous
+    - goerr113  # forbids fmt.Errorf(%w), which is just silly
+    - godox # I'm OK checking in to-be-completed tasks
+
+    # These are disabled not because I think they're bad, but because
+    # they currently don't pass, and I haven't really evaluated them yet.
+    - exhaustive
+    - exhaustruct
+    - gochecknoglobals
+    - gochecknoinits
     - revive
     - testpackage
     - thelper
     - unparam
     - varnamelen
     - wrapcheck
-    - wsl
 linters-settings:
   gci:
     sections:
