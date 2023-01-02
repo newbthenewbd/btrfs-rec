@@ -131,7 +131,7 @@ func (run SumRun[Addr]) Get(sumIdx int64) (ShortSum, error) {
 		return "", io.EOF
 	}
 	off := int(sumIdx) * run.ChecksumSize
-	return ShortSum(run.Sums[off : off+run.ChecksumSize]), nil
+	return run.Sums[off : off+run.ChecksumSize], nil
 }
 
 func (run SumRun[Addr]) SumForAddr(addr Addr) (ShortSum, bool) {
@@ -139,7 +139,7 @@ func (run SumRun[Addr]) SumForAddr(addr Addr) (ShortSum, bool) {
 		return "", false
 	}
 	off := int((addr-run.Addr)/BlockSize) * run.ChecksumSize
-	return ShortSum(run.Sums[off : off+run.ChecksumSize]), true
+	return run.Sums[off : off+run.ChecksumSize], true
 }
 
 func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error) error {
@@ -147,7 +147,7 @@ func (run SumRun[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := fn(addr, ShortSum(run.Sums[off:off+run.ChecksumSize])); err != nil {
+		if err := fn(addr, run.Sums[off:off+run.ChecksumSize]); err != nil {
 			return err
 		}
 	}
@@ -208,7 +208,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 			continue
 		}
 		off := int((addr-run.Addr)/BlockSize) * run.ChecksumSize
-		return ShortSum(run.Sums[off : off+run.ChecksumSize]), nil
+		return run.Sums[off : off+run.ChecksumSize], nil
 	}
 	return "", diskio.ErrWildcard
 }

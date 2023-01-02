@@ -44,7 +44,6 @@ linters:
     - revive
     - testpackage
     - thelper
-    - unconvert
     - unparam
     - varnamelen
     - whitespace
