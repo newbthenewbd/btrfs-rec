@@ -55,6 +55,9 @@ linters:
     - varnamelen
     - wrapcheck
 linters-settings:
+  errcheck:
+    exclude-functions:
+      - "git.lukeshu.com/btrfs-progs-ng/lib/textui.Fprintf"
   gci:
     sections:
       - standard
@@ -74,6 +77,10 @@ linters-settings:
   gomoddirectives:
     replace-allow-list:
       - github.com/jacobsa/fuse
+  gosec:
+    excludes:
+      - G104 # duplicates errcheck
+      - G304 # this program opens arbitrary files
   nolintlint:
     require-explanation: true
     require-specific: true
@@ -83,12 +90,16 @@ linters-settings:
     checks:
       - "all"
       - "-ST1003" # CONST_VAL names for consistency with other btrfs code
+      - "-ST1000" # TODO: get this to pass
+      - "-ST1020" # TODO: get this to pass
+      - "-ST1021" # TODO: get this to pass
   tagliatelle:
     case:
       use-field-name: true
       rules:
         json: pascal
 issues:
+  exclude-use-default: false
   exclude-rules:
     # Ignore false positives that don't actually have any words.
     - linters: [dupword]

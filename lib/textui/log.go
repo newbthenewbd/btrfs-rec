@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2022  Ambassador Labs
+// Copyright (C) 2019-2022-2023  Ambassador Labs
 // Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -134,21 +134,21 @@ func (l *logger) Log(lvl dlog.LogLevel, msg string) {
 // UnformattedLog implements dlog.OptimizedLogger.
 func (l *logger) UnformattedLog(lvl dlog.LogLevel, args ...any) {
 	l.log(lvl, func(w io.Writer) {
-		printer.Fprint(w, args...)
+		_, _ = printer.Fprint(w, args...)
 	})
 }
 
 // UnformattedLogln implements dlog.OptimizedLogger.
 func (l *logger) UnformattedLogln(lvl dlog.LogLevel, args ...any) {
 	l.log(lvl, func(w io.Writer) {
-		printer.Fprintln(w, args...)
+		_, _ = printer.Fprintln(w, args...)
 	})
 }
 
 // UnformattedLogf implements dlog.OptimizedLogger.
 func (l *logger) UnformattedLogf(lvl dlog.LogLevel, format string, args ...any) {
 	l.log(lvl, func(w io.Writer) {
-		printer.Fprintf(w, format, args...)
+		_, _ = printer.Fprintf(w, format, args...)
 	})
 }
 

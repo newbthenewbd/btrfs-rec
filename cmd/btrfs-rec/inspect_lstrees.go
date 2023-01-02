@@ -60,7 +60,7 @@ func init() {
 					textui.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
 				}
 				textui.Fprintf(table, "        total items\t% *s\n", numWidth, strconv.Itoa(totalItems))
-				table.Flush()
+				_ = table.Flush()
 			}
 			visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
 			btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
