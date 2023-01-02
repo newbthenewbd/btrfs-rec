@@ -168,7 +168,7 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 		if haveSubvolumes {
 			abspath, _err := val.AbsPath()
 			if _err != nil {
-				return
+				return val, err
 			}
 			sv.subvolMu.Lock()
 			for _, index := range maps.SortedKeys(val.ChildrenByIndex) {
@@ -200,7 +200,7 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 			sv.subvolMu.Unlock()
 		}
 	}
-	return
+	return val, err
 }
 
 func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {

@@ -287,7 +287,7 @@ func (ts *RebuiltTrees) addTree(ctx context.Context, treeID btrfsprim.ObjID, sta
 		ts.AddRoot(ctx, treeID, root)
 	}
 
-	return
+	return true
 }
 
 func (tree *rebuiltTree) indexLeafs(ctx context.Context, graph pkggraph.Graph) {
