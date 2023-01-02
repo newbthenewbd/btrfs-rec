@@ -42,7 +42,6 @@ linters:
     - nlreturn
     - nonamedreturns
     - revive
-    - tagliatelle
     - testpackage
     - thelper
     - unconvert
@@ -80,6 +79,11 @@ linters-settings:
     checks:
       - "all"
       - "-ST1003" # CONST_VAL names for consistency with other btrfs code
+  tagliatelle:
+    case:
+      use-field-name: true
+      rules:
+        json: pascal
 issues:
   exclude-rules:
     # Ignore false positives that don't actually have any words.
