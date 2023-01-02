@@ -28,7 +28,6 @@ linters:
     - exhaustive
     - exhaustruct
     - funlen
-    - gci
     - gochecknoglobals
     - gochecknoinits
     - gocognit
@@ -63,6 +62,11 @@ linters:
     - wrapcheck
     - wsl
 linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(git.lukeshu.com/btrfs-progs-ng)
   gofmt:
     simplify: true
   nolintlint:
