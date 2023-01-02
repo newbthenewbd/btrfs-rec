@@ -35,7 +35,6 @@ linters:
     - godot
     - godox
     - goerr113
-    - gomoddirectives
     - ireturn
     - lll
     - maintidx
@@ -75,6 +74,9 @@ linters-settings:
     ignored-functions:
       - 'binutil.NeedNBytes'
       - 'textui.Tunable'
+  gomoddirectives:
+    replace-allow-list:
+      - github.com/jacobsa/fuse
   nolintlint:
     require-explanation: true
     require-specific: true
