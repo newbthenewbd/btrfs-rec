@@ -391,10 +391,10 @@ func (t *RBTree[K, V]) Insert(val V) {
 	t.root.Color = Black
 }
 
-func (t *RBTree[K, V]) transplant(old, new *RBNode[V]) {
-	*t.parentChild(old) = new
-	if new != nil {
-		new.Parent = old.Parent
+func (t *RBTree[K, V]) transplant(oldNode, newNode *RBNode[V]) {
+	*t.parentChild(oldNode) = newNode
+	if newNode != nil {
+		newNode.Parent = oldNode.Parent
 	}
 }
 

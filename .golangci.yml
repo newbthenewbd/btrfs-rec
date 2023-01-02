@@ -41,7 +41,6 @@ linters:
     - nestif
     - nlreturn
     - nonamedreturns
-    - predeclared
     - revive
     - stylecheck
     - tagliatelle
