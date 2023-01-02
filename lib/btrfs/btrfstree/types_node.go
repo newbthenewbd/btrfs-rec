@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -212,10 +212,11 @@ func (node Node) MarshalBinary() ([]byte, error) {
 
 	if bs, err := binstruct.Marshal(node.Head); err != nil {
 		return buf, err
-	} else if len(bs) != binstruct.StaticSize(NodeHeader{}) {
-		return nil, fmt.Errorf("header is %v bytes but expected %v",
-			len(bs), binstruct.StaticSize(NodeHeader{}))
 	} else {
+		if len(bs) != binstruct.StaticSize(NodeHeader{}) {
+			return nil, fmt.Errorf("header is %v bytes but expected %v",
+				len(bs), binstruct.StaticSize(NodeHeader{}))
+		}
 		copy(buf, bs)
 	}
 

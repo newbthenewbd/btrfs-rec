@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -142,8 +142,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					textui.Fprintf(out, "\t\tindex %v namelen %v name: %s\n",
 						ref.Index, ref.NameLen, ref.Name)
 				}
-			//case btrfsitem.INODE_EXTREF_KEY:
-			//	// TODO
+			// case btrfsitem.INODE_EXTREF_KEY:
+			// 	// TODO
 			case btrfsitem.DirEntry:
 				textui.Fprintf(out, "\t\tlocation %v type %v\n",
 					fmtKey(body.Location), body.Type)
@@ -153,8 +153,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				if len(body.Data) > 0 {
 					textui.Fprintf(out, "\t\tdata %v\n", body.Data)
 				}
-			//case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
-			//	// TODO
+			// case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
+			// 	// TODO
 			case btrfsitem.Root:
 				textui.Fprintf(out, "\t\tgeneration %v root_dirid %v bytenr %d byte_limit %v bytes_used %v\n",
 					body.Generation, body.RootDirID, body.ByteNr, body.ByteLimit, body.BytesUsed)
@@ -200,10 +200,10 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
 				textui.Fprintf(out, "\t\ttree block skinny level %v\n", item.Key.Offset)
 				printExtentInlineRefs(out, body.Refs)
-			//case btrfsitem.EXTENT_DATA_REF_KEY:
-			//	// TODO
-			//case btrfsitem.SHARED_DATA_REF_KEY:
-			//	// TODO
+			// case btrfsitem.EXTENT_DATA_REF_KEY:
+			// 	// TODO
+			// case btrfsitem.SHARED_DATA_REF_KEY:
+			// 	// TODO
 			case btrfsitem.ExtentCSum:
 				start := btrfsvol.LogicalAddr(item.Key.Offset)
 				textui.Fprintf(out, "\t\trange start %d end %d length %d",
@@ -291,16 +291,16 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					"\t\tchunk_tree_uuid %v\n",
 					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
 					body.ChunkTreeUUID)
-			//case btrfsitem.QGROUP_STATUS_KEY:
-			//	// TODO
-			//case btrfsitem.QGROUP_INFO_KEY:
-			//	// TODO
-			//case btrfsitem.QGROUP_LIMIT_KEY:
-			//	// TODO
+			// case btrfsitem.QGROUP_STATUS_KEY:
+			// 	// TODO
+			// case btrfsitem.QGROUP_INFO_KEY:
+			// 	// TODO
+			// case btrfsitem.QGROUP_LIMIT_KEY:
+			// 	// TODO
 			case btrfsitem.UUIDMap:
 				textui.Fprintf(out, "\t\tsubvol_id %d\n", body.ObjID)
-			//case btrfsitem.STRING_ITEM_KEY:
-			//	// TODO
+			// case btrfsitem.STRING_ITEM_KEY:
+			// 	// TODO
 			case btrfsitem.DevStats:
 				textui.Fprintf(out, "\t\tpersistent item objectid %v offset %v\n",
 					item.Key.ObjectID.Format(item.Key.ItemType), item.Key.Offset)
@@ -316,8 +316,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				default:
 					textui.Fprintf(out, "\t\tunknown persistent item objectid %v\n", item.Key.ObjectID)
 				}
-			//case btrfsitem.TEMPORARY_ITEM_KEY:
-			//	// TODO
+			// case btrfsitem.TEMPORARY_ITEM_KEY:
+			// 	// TODO
 			case btrfsitem.Empty:
 				switch item.Key.ItemType {
 				case btrfsitem.ORPHAN_ITEM_KEY: // 48
@@ -330,10 +330,10 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					textui.Fprintf(out, "\t\tfree space extent\n")
 				case btrfsitem.QGROUP_RELATION_KEY: // 246
 					// do nothing
-				//case btrfsitem.EXTENT_REF_V0_KEY:
-				//	textui.Fprintf(out, "\t\textent ref v0 (deprecated)\n")
-				//case btrfsitem.CSUM_ITEM_KEY:
-				//	textui.Fprintf(out, "\t\tcsum item\n")
+				// case btrfsitem.EXTENT_REF_V0_KEY:
+				// 	textui.Fprintf(out, "\t\textent ref v0 (deprecated)\n")
+				// case btrfsitem.CSUM_ITEM_KEY:
+				// 	textui.Fprintf(out, "\t\tcsum item\n")
 				default:
 					textui.Fprintf(out, "\t\t(error) unhandled empty item type: %v\n", item.Key.ItemType)
 				}
@@ -426,7 +426,7 @@ func fmtKey(key btrfsprim.Key) string {
 	var out strings.Builder
 	textui.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
-	case btrfsitem.QGROUP_RELATION_KEY: //TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
+	case btrfsitem.QGROUP_RELATION_KEY: // TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
 		panic("TODO: printing qgroup items not yet implemented")
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
 		textui.Fprintf(&out, " %#08x)", key.Offset)

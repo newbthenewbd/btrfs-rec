@@ -112,13 +112,13 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 	case btrfsitem.Empty:
 		// nothing
 	case btrfsitem.Extent:
-		//if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
-		//	// Supposedly this flag indicates that
-		//	// body.Info.Key identifies a node by the
-		//	// first key in the node.  But nothing in the
-		//	// kernel ever reads this, so who knows if it
-		//	// always gets updated correctly?
-		//}
+		// if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
+		// 	// Supposedly this flag indicates that
+		// 	// body.Info.Key identifies a node by the
+		// 	// first key in the node.  But nothing in the
+		// 	// kernel ever reads this, so who knows if it
+		// 	// always gets updated correctly?
+		// }
 		for i, ref := range body.Refs {
 			switch refBody := ref.Body.(type) {
 			case nil:

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -39,13 +39,7 @@ func (node *RBNode[V]) asciiArt(w io.Writer, u, m, l string) {
 	}
 
 	node.Right.asciiArt(w, u+"     ", u+"  ,--", u+"  |  ")
-
-	if node.Color == Red {
-		fmt.Fprintf(w, "%s%v\n", m, node)
-	} else {
-		fmt.Fprintf(w, "%s%v\n", m, node)
-	}
-
+	fmt.Fprintf(w, "%s%v\n", m, node)
 	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")
 }
 

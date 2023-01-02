@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -213,7 +213,7 @@ func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
 	op.IoSize = sb.SectorSize
 	op.BlockSize = sb.SectorSize
 	op.Blocks = sb.TotalBytes / uint64(sb.SectorSize) // TODO: adjust for RAID type
-	//op.BlocksFree = TODO
+	// op.BlocksFree = TODO
 
 	// btrfs doesn't have a fixed number of inodes
 	op.Inodes = 0

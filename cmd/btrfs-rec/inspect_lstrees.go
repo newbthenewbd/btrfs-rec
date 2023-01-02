@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -79,12 +79,12 @@ func init() {
 					},
 					Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
-						treeItemCnt[typ] = treeItemCnt[typ] + 1
+						treeItemCnt[typ]++
 						return nil
 					},
 					BadItem: func(_ btrfstree.TreePath, item btrfstree.Item) error {
 						typ := item.Key.ItemType
-						treeItemCnt[typ] = treeItemCnt[typ] + 1
+						treeItemCnt[typ]++
 						return nil
 					},
 				},
@@ -113,7 +113,7 @@ func init() {
 						}
 						for _, item := range node.Data.BodyLeaf {
 							typ := item.Key.ItemType
-							treeItemCnt[typ] = treeItemCnt[typ] + 1
+							treeItemCnt[typ]++
 						}
 					}
 				}

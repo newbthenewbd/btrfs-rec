@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -335,10 +335,8 @@ func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr Logi
 		}
 		if first {
 			copy(dat, buf)
-		} else {
-			if !bytes.Equal(dat, buf) {
-				return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
-			}
+		} else if !bytes.Equal(dat, buf) {
+			return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
 		}
 	}
 	return len(dat), nil

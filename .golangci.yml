@@ -31,7 +31,6 @@ linters:
     - gochecknoglobals
     - gochecknoinits
     - gocognit
-    - gocritic
     - gocyclo
     - godot
     - godox
@@ -67,6 +66,9 @@ linters-settings:
       - standard
       - default
       - prefix(git.lukeshu.com/btrfs-progs-ng)
+  gocritic:
+    disabled-checks:
+      - appendAssign
   gofmt:
     simplify: true
   nolintlint:

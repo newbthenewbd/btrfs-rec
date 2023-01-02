@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -317,7 +317,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	counts := make(map[btrfsvol.LogicalAddr]int)
 	for _, list := range lists {
 		for item := range list {
-			counts[item] = counts[item] + 1
+			counts[item]++
 		}
 	}
 

@@ -338,11 +338,12 @@ func (t *RBTree[K, V]) Insert(val V) {
 		Parent: parent,
 		Value:  val,
 	}
-	if parent == nil {
+	switch {
+	case parent == nil:
 		t.root = node
-	} else if key.Cmp(t.KeyFn(parent.Value)) < 0 {
+	case key.Cmp(t.KeyFn(parent.Value)) < 0:
 		parent.Left = node
-	} else {
+	default:
 		parent.Right = node
 	}
 	t.updateAttr(node)
