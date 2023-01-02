@@ -304,7 +304,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 				node, err = bt.inner.ReadNode(itemPath.Parent())
 				if err != nil {
 					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-					return nil
+					return nil //nolint:nilerr // We already called errHandle().
 				}
 			}
 			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]

@@ -39,7 +39,6 @@ linters:
     - lll
     - maintidx
     - nestif
-    - nilerr
     - nlreturn
     - nonamedreturns
     - paralleltest
