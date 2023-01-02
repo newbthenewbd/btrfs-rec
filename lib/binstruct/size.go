@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -30,6 +30,7 @@ var (
 
 func staticSize(typ reflect.Type) (int, error) {
 	if typ.Implements(staticSizerType) {
+		//nolint:forcetypeassert // Already did a type check via reflection.
 		return reflect.New(typ).Elem().Interface().(StaticSizer).BinaryStaticSize(), nil
 	}
 	if typ.Implements(marshalerType) || typ.Implements(unmarshalerType) {

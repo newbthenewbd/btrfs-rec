@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -44,6 +44,7 @@ func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 	c.init()
 	_value, ok := c.inner.Get(key)
 	if ok {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		value = _value.(V)
 	}
 	return value, ok
@@ -53,6 +54,7 @@ func (c *LRUCache[K, V]) Keys() []K {
 	untyped := c.inner.Keys()
 	typed := make([]K, len(untyped))
 	for i := range untyped {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		typed[i] = untyped[i].(K)
 	}
 	return typed
@@ -65,6 +67,7 @@ func (c *LRUCache[K, V]) Peek(key K) (value V, ok bool) {
 	c.init()
 	_value, ok := c.inner.Peek(key)
 	if ok {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		value = _value.(V)
 	}
 	return value, ok

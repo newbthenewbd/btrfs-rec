@@ -56,6 +56,7 @@ func (p *Progress[T]) Done() {
 }
 
 func (p *Progress[T]) flush(force bool) {
+	//nolint:forcetypeassert // It wasn't worth it to me (yet?) to make a typed wrapper around atomic.Value.
 	cur := p.cur.Load().(T)
 	if !force && cur == p.oldStat {
 		return

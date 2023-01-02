@@ -27,7 +27,6 @@ linters:
     - cyclop
     - exhaustive
     - exhaustruct
-    - forcetypeassert
     - funlen
     - gci
     - gochecknoglobals

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -18,6 +18,7 @@ func (m *SyncMap[K, V]) Delete(key K) {
 func (m *SyncMap[K, V]) Load(key K) (value V, ok bool) {
 	_value, ok := m.inner.Load(key)
 	if ok {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		value = _value.(V)
 	}
 	return value, ok
@@ -25,17 +26,20 @@ func (m *SyncMap[K, V]) Load(key K) (value V, ok bool) {
 func (m *SyncMap[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
 	_value, ok := m.inner.LoadAndDelete(key)
 	if ok {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		value = _value.(V)
 	}
 	return value, ok
 }
 func (m *SyncMap[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	_actual, loaded := m.inner.LoadOrStore(key, value)
+	//nolint:forcetypeassert // Typed wrapper around untyped lib.
 	actual = _actual.(V)
 	return actual, loaded
 }
 func (m *SyncMap[K, V]) Range(f func(key K, value V) bool) {
 	m.inner.Range(func(key, value any) bool {
+		//nolint:forcetypeassert // Typed wrapper around untyped lib.
 		return f(key.(K), value.(V))
 	})
 }

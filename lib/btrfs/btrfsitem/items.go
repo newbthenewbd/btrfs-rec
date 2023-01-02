@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -79,5 +79,6 @@ func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) It
 				key.ItemType, len(dat), n),
 		}
 	}
+	//nolint:forcetypeassert // items_gen.go has all types in keytype2gotype implement the Item interface.
 	return retPtr.Elem().Interface().(Item)
 }

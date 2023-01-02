@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -152,17 +152,29 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 		for _, item := range items {
 			switch item.Key.ItemType {
 			case btrfsitem.INODE_ITEM_KEY:
-				itemBody := item.Body.(btrfsitem.Inode)
-				if val.InodeItem != nil {
-					if !reflect.DeepEqual(itemBody, *val.InodeItem) {
-						val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.Inode:
+					if val.InodeItem != nil {
+						if !reflect.DeepEqual(itemBody, *val.InodeItem) {
+							val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
+						}
+						continue
 					}
-					continue
+					val.InodeItem = &itemBody
+				case btrfsitem.Error:
+					val.Errs = append(val.Errs, fmt.Errorf("malformed INODE_ITEM: %w", itemBody.Err))
+				default:
+					panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
 				}
-				val.InodeItem = &itemBody
 			case btrfsitem.XATTR_ITEM_KEY:
-				itemBody := item.Body.(btrfsitem.DirEntry)
-				val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
+				switch itemBody := item.Body.(type) {
+				case btrfsitem.DirEntry:
+					val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
+				case btrfsitem.Error:
+					val.Errs = append(val.Errs, fmt.Errorf("malformed XATTR_ITEM: %w", itemBody.Err))
+				default:
+					panic(fmt.Errorf("should not happen: XATTR_ITEM has unexpected item type: %T", itemBody))
+				}
 			default:
 				val.OtherItems = append(val.OtherItems, item)
 			}
@@ -200,48 +212,66 @@ func (ret *Dir) populate() {
 	for _, item := range ret.OtherItems {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
-			body := item.Body.(btrfsitem.InodeRefs)
-			if len(body) != 1 {
-				ret.Errs = append(ret.Errs, fmt.Errorf("INODE_REF item with %d entries on a directory",
-					len(body)))
-				continue
-			}
-			ref := InodeRef{
-				Inode:    btrfsprim.ObjID(item.Key.Offset),
-				InodeRef: body[0],
-			}
-			if ret.DotDot != nil {
-				if !reflect.DeepEqual(ref, *ret.DotDot) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple INODE_REF items on a directory"))
+			switch body := item.Body.(type) {
+			case btrfsitem.InodeRefs:
+				if len(body) != 1 {
+					ret.Errs = append(ret.Errs, fmt.Errorf("INODE_REF item with %d entries on a directory",
+						len(body)))
+					continue
 				}
-				continue
+				ref := InodeRef{
+					Inode:    btrfsprim.ObjID(item.Key.Offset),
+					InodeRef: body[0],
+				}
+				if ret.DotDot != nil {
+					if !reflect.DeepEqual(ref, *ret.DotDot) {
+						ret.Errs = append(ret.Errs, fmt.Errorf("multiple INODE_REF items on a directory"))
+					}
+					continue
+				}
+				ret.DotDot = &ref
+			case btrfsitem.Error:
+				ret.Errs = append(ret.Errs, fmt.Errorf("malformed INODE_REF: %w", body.Err))
+			default:
+				panic(fmt.Errorf("should not happen: INODE_REF has unexpected item type: %T", body))
 			}
-			ret.DotDot = &ref
 		case btrfsitem.DIR_ITEM_KEY:
-			entry := item.Body.(btrfsitem.DirEntry)
-			namehash := btrfsitem.NameHash(entry.Name)
-			if namehash != item.Key.Offset {
-				ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
-					item.Key.Offset, entry.Name, namehash))
-				continue
-			}
-			if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
-				if !reflect.DeepEqual(entry, other) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
+			switch entry := item.Body.(type) {
+			case btrfsitem.DirEntry:
+				namehash := btrfsitem.NameHash(entry.Name)
+				if namehash != item.Key.Offset {
+					ret.Errs = append(ret.Errs, fmt.Errorf("direntry crc32c mismatch: key=%#x crc32c(%q)=%#x",
+						item.Key.Offset, entry.Name, namehash))
+					continue
 				}
-				continue
+				if other, exists := ret.ChildrenByName[string(entry.Name)]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry name %q", entry.Name))
+					}
+					continue
+				}
+				ret.ChildrenByName[string(entry.Name)] = entry
+			case btrfsitem.Error:
+				ret.Errs = append(ret.Errs, fmt.Errorf("malformed DIR_ITEM: %w", entry.Err))
+			default:
+				panic(fmt.Errorf("should not happen: DIR_ITEM has unexpected item type: %T", entry))
 			}
-			ret.ChildrenByName[string(entry.Name)] = entry
 		case btrfsitem.DIR_INDEX_KEY:
 			index := item.Key.Offset
-			entry := item.Body.(btrfsitem.DirEntry)
-			if other, exists := ret.ChildrenByIndex[index]; exists {
-				if !reflect.DeepEqual(entry, other) {
-					ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+			switch entry := item.Body.(type) {
+			case btrfsitem.DirEntry:
+				if other, exists := ret.ChildrenByIndex[index]; exists {
+					if !reflect.DeepEqual(entry, other) {
+						ret.Errs = append(ret.Errs, fmt.Errorf("multiple instances of direntry index %v", index))
+					}
+					continue
 				}
-				continue
+				ret.ChildrenByIndex[index] = entry
+			case btrfsitem.Error:
+				ret.Errs = append(ret.Errs, fmt.Errorf("malformed DIR_INDEX: %w", entry.Err))
+			default:
+				panic(fmt.Errorf("should not happen: DIR_INDEX has unexpected item type: %T", entry))
 			}
-			ret.ChildrenByIndex[index] = entry
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
@@ -317,10 +347,17 @@ func (ret *File) populate() {
 		case btrfsitem.INODE_REF_KEY:
 			// TODO
 		case btrfsitem.EXTENT_DATA_KEY:
-			ret.Extents = append(ret.Extents, FileExtent{
-				OffsetWithinFile: int64(item.Key.Offset),
-				FileExtent:       item.Body.(btrfsitem.FileExtent),
-			})
+			switch itemBody := item.Body.(type) {
+			case btrfsitem.FileExtent:
+				ret.Extents = append(ret.Extents, FileExtent{
+					OffsetWithinFile: int64(item.Key.Offset),
+					FileExtent:       itemBody,
+				})
+			case btrfsitem.Error:
+				ret.Errs = append(ret.Errs, fmt.Errorf("malformed EXTENT_DATA: %w", itemBody.Err))
+			default:
+				panic(fmt.Errorf("should not happen: EXTENT_DATA has unexpected item type: %T", itemBody))
+			}
 		default:
 			panic(fmt.Errorf("TODO: handle item type %v", item.Key.ItemType))
 		}
