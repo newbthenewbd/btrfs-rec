@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -12,7 +12,7 @@ import (
 )
 
 // The Key for this item is a UUID, and the item is a subvolume IDs
-// that that UUID maps to.
+// that UUID maps to.
 //
 // key.objectid = first half of UUID
 // key.offset = second half of UUID

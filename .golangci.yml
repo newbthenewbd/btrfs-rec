@@ -25,7 +25,6 @@ linters:
     # These are disabled not because I think they're bad, but because
     # they currently don't pass, and I haven't evaluated them yet.
     - cyclop
-    - dupword
     - errorlint
     - exhaustive
     - exhaustruct
@@ -71,6 +70,12 @@ linters-settings:
   nolintlint:
     require-explanation: true
     require-specific: true
+    allow-no-explanation:
+      - dupword
 issues:
+  exclude-rules:
+    # Ignore false positives that don't actually have any words.
+    - linters: [dupword]
+      source: "^[^a-zA-Z]*$"
   max-issues-per-linter: 0
   max-same-issues: 0

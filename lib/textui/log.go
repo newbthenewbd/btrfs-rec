@@ -172,8 +172,8 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	// This is optimized for mostly-single-threaded usage.  If I cared more
 	// about multi-threaded performance, I'd trade in some
 	// memory-use/allocations and (1) instead of using a static `logBuf`,
-	// I'd have a `logBufPool` `sync.Pool`, and (2) have the the final call
-	// to `l.out.Write()` be the only thing protected by `logMu`.
+	// I'd have a `logBufPool` `sync.Pool`, and (2) have the final call to
+	// `l.out.Write()` be the only thing protected by `logMu`.
 	logMu.Lock()
 	defer logMu.Unlock()
 	defer logBuf.Reset()

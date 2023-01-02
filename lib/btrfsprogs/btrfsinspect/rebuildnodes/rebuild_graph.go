@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -113,7 +113,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		// nothing
 	case btrfsitem.Extent:
 		//if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
-		//	// Supposedly this flag indicates that that
+		//	// Supposedly this flag indicates that
 		//	// body.Info.Key identifies a node by the
 		//	// first key in the node.  But nothing in the
 		//	// kernel ever reads this, so who knows if it
