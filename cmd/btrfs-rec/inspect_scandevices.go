@@ -1,12 +1,10 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package main
 
 import (
-	"bufio"
-	"io"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -33,7 +31,11 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
-			if err := writeScanResults(os.Stdout, results); err != nil {
+			if err := writeJSONFile(os.Stdout, results, lowmemjson.ReEncoder{
+				Indent:                "\t",
+				ForceTrailingNewlines: true,
+				CompactIfUnder:        16,
+			}); err != nil {
 				return err
 			}
 			dlog.Info(ctx, "... done writing")
@@ -41,20 +43,4 @@ func init() {
 			return nil
 		},
 	})
-}
-
-func writeScanResults(w io.Writer, results btrfsinspect.ScanDevicesResult) (err error) {
-	buffer := bufio.NewWriter(w)
-	defer func() {
-		if _err := buffer.Flush(); err == nil && _err != nil {
-			err = _err
-		}
-	}()
-	return lowmemjson.Encode(&lowmemjson.ReEncoder{
-		Out: buffer,
-
-		Indent:                "\t",
-		ForceTrailingNewlines: true,
-		CompactIfUnder:        16,
-	}, results)
 }

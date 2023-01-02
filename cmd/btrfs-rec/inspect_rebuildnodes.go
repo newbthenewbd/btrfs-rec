@@ -1,12 +1,10 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package main
 
 import (
-	"bufio"
-	"io"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -15,11 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes"
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 func init() {
@@ -44,7 +39,10 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing re-built nodes to stdout...")
-			if err := writeNodesJSON(os.Stdout, rebuiltNodes); err != nil {
+			if err := writeJSONFile(os.Stdout, rebuiltNodes, lowmemjson.ReEncoder{
+				Indent:                "\t",
+				ForceTrailingNewlines: true,
+			}); err != nil {
 				return err
 			}
 			dlog.Info(ctx, "... done writing")
@@ -52,19 +50,4 @@ func init() {
 			return nil
 		},
 	})
-}
-
-func writeNodesJSON(w io.Writer, rebuiltNodes map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]) (err error) {
-	buffer := bufio.NewWriter(w)
-	defer func() {
-		if _err := buffer.Flush(); err == nil && _err != nil {
-			err = _err
-		}
-	}()
-	return lowmemjson.Encode(&lowmemjson.ReEncoder{
-		Out: buffer,
-
-		Indent:                "\t",
-		ForceTrailingNewlines: true,
-	}, rebuiltNodes)
 }
