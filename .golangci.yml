@@ -46,7 +46,6 @@ linters:
     - thelper
     - unparam
     - varnamelen
-    - whitespace
     - wrapcheck
     - wsl
 linters-settings:
