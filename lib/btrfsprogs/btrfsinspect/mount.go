@@ -260,7 +260,7 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 			Child: 2, // an inode number that a real file will never have
 			Attributes: fuseops.InodeAttributes{
 				Nlink: 1,
-				Mode:  uint32(btrfsitem.ModeFmtDir | 0o700),
+				Mode:  uint32(btrfsitem.ModeFmtDir | 0o700), //nolint:gomnd // TODO
 			},
 		}
 		return nil

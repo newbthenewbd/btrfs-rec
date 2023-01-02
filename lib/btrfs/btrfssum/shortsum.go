@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -56,10 +56,11 @@ func (sum ShortSum) EncodeJSON(w io.Writer) error {
 }
 
 func deHex(r rune) (byte, bool) {
-	if r > 0xff {
+	if r > math.MaxUint8 {
 		return 0, false
 	}
 	c := byte(r)
+	//nolint:gomnd // Hex conversion.
 	switch {
 	case '0' <= c && c <= '9':
 		return c - '0', true

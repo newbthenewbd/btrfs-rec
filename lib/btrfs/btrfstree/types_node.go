@@ -23,21 +23,23 @@ import (
 
 type NodeFlags uint64
 
+const sizeofNodeFlags = 7
+
 func (NodeFlags) BinaryStaticSize() int {
-	return 7
+	return sizeofNodeFlags
 }
 
 func (f NodeFlags) MarshalBinary() ([]byte, error) {
 	var bs [8]byte
 	binary.LittleEndian.PutUint64(bs[:], uint64(f))
-	return bs[:7], nil
+	return bs[:sizeofNodeFlags], nil
 }
 
 func (f *NodeFlags) UnmarshalBinary(dat []byte) (int, error) {
 	var bs [8]byte
-	copy(bs[:7], dat[:7])
+	copy(bs[:sizeofNodeFlags], dat[:sizeofNodeFlags])
 	*f = NodeFlags(binary.LittleEndian.Uint64(bs[:]))
-	return 7, nil
+	return sizeofNodeFlags, nil
 }
 
 var (

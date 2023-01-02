@@ -35,7 +35,6 @@ linters:
     - godot
     - godox
     - goerr113
-    - gomnd
     - gomoddirectives
     - ireturn
     - lll
@@ -70,6 +69,12 @@ linters-settings:
       - appendAssign
   gofmt:
     simplify: true
+  gomnd:
+    ignored-numbers:
+      - '2'
+    ignored-functions:
+      - 'binutil.NeedNBytes'
+      - 'textui.Tunable'
   nolintlint:
     require-explanation: true
     require-specific: true

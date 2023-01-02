@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -56,6 +56,7 @@ func (a UUID) Cmp(b UUID) int {
 	return 0
 }
 
+//nolint:gomnd // This is all magic numbers.
 func ParseUUID(str string) (UUID, error) {
 	var ret UUID
 	j := 0

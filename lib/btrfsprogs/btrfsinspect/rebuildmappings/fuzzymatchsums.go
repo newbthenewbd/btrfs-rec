@@ -112,8 +112,8 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		if apply {
 			lvl = dlog.LogLevelInfo
 		}
-		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v%% (based on %v runs)",
-			i+1, numBlockgroups, bgLAddr, matchesStr, int(100*bgRun.PctFull()), len(bgRun.Runs))
+		dlog.Logf(ctx, lvl, "(%v/%v) blockgroup[laddr=%v] matches=[%s]; bestpossible=%v (based on %v runs)",
+			i+1, numBlockgroups, bgLAddr, matchesStr, number.Percent(bgRun.PctFull()), len(bgRun.Runs))
 		if !apply {
 			continue
 		}

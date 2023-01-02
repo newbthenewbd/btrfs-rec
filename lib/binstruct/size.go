@@ -28,6 +28,13 @@ var (
 	unmarshalerType = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
 )
 
+const (
+	sizeof8  = 1
+	sizeof16 = 2
+	sizeof32 = 4
+	sizeof64 = 8
+)
+
 func staticSize(typ reflect.Type) (int, error) {
 	if typ.Implements(staticSizerType) {
 		//nolint:forcetypeassert // Already did a type check via reflection.
@@ -43,13 +50,13 @@ func staticSize(typ reflect.Type) (int, error) {
 	}
 	switch typ.Kind() {
 	case reflect.Uint8, reflect.Int8:
-		return 1, nil
+		return sizeof8, nil
 	case reflect.Uint16, reflect.Int16:
-		return 2, nil
+		return sizeof16, nil
 	case reflect.Uint32, reflect.Int32:
-		return 4, nil
+		return sizeof32, nil
 	case reflect.Uint64, reflect.Int64:
-		return 8, nil
+		return sizeof64, nil
 	case reflect.Ptr:
 		return staticSize(typ.Elem())
 	case reflect.Array:

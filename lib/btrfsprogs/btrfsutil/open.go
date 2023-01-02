@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -31,8 +31,9 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 		}
 		bufFile := diskio.NewBufferedFile[btrfsvol.PhysicalAddr](
 			typedFile,
-			textui.Tunable[btrfsvol.PhysicalAddr](16384), // block size: 16KiB
-			textui.Tunable(1024),                         // number of blocks to buffer; total of 16MiB
+			//nolint:gomnd // False positive: gomnd.ignored-functions=[textui.Tunable] doesn't support type params.
+			textui.Tunable[btrfsvol.PhysicalAddr](16*1024), // block size: 16KiB
+			textui.Tunable(1024),                           // number of blocks to buffer; total of 16MiB
 		)
 		devFile := &btrfs.Device{
 			File: bufFile,

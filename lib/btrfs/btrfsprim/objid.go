@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -68,6 +68,7 @@ func (id ObjID) Format(typ ItemType) string {
 	case DEV_EXTENT_KEY:
 		return fmt.Sprintf("%d", int64(id))
 	case QGROUP_RELATION_KEY:
+		//nolint:gomnd // TODO: I'm not sure what the 48/16 bit split means.
 		return fmt.Sprintf("%d/%d",
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
