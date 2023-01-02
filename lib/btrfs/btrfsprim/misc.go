@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -22,8 +22,8 @@ type Key struct {
 	binstruct.End `bin:"off=0x11"`
 }
 
-func (k Key) String() string {
-	return fmt.Sprintf("{%v %v %v}", k.ObjectID, k.ItemType, k.Offset)
+func (key Key) String() string {
+	return fmt.Sprintf("{%v %v %v}", key.ObjectID, key.ItemType, key.Offset)
 }
 
 var MaxKey = Key{

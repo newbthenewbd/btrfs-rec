@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -120,7 +120,7 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 
 	var curOffset, endOffset int
 	for i := 0; i < structInfo.NumField(); i++ {
-		var fieldInfo reflect.StructField = structInfo.Field(i)
+		fieldInfo := structInfo.Field(i)
 
 		if fieldInfo.Anonymous && fieldInfo.Type != endType {
 			err := fmt.Errorf("binstruct does not support embedded fields")

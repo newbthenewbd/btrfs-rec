@@ -62,7 +62,7 @@ func main() {
 		panic(err)
 	}
 
-	var openFlag int = os.O_RDONLY
+	openFlag := os.O_RDONLY
 
 	argparserInspect := &cobra.Command{
 		Use:   "inspect {[flags]|SUBCOMMAND}",

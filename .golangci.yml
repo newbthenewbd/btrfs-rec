@@ -42,7 +42,6 @@ linters:
     - nlreturn
     - nonamedreturns
     - revive
-    - stylecheck
     - tagliatelle
     - testpackage
     - thelper
@@ -77,10 +76,17 @@ linters-settings:
     require-specific: true
     allow-no-explanation:
       - dupword
+  stylecheck:
+    checks:
+      - "all"
+      - "-ST1003" # CONST_VAL names for consistency with other btrfs code
 issues:
   exclude-rules:
     # Ignore false positives that don't actually have any words.
     - linters: [dupword]
       source: "^[^a-zA-Z]*$"
+    # https://github.com/dominikh/go-tools/issues/1347
+    - linters: [stylecheck]
+      text: '^ST1016: methods on the same type should have the same receiver name \(seen 1x "(a|dst)", \d+x "[^"]+"\)$'
   max-issues-per-linter: 0
   max-same-issues: 0
