@@ -88,7 +88,7 @@ func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
 }
 
 // IndexAll returns the starting-position of all possibly-overlapping
-// occurances of 'substr' in the 'str' sequence.
+// occurrences of 'substr' in the 'str' sequence.
 //
 // Will hop around in 'substr', but will only get the natural sequence
 // [0...) in order from 'str'.  When hopping around in 'substr' it

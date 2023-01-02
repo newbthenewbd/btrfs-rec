@@ -38,7 +38,6 @@ linters:
     - ireturn
     - lll
     - maintidx
-    - misspell
     - nakedret
     - nestif
     - nilerr

@@ -266,14 +266,14 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	// >     2: [A]
 	// >     3: [B]
 	// >
-	// > legal solution woudl be `[]`, `[A]` or `[B]`.  It would not be legal
+	// > legal solution would be `[]`, `[A]` or `[B]`.  It would not be legal
 	// > to return `[A, B]`.
 	//
 	// The algorithm should optimize for the following goals:
 	//
 	//  - We prefer that each input list have an item in the return set.
 	//
-	//    > In Example 1, while `[]`, `[B]`, and `[C]` are permissable
+	//    > In Example 1, while `[]`, `[B]`, and `[C]` are permissible
 	//    > solutions, they are not optimal, because one or both of the input
 	//    > lists are not represented.
 	//    >
@@ -299,7 +299,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, listsWithDistances 
 	//  - We prefer items that appear in more lists over items that appear in
 	//    fewer lists.
 	//
-	// The relative priority of these 4 goals is undefined; preferrably the
+	// The relative priority of these 4 goals is undefined; preferably the
 	// algorithm should be defined in a way that makes it easy to adjust the
 	// relative priorities.
 
