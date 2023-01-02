@@ -53,14 +53,16 @@ type rebuilder struct {
 
 	rebuilt *btrees.RebuiltForrest
 
-	curKey       keyAndTree
-	treeQueue    containers.Set[btrfsprim.ObjID]
-	itemQueue    containers.Set[keyAndTree]
-	augmentQueue map[btrfsprim.ObjID]*treeAugmentQueue
-	numAugments  int
+	curKey             keyAndTree
+	treeQueue          containers.Set[btrfsprim.ObjID]
+	itemQueue          containers.Set[keyAndTree]
+	augmentQueue       map[btrfsprim.ObjID]*treeAugmentQueue
+	numAugments        int
+	numAugmentFailures int
 }
 
 type treeAugmentQueue struct {
+	zero   map[string]struct{}
 	single map[string]btrfsvol.LogicalAddr
 	multi  map[string]containers.Set[btrfsvol.LogicalAddr]
 }
@@ -100,12 +102,13 @@ func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.Logi
 type itemStats struct {
 	textui.Portion[int]
 	NumAugments     int
+	NumFailures     int
 	NumAugmentTrees int
 }
 
 func (s itemStats) String() string {
-	return textui.Sprintf("%v (queued %v augments across %v trees)",
-		s.Portion, s.NumAugments, s.NumAugmentTrees)
+	return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
+		s.Portion, s.NumAugments, s.NumFailures, s.NumAugmentTrees)
 }
 
 func (o *rebuilder) Rebuild(_ctx context.Context) error {
@@ -193,6 +196,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 					}
 					progress.N++
 					progress.NumAugments = o.numAugments
+					progress.NumFailures = o.numAugmentFailures
 					progress.NumAugmentTrees = len(o.augmentQueue)
 					progressWriter.Set(progress)
 				}
@@ -219,6 +223,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			}
 			o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
 			o.numAugments = 0
+			o.numAugmentFailures = 0
 			runtime.GC()
 			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
@@ -328,6 +333,9 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		Generation btrfsprim.Generation
 	}
 	choices := make(map[btrfsvol.LogicalAddr]ChoiceInfo)
+	// o.augmentQueue[treeID].zero is optimized storage for lists
+	// with zero items.  Go ahead and free that memory up.
+	o.augmentQueue[treeID].zero = nil
 	// o.augmentQueue[treeID].single is optimized storage for
 	// lists with exactly 1 item.
 	for _, choice := range o.augmentQueue[treeID].single {
@@ -469,6 +477,11 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 
 func (o *rebuilder) hasAugment(treeID btrfsprim.ObjID, wantKey string) bool {
 	if treeQueue, ok := o.augmentQueue[treeID]; ok {
+		if treeQueue.zero != nil {
+			if _, ok := treeQueue.zero[wantKey]; ok {
+				return true
+			}
+		}
 		if treeQueue.single != nil {
 			if _, ok := treeQueue.single[wantKey]; ok {
 				return true
@@ -484,27 +497,32 @@ func (o *rebuilder) hasAugment(treeID btrfsprim.ObjID, wantKey string) bool {
 }
 
 func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
-	if len(choices) == 0 {
-		choices = nil
-		dlog.Error(ctx, "could not find wanted item")
-	} else {
-		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
-	}
 	if o.augmentQueue[treeID] == nil {
 		o.augmentQueue[treeID] = new(treeAugmentQueue)
 	}
-	if len(choices) == 1 {
+	switch len(choices) {
+	case 0:
+		dlog.Error(ctx, "could not find wanted item")
+		if o.augmentQueue[treeID].zero == nil {
+			o.augmentQueue[treeID].zero = make(map[string]struct{})
+		}
+		o.augmentQueue[treeID].zero[wantKey] = struct{}{}
+		o.numAugmentFailures++
+	case 1:
+		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
 		if o.augmentQueue[treeID].single == nil {
 			o.augmentQueue[treeID].single = make(map[string]btrfsvol.LogicalAddr)
 		}
 		o.augmentQueue[treeID].single[wantKey] = choices.TakeOne()
-	} else {
+		o.numAugments++
+	default:
+		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
 		if o.augmentQueue[treeID].multi == nil {
 			o.augmentQueue[treeID].multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
 		}
 		o.augmentQueue[treeID].multi[wantKey] = choices
+		o.numAugments++
 	}
-	o.numAugments++
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
