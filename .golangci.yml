@@ -3,11 +3,70 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 linters:
+  enable-all: true
   disable:
-    - structcheck # doesn't support Go 1.18 yet
-  enable:
-    - forbidigo
-    - gofmt
+    # Deprecated
+    - deadcode         # deprecated, replaced by 'unused'
+    - exhaustivestruct # deprecated, replaced by 'exhauststruct'
+    - golint           # deprecated, replaced by 'revive'
+    - ifshort          # deprecated
+    - interfacer       # deprecated
+    - maligned         # deprecated, replaced by 'govet fieldalignement'
+    - nosnakecase      # deprecated, replaced by 'revive var-naming'
+    - scopelint        # deprecated, replaced by 'exportloopref'
+    - structcheck      # deprecated, replaced by 'unused'
+    - varcheck         # deprecated, replaced by 'unused'
+
+    # Don't support Go 1.18 generics yet
+    - rowserrcheck
+    - sqlclosecheck
+    - wastedassign
+
+    # These are disabled not because I think they're bad, but because
+    # they currently don't pass, and I haven't evaluated them yet.
+    - containedctx
+    - cyclop
+    - dogsled
+    - dupword
+    - errorlint
+    - exhaustive
+    - exhaustruct
+    - forcetypeassert
+    - funlen
+    - gci
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - goerr113
+    - gofumpt
+    - gomnd
+    - gomoddirectives
+    - ireturn
+    - lll
+    - maintidx
+    - misspell
+    - nakedret
+    - nestif
+    - nilerr
+    - nlreturn
+    - nonamedreturns
+    - paralleltest
+    - predeclared
+    - revive
+    - stylecheck
+    - tagliatelle
+    - testpackage
+    - thelper
+    - unconvert
+    - unparam
+    - varnamelen
+    - whitespace
+    - wrapcheck
+    - wsl
 linters-settings:
   gofmt:
     simplify: true
