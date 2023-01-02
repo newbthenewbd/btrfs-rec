@@ -137,6 +137,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 				if err := _ctx.Err(); err != nil {
 					return err
 				}
+				o.curKey = keyAndTree{TreeID: treeID}
 				o.rebuilt.Tree(stepCtx, treeID)
 			}
 		}
@@ -242,6 +243,14 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 	return nil
 }
 
+func (o *rebuilder) enqueueRetry() {
+	if o.curKey.Key == (btrfsprim.Key{}) {
+		o.treeQueue.Insert(o.curKey.TreeID)
+	} else {
+		o.itemQueue.Insert(o.curKey)
+	}
+}
+
 func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	o.itemQueue.Insert(keyAndTree{
 		TreeID: tree,
@@ -262,7 +271,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", wantKey)
 	key.Key, ok = o._want(ctx, key.TreeID, wantKey, key.ObjectID, key.ItemType)
 	if !ok {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return 0, btrfsitem.Root{}, false
 	}
 	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
@@ -287,7 +296,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 	key := keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: btrfsitem.UUIDToKey(uuid)}
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", key.String())
 	if !o._wantOff(ctx, key.TreeID, key.String(), key.Key) {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return 0, false
 	}
 	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
@@ -515,7 +524,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return btrfsprim.Key{}, false
 	}
 
@@ -563,7 +572,7 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, tgt btrfsprim.Key) (ok bool) {
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return false
 	}
 
@@ -591,7 +600,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, wantKe
 
 func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(keyio.ItemPtr) bool) {
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return
 	}
 
@@ -655,7 +664,7 @@ func (o *rebuilder) _wantRange(
 		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return
 	}
 
@@ -844,7 +853,7 @@ func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inod
 	}
 	inodeCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", inodeKey.String())
 	if !o._wantOff(inodeCtx, inodeKey.TreeID, inodeKey.String(), inodeKey.Key) {
-		o.itemQueue.Insert(o.curKey)
+		o.enqueueRetry()
 		return
 	}
 	inodeBody, ok := o.rebuilt.Tree(inodeCtx, inodeKey.TreeID).ReadItem(inodeCtx, inodeKey.Key)
