@@ -87,13 +87,15 @@ func (sv *Subvolume) init() {
 			return
 		}
 
-		rootBody, ok := root.Body.(btrfsitem.Root)
-		if !ok {
-			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body")
-			return
+		switch rootBody := root.Body.(type) {
+		case btrfsitem.Root:
+			sv.rootVal = rootBody
+		case btrfsitem.Error:
+			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
+		default:
+			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
 		}
 
-		sv.rootVal = rootBody
 	})
 }
 
@@ -117,12 +119,14 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 			return
 		}
 
-		itemBody, ok := item.Body.(btrfsitem.Inode)
-		if !ok {
-			val.Errs = append(val.Errs, fmt.Errorf("malformed inode"))
-			return
+		switch itemBody := item.Body.(type) {
+		case btrfsitem.Inode:
+			val.InodeItem = &itemBody
+		case btrfsitem.Error:
+			val.Errs = append(val.Errs, fmt.Errorf("malformed inode: %w", itemBody.Err))
+		default:
+			panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
 		}
-		val.InodeItem = &itemBody
 
 		return
 	})
