@@ -1,5 +1,5 @@
 // Copyright (C) 2019-2022  Ambassador Labs
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -159,6 +159,7 @@ var (
 )
 
 func init() {
+	//nolint:dogsled // I can't change the signature of the stdlib.
 	_, file, _, _ := runtime.Caller(0)
 	thisModDir = filepath.Dir(filepath.Dir(filepath.Dir(file)))
 }
