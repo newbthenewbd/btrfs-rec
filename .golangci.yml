@@ -24,7 +24,6 @@ linters:
 
     # These are disabled not because I think they're bad, but because
     # they currently don't pass, and I haven't evaluated them yet.
-    - containedctx
     - cyclop
     - dogsled
     - dupword

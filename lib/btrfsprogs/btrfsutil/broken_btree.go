@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -57,7 +57,7 @@ func newTreeIndex(arena *SkinnyPathArena) treeIndex {
 }
 
 type brokenTrees struct {
-	ctx   context.Context
+	ctx   context.Context //nolint:containedctx // don't have an option while keeping the same API
 	inner *btrfs.FS
 
 	arena *SkinnyPathArena
