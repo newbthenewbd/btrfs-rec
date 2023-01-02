@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -14,6 +14,7 @@ import (
 )
 
 func TestBuildKMPTable(t *testing.T) {
+	t.Parallel()
 	substr := SliceSequence[int64, byte]([]byte("ababaa"))
 	table, err := buildKMPTable[int64, byte](substr)
 	require.NoError(t, err)
@@ -81,6 +82,7 @@ func (re RESeq) Get(i int64) (byte, error) {
 }
 
 func TestKMPWildcard(t *testing.T) {
+	t.Parallel()
 	type testcase struct {
 		InStr      string
 		InSubstr   string
@@ -111,6 +113,7 @@ func TestKMPWildcard(t *testing.T) {
 	for tcName, tc := range testcases {
 		tc := tc
 		t.Run(tcName, func(t *testing.T) {
+			t.Parallel()
 			matches, err := IndexAll[int64, byte](
 				StringSequence[int64](tc.InStr),
 				RESeq(tc.InSubstr))
