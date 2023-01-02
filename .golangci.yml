@@ -70,6 +70,9 @@ linters:
 linters-settings:
   gofmt:
     simplify: true
+  nolintlint:
+    require-explanation: true
+    require-specific: true
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
