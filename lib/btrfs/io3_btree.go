@@ -17,12 +17,15 @@ import (
 func (fs *FS) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
 	btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeWalk(ctx, treeID, errHandle, cbs)
 }
+
 func (fs *FS) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
 	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeLookup(treeID, key)
 }
+
 func (fs *FS) TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (btrfstree.Item, error) {
 	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearch(treeID, fn)
 }
+
 func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]btrfstree.Item, error) {
 	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, fn)
 }

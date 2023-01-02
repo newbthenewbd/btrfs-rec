@@ -386,6 +386,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
 	o._want(ctx, treeID, objID, typ)
 }
+
 func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.itemQueue = append(o.itemQueue, o.curKey)
@@ -429,6 +430,7 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", keyAndTree{TreeID: treeID, Key: key})
 	o._wantOff(ctx, treeID, key)
 }
+
 func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, tgt btrfsprim.Key) (ok bool) {
 	if !o.rebuilt.AddTree(ctx, treeID) {
 		o.itemQueue = append(o.itemQueue, o.curKey)

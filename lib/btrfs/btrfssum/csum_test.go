@@ -22,7 +22,6 @@ func TestCSumFormat(t *testing.T) {
 	}
 	csum := btrfssum.CSum{0xbd, 0x7b, 0x41, 0xf4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
 	testcases := map[string]TestCase{
-
 		"s":     {InputSum: csum, InputFmt: "%s", Output: "bd7b41f400000000000000000000000000000000000000000000000000000000"},
 		"x":     {InputSum: csum, InputFmt: "%x", Output: "bd7b41f400000000000000000000000000000000000000000000000000000000"},
 		"v":     {InputSum: csum, InputFmt: "%v", Output: "bd7b41f400000000000000000000000000000000000000000000000000000000"},

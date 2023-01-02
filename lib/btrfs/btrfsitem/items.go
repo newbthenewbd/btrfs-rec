@@ -70,7 +70,6 @@ func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) It
 			Dat: dat,
 			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): %w", key.ItemType, err),
 		}
-
 	}
 	if n < len(dat) {
 		return Error{

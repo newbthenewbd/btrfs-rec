@@ -144,11 +144,11 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 		Size:  uint64(itemBody.Size),
 		Nlink: uint32(itemBody.NLink),
 		Mode:  uint32(itemBody.Mode),
-		//RDev: itemBody.Rdev, // jacobsa/fuse doesn't expose rdev
+		// RDev: itemBody.Rdev, // jacobsa/fuse doesn't expose rdev
 		Atime: itemBody.ATime.ToStd(),
 		Mtime: itemBody.MTime.ToStd(),
 		Ctime: itemBody.CTime.ToStd(),
-		//Crtime: itemBody.OTime,
+		// Crtime: itemBody.OTime,
 		Uid: uint32(itemBody.UID),
 		Gid: uint32(itemBody.GID),
 	}
@@ -260,7 +260,7 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 			Child: 2, // an inode number that a real file will never have
 			Attributes: fuseops.InodeAttributes{
 				Nlink: 1,
-				Mode:  uint32(btrfsitem.ModeFmtDir | 0700),
+				Mode:  uint32(btrfsitem.ModeFmtDir | 0o700),
 			},
 		}
 		return nil
@@ -315,6 +315,7 @@ func (sv *subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 	op.Handle = handle
 	return nil
 }
+
 func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	state, ok := sv.dirHandles.Load(op.Handle)
 	if !ok {
@@ -348,6 +349,7 @@ func (sv *subvolume) ReadDir(_ context.Context, op *fuseops.ReadDirOp) error {
 	}
 	return nil
 }
+
 func (sv *subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirHandleOp) error {
 	_, ok := sv.dirHandles.LoadAndDelete(op.Handle)
 	if !ok {
@@ -369,6 +371,7 @@ func (sv *subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
 	op.KeepPageCache = true
 	return nil
 }
+
 func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 	state, ok := sv.fileHandles.Load(op.Handle)
 	if !ok {
@@ -392,6 +395,7 @@ func (sv *subvolume) ReadFile(_ context.Context, op *fuseops.ReadFileOp) error {
 
 	return err
 }
+
 func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFileHandleOp) error {
 	_, ok := sv.fileHandles.LoadAndDelete(op.Handle)
 	if !ok {

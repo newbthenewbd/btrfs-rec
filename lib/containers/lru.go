@@ -36,10 +36,12 @@ func (c *LRUCache[K, V]) Add(key K, value V) {
 	c.init()
 	c.inner.Add(key, value)
 }
+
 func (c *LRUCache[K, V]) Contains(key K) bool {
 	c.init()
 	return c.inner.Contains(key)
 }
+
 func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 	c.init()
 	_value, ok := c.inner.Get(key)
@@ -49,6 +51,7 @@ func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 	}
 	return value, ok
 }
+
 func (c *LRUCache[K, V]) Keys() []K {
 	c.init()
 	untyped := c.inner.Keys()
@@ -59,10 +62,12 @@ func (c *LRUCache[K, V]) Keys() []K {
 	}
 	return typed
 }
+
 func (c *LRUCache[K, V]) Len() int {
 	c.init()
 	return c.inner.Len()
 }
+
 func (c *LRUCache[K, V]) Peek(key K) (value V, ok bool) {
 	c.init()
 	_value, ok := c.inner.Peek(key)
@@ -72,10 +77,12 @@ func (c *LRUCache[K, V]) Peek(key K) (value V, ok bool) {
 	}
 	return value, ok
 }
+
 func (c *LRUCache[K, V]) Purge() {
 	c.init()
 	c.inner.Purge()
 }
+
 func (c *LRUCache[K, V]) Remove(key K) {
 	c.init()
 	c.inner.Remove(key)

@@ -34,6 +34,7 @@ func (x U16le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf[:], uint16(x))
 	return buf[:], nil
 }
+
 func (x *U16le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 2); err != nil {
 		return 0, err
@@ -50,6 +51,7 @@ func (x U32le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[:], uint32(x))
 	return buf[:], nil
 }
+
 func (x *U32le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 4); err != nil {
 		return 0, err
@@ -66,6 +68,7 @@ func (x U64le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint64(buf[:], uint64(x))
 	return buf[:], nil
 }
+
 func (x *U64le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 8); err != nil {
 		return 0, err
@@ -84,6 +87,7 @@ func (x U16be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[:], uint16(x))
 	return buf[:], nil
 }
+
 func (x *U16be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 2); err != nil {
 		return 0, err
@@ -100,6 +104,7 @@ func (x U32be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint32(buf[:], uint32(x))
 	return buf[:], nil
 }
+
 func (x *U32be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 4); err != nil {
 		return 0, err
@@ -116,6 +121,7 @@ func (x U64be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint64(buf[:], uint64(x))
 	return buf[:], nil
 }
+
 func (x *U64be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 8); err != nil {
 		return 0, err
@@ -148,6 +154,7 @@ func (x I16le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf[:], uint16(x))
 	return buf[:], nil
 }
+
 func (x *I16le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 2); err != nil {
 		return 0, err
@@ -164,6 +171,7 @@ func (x I32le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[:], uint32(x))
 	return buf[:], nil
 }
+
 func (x *I32le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 4); err != nil {
 		return 0, err
@@ -180,6 +188,7 @@ func (x I64le) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint64(buf[:], uint64(x))
 	return buf[:], nil
 }
+
 func (x *I64le) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 8); err != nil {
 		return 0, err
@@ -198,6 +207,7 @@ func (x I16be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[:], uint16(x))
 	return buf[:], nil
 }
+
 func (x *I16be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 2); err != nil {
 		return 0, err
@@ -214,6 +224,7 @@ func (x I32be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint32(buf[:], uint32(x))
 	return buf[:], nil
 }
+
 func (x *I32be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 4); err != nil {
 		return 0, err
@@ -230,6 +241,7 @@ func (x I64be) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint64(buf[:], uint64(x))
 	return buf[:], nil
 }
+
 func (x *I64be) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 8); err != nil {
 		return 0, err

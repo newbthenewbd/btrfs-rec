@@ -72,9 +72,7 @@ type Portion[T constraints.Integer] struct {
 	N, D T
 }
 
-var (
-	_ fmt.Stringer = Portion[int]{}
-)
+var _ fmt.Stringer = Portion[int]{}
 
 // String implements fmt.Stringer.
 func (p Portion[T]) String() string {

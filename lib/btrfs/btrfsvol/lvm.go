@@ -82,6 +82,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Close() error {
 	}
 	return nil
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev PhysicalVolume) error {
 	lv.init()
 	if other, exists := lv.id2pv[id]; exists {
@@ -121,9 +122,11 @@ type Mapping struct {
 func (lv *LogicalVolume[PhysicalVolume]) CouldAddMapping(m Mapping) bool {
 	return lv.addMapping(m, true) == nil
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 	return lv.addMapping(m, false)
 }
+
 func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) error {
 	lv.init()
 	// sanity check

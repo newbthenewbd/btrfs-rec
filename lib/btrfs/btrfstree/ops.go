@@ -504,7 +504,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 	}
 	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).FromItemIdx]
 
-	var ret = []Item{middleItem}
+	ret := []Item{middleItem}
 	var errs derror.MultiError
 	for prevPath, prevNode := middlePath, middleNode; true; {
 		prevPath, prevNode, err = fs.prev(prevPath, prevNode)

@@ -95,7 +95,6 @@ func (sv *Subvolume) init() {
 		default:
 			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
 		}
-
 	})
 }
 

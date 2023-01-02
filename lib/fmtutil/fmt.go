@@ -52,7 +52,8 @@ func FormatByteArrayStringer(
 		fmt.Formatter
 	},
 	objBytes []byte,
-	f fmt.State, verb rune) {
+	f fmt.State, verb rune,
+) {
 	switch verb {
 	case 'v':
 		if !f.Flag('#') {
