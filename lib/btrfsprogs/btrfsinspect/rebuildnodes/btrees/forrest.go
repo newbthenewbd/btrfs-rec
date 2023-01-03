@@ -105,9 +105,16 @@ func (ts *RebuiltForrest) Tree(ctx context.Context, treeID btrfsprim.ObjID) *Reb
 }
 
 func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, stack []btrfsprim.ObjID) (ok bool) {
-	if _, ok := ts.trees.Load(treeID); ok {
-		return true
+	if tree, ok := ts.trees.Load(treeID); ok {
+		return tree != nil
 	}
+	defer func() {
+		if !ok {
+			// Store a negative cache of this.  tree.AddRoot() for the ROOT or UUID
+			// trees will invalidate the negative cache.
+			ts.trees.Store(treeID, nil)
+		}
+	}()
 	if slices.Contains(treeID, stack) {
 		return false
 	}
@@ -173,7 +180,9 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 func (ts *RebuiltForrest) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
 	ts.trees.Range(func(treeID btrfsprim.ObjID, tree *RebuiltTree) bool {
-		ret[treeID] = tree.Roots
+		if tree != nil {
+			ret[treeID] = tree.Roots
+		}
 		return true
 	})
 	return ret

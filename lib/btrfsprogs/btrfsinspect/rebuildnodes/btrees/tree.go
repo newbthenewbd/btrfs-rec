@@ -171,6 +171,15 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	stats.Leafs.N = len(leafToRoots)
 	progressWriter.Set(stats)
 	progressWriter.Done()
+
+	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
+		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
+			if otherTree == nil {
+				tree.forrest.trees.Delete(otherTreeID)
+			}
+			return true
+		})
+	}
 }
 
 // .Items() and .PotentialItems() //////////////////////////////////////////////////////////////////////////////////////
