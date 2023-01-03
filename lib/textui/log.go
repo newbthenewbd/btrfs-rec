@@ -180,7 +180,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 
 	// time ////////////////////////////////////////////////////////////////
 	now := time.Now()
-	const timeFmt = "2006-01-02 15:04:05.0000"
+	const timeFmt = "15:04:05.0000"
 	logBuf.WriteString(timeFmt)
 	now.AppendFormat(logBuf.Bytes()[:0], timeFmt)
 
@@ -372,6 +372,7 @@ func writeField(w io.Writer, key string, val any) {
 			if strings.HasPrefix(valStr, "/main/") {
 				valStr = strings.TrimPrefix(valStr, "/main")
 			}
+			valStr = strings.TrimPrefix(valStr, "/")
 		}
 	case strings.HasSuffix(name, ".pass"):
 		fmt.Fprintf(w, "/pass-%s", valStr)

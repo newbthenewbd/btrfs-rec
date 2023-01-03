@@ -109,7 +109,8 @@ type itemStats struct {
 }
 
 func (s itemStats) String() string {
-	return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
+	// return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
+	return textui.Sprintf("%v (aug:%v fail:%v trees:%v)",
 		s.Portion, s.NumAugments, s.NumFailures, s.NumAugmentTrees)
 }
 
