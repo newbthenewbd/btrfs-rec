@@ -911,27 +911,28 @@ func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inod
 		o.enqueueRetry()
 		return
 	}
-	inodeBody, ok := o.rebuilt.Tree(inodeCtx, inodeKey.TreeID).ReadItem(inodeCtx, inodeKey.Key)
+	inodePtr, ok := o.rebuilt.Tree(inodeCtx, inodeKey.TreeID).Items(inodeCtx).Load(inodeKey.Key)
 	if !ok {
-		o.ioErr(inodeCtx, fmt.Errorf("could not read previously read item: %v", inodeKey))
+		panic(fmt.Errorf("should not happen: could not load key: %v", inodeKey))
 	}
-	switch inodeBody := inodeBody.(type) {
-	case btrfsitem.Inode:
-		if inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) {
-			return
-		}
-		beg = roundDown(beg, btrfssum.BlockSize)
-		end = roundUp(end, btrfssum.BlockSize)
-		const treeID = btrfsprim.CSUM_TREE_OBJECTID
-		o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
-			uint64(beg), uint64(end))
-	case btrfsitem.Error:
-		o.fsErr(inodeCtx, fmt.Errorf("error decoding item: %v: %w", inodeKey, inodeBody.Err))
-	default:
-		// This is a panic because the item decoder should not emit INODE_ITEM items as anything but
-		// btrfsitem.Inode or btrfsitem.Error without this code also being updated.
-		panic(fmt.Errorf("should not happen: INODE_ITEM item has unexpected type: %T", inodeBody))
+	inodeFlags, ok := o.keyIO.Flags[inodePtr]
+	if !ok {
+		panic(fmt.Errorf("should not happen: INODE_ITEM did not have flags recorded"))
 	}
+	if inodeFlags.Err != nil {
+		o.fsErr(inodeCtx, inodeFlags.Err)
+		return
+	}
+
+	if inodeFlags.NoDataSum {
+		return
+	}
+
+	beg = roundDown(beg, btrfssum.BlockSize)
+	end = roundUp(end, btrfssum.BlockSize)
+	const treeID = btrfsprim.CSUM_TREE_OBJECTID
+	o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
+		uint64(beg), uint64(end))
 }
 
 // wantFileExt implements rebuildCallbacks.
