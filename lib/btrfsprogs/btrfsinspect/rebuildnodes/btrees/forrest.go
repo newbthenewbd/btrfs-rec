@@ -150,7 +150,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			if !ok {
 				return false
 			}
-			if !ts.addTree(ctx, parentID, append(stack, treeID)) {
+			if !ts.addTree(ctx, parentID, stack) {
 				return false
 			}
 			tree.Parent, _ = ts.trees.Load(parentID)
