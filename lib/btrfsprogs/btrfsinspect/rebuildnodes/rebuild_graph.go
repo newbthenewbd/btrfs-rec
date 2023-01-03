@@ -23,6 +23,28 @@ type rebuildCallbacks interface {
 	wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
 }
 
+// handleWouldBeNoOp returns whether or not a call to handleItem for a
+// given item type would be a no-op.
+func handleWouldBeNoOp(typ btrfsprim.ItemType) bool {
+	switch typ {
+	case // btrfsitem.Dev
+		btrfsprim.DEV_ITEM_KEY,
+		// btrfsitem.DevStats
+		btrfsprim.PERSISTENT_ITEM_KEY,
+		// btrfsitem.Empty
+		btrfsprim.ORPHAN_ITEM_KEY,
+		btrfsprim.TREE_BLOCK_REF_KEY,
+		btrfsprim.SHARED_BLOCK_REF_KEY,
+		btrfsprim.FREE_SPACE_EXTENT_KEY,
+		btrfsprim.QGROUP_RELATION_KEY,
+		// btrfsite.ExtentCSum
+		btrfsprim.EXTENT_CSUM_KEY:
+		return true
+	default:
+		return false
+	}
+}
+
 func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
 	// Notionally, just express the relationships shown in
 	// https://btrfs.wiki.kernel.org/index.php/File:References.png (from the page

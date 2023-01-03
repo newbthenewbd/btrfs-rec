@@ -259,6 +259,9 @@ func (o *rebuilder) enqueueRetry() {
 }
 
 func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
+	if handleWouldBeNoOp(key.ItemType) {
+		return
+	}
 	o.itemQueue.Insert(keyAndTree{
 		TreeID: tree,
 		Key:    key,
