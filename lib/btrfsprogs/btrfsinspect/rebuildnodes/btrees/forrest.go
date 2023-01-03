@@ -115,12 +115,13 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			ts.trees.Store(treeID, nil)
 		}
 	}()
-	if slices.Contains(treeID, stack) {
-		return false
-	}
 	stack = append(stack, treeID)
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree", stack)
 	dlog.Info(ctx, "adding tree...")
+	if slices.Contains(treeID, stack[:len(stack)-1]) {
+		dlog.Errorf(ctx, "failed to add tree: loop detected: %v", stack)
+		return false
+	}
 
 	tree := &RebuiltTree{
 		ID:      treeID,
@@ -140,10 +141,12 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 		root = ts.sb.BlockGroupRoot
 	default:
 		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
+			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")
 			return false
 		}
 		rootOff, rootItem, ok := ts.cbLookupRoot(ctx, treeID)
 		if !ok {
+			dlog.Error(ctx, "failed to add tree: lookup ROOT_ITEM")
 			return false
 		}
 		root = rootItem.ByteNr
@@ -155,9 +158,11 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			}
 			parentID, ok := ts.cbLookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
+				dlog.Error(ctx, "failed to add tree: lookup UUID")
 				return false
 			}
 			if !ts.addTree(ctx, parentID, stack) {
+				dlog.Error(ctx, "failed to add tree: add parent tree")
 				return false
 			}
 			tree.Parent, _ = ts.trees.Load(parentID)
