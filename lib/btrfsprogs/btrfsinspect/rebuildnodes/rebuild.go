@@ -723,8 +723,8 @@ func (o *rebuilder) _wantRange(
 		return
 	}
 
-	sizeFn := func(key btrfsprim.Key) (uint64, error) {
-		ptr, ok := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Load(key)
+	sizeFn := func(items *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr], key btrfsprim.Key) (uint64, error) {
+		ptr, ok := items.Load(key)
 		if !ok {
 			panic(fmt.Errorf("should not happen: could not load key: %v", keyAndTree{TreeID: treeID, Key: key}))
 		}
@@ -776,7 +776,7 @@ func (o *rebuilder) _wantRange(
 			}
 		},
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr) bool {
-			runSize, err := sizeFn(runKey)
+			runSize, err := sizeFn(o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx), runKey)
 			if err != nil {
 				o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: runKey}, err))
 				return true
@@ -848,7 +848,7 @@ func (o *rebuilder) _wantRange(
 				}
 			},
 			func(k btrfsprim.Key, v keyio.ItemPtr) bool {
-				runSize, err := sizeFn(k)
+				runSize, err := sizeFn(o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx), k)
 				if err != nil {
 					o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: k}, err))
 					return true

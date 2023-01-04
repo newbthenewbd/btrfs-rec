@@ -40,8 +40,8 @@ type RebuiltTree struct {
 	// evicted.
 	//
 	//  1. tree.leafToRoots()    = tree.forrest.leafs.Load(tree.ID)
-	//  2. tree.PotentialItems() = tree.forrest.allItems.Load(tree.ID)
-	//  3. tree.Items()          = tree.forrest.incItems.Load(tree.ID)
+	//  2. tree.Items()          = tree.forrest.incItems.Load(tree.ID)
+	//  3. tree.PotentialItems() = tree.forrest.excItems.Load(tree.ID)
 }
 
 // LRU member 1: .leafToRoots() ////////////////////////////////////////////////////////////////////////////////////////
@@ -149,9 +149,9 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-all-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.allItems,
-		func(_ containers.Set[btrfsvol.LogicalAddr]) bool {
-			return true
+	return tree.items(ctx, tree.forrest.excItems,
+		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
+			return !tree.Roots.HasAny(roots)
 		})
 }
 

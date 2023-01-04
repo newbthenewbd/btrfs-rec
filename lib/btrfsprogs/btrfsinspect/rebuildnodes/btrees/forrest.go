@@ -64,8 +64,8 @@ type RebuiltForrest struct {
 	// mutable
 	trees    containers.SyncMap[btrfsprim.ObjID, *RebuiltTree]
 	leafs    *containers.LRUCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	allItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 	incItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
+	excItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
@@ -86,8 +86,8 @@ func NewRebuiltForrest(
 		cbLookupUUID: cbLookupUUID,
 
 		leafs:    containers.NewLRUCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](textui.Tunable(8)),
-		allItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
 		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
+		excItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
 	}
 }
 
