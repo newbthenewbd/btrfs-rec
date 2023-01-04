@@ -34,9 +34,10 @@ type RebuiltTree struct {
 	// mutable
 	mu    sync.Mutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
-	Leafs containers.Set[btrfsvol.LogicalAddr]
 	// There are 3 more mutable "members" that are protected by
-	// `mu`; but they live in a shared LRUcache:
+	// `mu`; but they live in a shared LRUcache.  They are all
+	// derived from tree.Roots, which is why it's OK if they get
+	// evicted.
 	//
 	//  1. tree.leafToRoots()    = tree.forrest.leafs.Load(tree.ID)
 	//  2. tree.PotentialItems() = tree.forrest.allItems.Load(tree.ID)
@@ -138,7 +139,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.incItems, maps.SortedKeys(tree.Leafs))
+	return tree.items(ctx, tree.forrest.incItems, tree.Roots.HasAny)
 }
 
 // PotentialItems returns a map of items that could be added to this
@@ -148,7 +149,10 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-all-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.allItems, maps.SortedKeys(tree.leafToRoots(ctx)))
+	return tree.items(ctx, tree.forrest.allItems,
+		func(_ containers.Set[btrfsvol.LogicalAddr]) bool {
+			return true
+		})
 }
 
 type itemIndex struct {
@@ -168,9 +172,20 @@ func (s itemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex], leafs []btrfsvol.LogicalAddr) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex],
+	leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool,
+) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
+
+	var leafs []btrfsvol.LogicalAddr
+	for leaf, roots := range tree.leafToRoots(ctx) {
+		if leafFn(roots) {
+			leafs = append(leafs, leaf)
+		}
+	}
+	slices.Sort(leafs)
+
 	index := cache.GetOrElse(tree.ID, func() *itemIndex {
 		return &itemIndex{
 			Leafs: make(containers.Set[btrfsvol.LogicalAddr]),
@@ -269,21 +284,20 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
-	tree.Roots.Insert(rootNode)
+
+	leafToRoots := tree.leafToRoots(ctx)
 
 	var stats rootStats
-	leafToRoots := tree.leafToRoots(ctx)
 	stats.Leafs.D = len(leafToRoots)
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	for i, leaf := range maps.SortedKeys(leafToRoots) {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
 
-		if tree.Leafs.Has(leaf) || !leafToRoots[leaf].Has(rootNode) {
+		if tree.Roots.HasAny(leafToRoots[leaf]) || !leafToRoots[leaf].Has(rootNode) {
 			continue
 		}
 
-		tree.Leafs.Insert(leaf)
 		stats.AddedLeafs++
 		progressWriter.Set(stats)
 
@@ -296,6 +310,8 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	stats.Leafs.N = len(leafToRoots)
 	progressWriter.Set(stats)
 	progressWriter.Done()
+
+	tree.Roots.Insert(rootNode)
 
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
 		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {

@@ -126,7 +126,6 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	tree := &RebuiltTree{
 		ID:      treeID,
 		Roots:   make(containers.Set[btrfsvol.LogicalAddr]),
-		Leafs:   make(containers.Set[btrfsvol.LogicalAddr]),
 		forrest: ts,
 	}
 	var root btrfsvol.LogicalAddr
