@@ -290,9 +290,9 @@ func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bo
 			// Retain the old higher-gen one.
 			return false
 		default:
-			// This is a panic because I'm not really sure what the best way to
-			// handle this is, and so if this happens I want the program to crash
-			// and force me to figure out how to handle it.
+			// TODO: This is a panic because I'm not really sure what the
+			// best way to handle this is, and so if this happens I want the
+			// program to crash and force me to figure out how to handle it.
 			panic(fmt.Errorf("dup nodes in tree=%v: old=%v=%v ; new=%v=%v",
 				tree.ID,
 				oldNode, tree.forrest.graph.Nodes[oldNode],
