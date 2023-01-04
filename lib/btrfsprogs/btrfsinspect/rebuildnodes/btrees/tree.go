@@ -35,9 +35,15 @@ type RebuiltTree struct {
 	mu    sync.Mutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	Leafs containers.Set[btrfsvol.LogicalAddr]
+	// There are 3 more mutable "members" that are protected by
+	// `mu`; but they live in a shared LRUcache:
+	//
+	//  1. tree.leafToRoots()    = tree.forrest.leafs.Load(tree.ID)
+	//  2. tree.PotentialItems() = tree.forrest.allItems.Load(tree.ID)
+	//  3. tree.Items()          = tree.forrest.incItems.Load(tree.ID)
 }
 
-// .leafToRoots() //////////////////////////////////////////////////////////////////////////////////////////////////////
+// LRU member 1: .leafToRoots() ////////////////////////////////////////////////////////////////////////////////////////
 
 // leafToRoots returns all leafs (lvl=0) in the filesystem that pass
 // .isOwnerOK, whether or not they're in the tree.
@@ -124,65 +130,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 	}
 }
 
-// .AddRoot() //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-type rootStats struct {
-	Leafs      textui.Portion[int]
-	AddedLeafs int
-	AddedItems int
-}
-
-func (s rootStats) String() string {
-	return textui.Sprintf("%v (added %v leafs, added %v items)",
-		s.Leafs, s.AddedLeafs, s.AddedItems)
-}
-
-// AddRoot adds an additional root node to the tree.  It is useful to
-// call .AddRoot() to re-attach part of the tree that has been broken
-// off.
-func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
-	tree.mu.Lock()
-	defer tree.mu.Unlock()
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
-	tree.Roots.Insert(rootNode)
-
-	var stats rootStats
-	leafToRoots := tree.leafToRoots(ctx)
-	stats.Leafs.D = len(leafToRoots)
-	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	for i, leaf := range maps.SortedKeys(leafToRoots) {
-		stats.Leafs.N = i
-		progressWriter.Set(stats)
-
-		if tree.Leafs.Has(leaf) || !leafToRoots[leaf].Has(rootNode) {
-			continue
-		}
-
-		tree.Leafs.Insert(leaf)
-		stats.AddedLeafs++
-		progressWriter.Set(stats)
-
-		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			tree.forrest.cbAddedItem(ctx, tree.ID, itemKey)
-			stats.AddedItems++
-			progressWriter.Set(stats)
-		}
-	}
-	stats.Leafs.N = len(leafToRoots)
-	progressWriter.Set(stats)
-	progressWriter.Done()
-
-	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
-		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
-			if otherTree == nil {
-				tree.forrest.trees.Delete(otherTreeID)
-			}
-			return true
-		})
-	}
-}
-
-// .Items() and .PotentialItems() //////////////////////////////////////////////////////////////////////////////////////
+// LRU members 2 and 3: .Items() and .PotentialItems() /////////////////////////////////////////////////////////////////
 
 // Items returns a map of the items contained in this tree.
 //
@@ -298,6 +246,64 @@ func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bo
 				oldNode, tree.forrest.graph.Nodes[oldNode],
 				newNode, tree.forrest.graph.Nodes[newNode]))
 		}
+	}
+}
+
+// .AddRoot() //////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type rootStats struct {
+	Leafs      textui.Portion[int]
+	AddedLeafs int
+	AddedItems int
+}
+
+func (s rootStats) String() string {
+	return textui.Sprintf("%v (added %v leafs, added %v items)",
+		s.Leafs, s.AddedLeafs, s.AddedItems)
+}
+
+// AddRoot adds an additional root node to the tree.  It is useful to
+// call .AddRoot() to re-attach part of the tree that has been broken
+// off.
+func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
+	tree.mu.Lock()
+	defer tree.mu.Unlock()
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
+	tree.Roots.Insert(rootNode)
+
+	var stats rootStats
+	leafToRoots := tree.leafToRoots(ctx)
+	stats.Leafs.D = len(leafToRoots)
+	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	for i, leaf := range maps.SortedKeys(leafToRoots) {
+		stats.Leafs.N = i
+		progressWriter.Set(stats)
+
+		if tree.Leafs.Has(leaf) || !leafToRoots[leaf].Has(rootNode) {
+			continue
+		}
+
+		tree.Leafs.Insert(leaf)
+		stats.AddedLeafs++
+		progressWriter.Set(stats)
+
+		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+			tree.forrest.cbAddedItem(ctx, tree.ID, itemKey)
+			stats.AddedItems++
+			progressWriter.Set(stats)
+		}
+	}
+	stats.Leafs.N = len(leafToRoots)
+	progressWriter.Set(stats)
+	progressWriter.Done()
+
+	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
+		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
+			if otherTree == nil {
+				tree.forrest.trees.Delete(otherTreeID)
+			}
+			return true
+		})
 	}
 }
 
