@@ -717,18 +717,6 @@ func (o *rebuilder) _walkRange(
 	beg, end uint64,
 	fn func(key btrfsprim.Key, ptr keyio.ItemPtr, beg, end uint64),
 ) {
-	sizeFn := func(key btrfsprim.Key) (uint64, error) {
-		ptr, ok := items.Load(key)
-		if !ok {
-			panic(fmt.Errorf("should not happen: could not load key: %v", keyAndTree{TreeID: treeID, Key: key}))
-		}
-		sizeAndErr, ok := o.keyIO.Sizes[ptr]
-		if !ok {
-			panic(fmt.Errorf("should not happen: %v item did not have a size recorded", typ))
-		}
-		return sizeAndErr.Size, sizeAndErr.Err
-	}
-
 	min := btrfsprim.Key{
 		ObjectID: objID,
 		ItemType: typ,
@@ -751,11 +739,18 @@ func (o *rebuilder) _walkRange(
 			}
 		},
 		func(runKey btrfsprim.Key, runPtr keyio.ItemPtr) bool {
-			runSize, err := sizeFn(runKey)
-			if err != nil {
-				o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: runKey}, err))
+			runSizeAndErr, ok := o.keyIO.Sizes[runPtr]
+			if !ok {
+				panic(fmt.Errorf("should not happen: %v (%v) did not have a size recorded",
+					runPtr, keyAndTree{TreeID: treeID, Key: runKey}))
+			}
+			if runSizeAndErr.Err != nil {
+				o.fsErr(ctx, fmt.Errorf("get size: %v (%v): %w",
+					runPtr, keyAndTree{TreeID: treeID, Key: runKey},
+					runSizeAndErr.Err))
 				return true
 			}
+			runSize := runSizeAndErr.Size
 			if runSize == 0 {
 				return true
 			}
