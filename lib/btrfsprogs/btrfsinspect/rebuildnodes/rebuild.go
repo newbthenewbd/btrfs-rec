@@ -710,6 +710,66 @@ func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrf
 	})
 }
 
+func (o *rebuilder) _walkRange(
+	ctx context.Context,
+	items *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr],
+	treeID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
+	beg, end uint64,
+	fn func(key btrfsprim.Key, ptr keyio.ItemPtr, beg, end uint64),
+) {
+	sizeFn := func(key btrfsprim.Key) (uint64, error) {
+		ptr, ok := items.Load(key)
+		if !ok {
+			panic(fmt.Errorf("should not happen: could not load key: %v", keyAndTree{TreeID: treeID, Key: key}))
+		}
+		sizeAndErr, ok := o.keyIO.Sizes[ptr]
+		if !ok {
+			panic(fmt.Errorf("should not happen: %v item did not have a size recorded", typ))
+		}
+		return sizeAndErr.Size, sizeAndErr.Err
+	}
+
+	min := btrfsprim.Key{
+		ObjectID: objID,
+		ItemType: typ,
+		Offset:   0, // *NOT* `beg`
+	}
+	max := btrfsprim.Key{
+		ObjectID: objID,
+		ItemType: typ,
+		Offset:   end - 1,
+	}
+	items.Subrange(
+		func(runKey btrfsprim.Key, _ keyio.ItemPtr) int {
+			switch {
+			case min.Cmp(runKey) < 0:
+				return 1
+			case max.Cmp(runKey) > 0:
+				return -1
+			default:
+				return 0
+			}
+		},
+		func(runKey btrfsprim.Key, runPtr keyio.ItemPtr) bool {
+			runSize, err := sizeFn(runKey)
+			if err != nil {
+				o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: runKey}, err))
+				return true
+			}
+			if runSize == 0 {
+				return true
+			}
+			runBeg := runKey.Offset
+			runEnd := runBeg + runSize
+			if runEnd <= beg {
+				return true
+			}
+
+			fn(runKey, runPtr, runBeg, runEnd)
+			return true
+		})
+}
+
 func (o *rebuilder) _wantRange(
 	ctx context.Context,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
@@ -723,31 +783,7 @@ func (o *rebuilder) _wantRange(
 		return
 	}
 
-	sizeFn := func(items *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr], key btrfsprim.Key) (uint64, error) {
-		ptr, ok := items.Load(key)
-		if !ok {
-			panic(fmt.Errorf("should not happen: could not load key: %v", keyAndTree{TreeID: treeID, Key: key}))
-		}
-		sizeAndErr, ok := o.keyIO.Sizes[ptr]
-		if !ok {
-			panic(fmt.Errorf("should not happen: %v item did not have a size recorded", typ))
-		}
-		return sizeAndErr.Size, sizeAndErr.Err
-	}
-
-	// Step 1: Build a listing of the runs that we do have.
-	runMin := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-		Offset:   0, // *NOT* `beg`
-	}
-	runMax := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-		Offset:   end - 1,
-	}
-
-	// Step 2: Build a listing of the gaps.
+	// Step 1: Build a listing of the gaps.
 	//
 	// Start with a gap of the whole range, then subtract each run
 	// from it.
@@ -764,31 +800,11 @@ func (o *rebuilder) _wantRange(
 		Beg: beg,
 		End: end,
 	})
-	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
-		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
-			switch {
-			case runMin.Cmp(key) < 0:
-				return 1
-			case runMax.Cmp(key) > 0:
-				return -1
-			default:
-				return 0
-			}
-		},
-		func(runKey btrfsprim.Key, _ keyio.ItemPtr) bool {
-			runSize, err := sizeFn(o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx), runKey)
-			if err != nil {
-				o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: runKey}, err))
-				return true
-			}
-			if runSize == 0 {
-				return true
-			}
-			runBeg := runKey.Offset
-			runEnd := runBeg + runSize
-			if runEnd <= beg {
-				return true
-			}
+	o._walkRange(
+		ctx,
+		o.rebuilt.Tree(ctx, treeID).Items(ctx),
+		treeID, objID, typ, beg, end,
+		func(runKey btrfsprim.Key, _ keyio.ItemPtr, runBeg, runEnd uint64) {
 			overlappingGaps := gaps.SearchRange(func(gap gap) int {
 				switch {
 				case gap.End <= runBeg:
@@ -800,7 +816,7 @@ func (o *rebuilder) _wantRange(
 				}
 			})
 			if len(overlappingGaps) == 0 {
-				return true
+				return
 			}
 			gapsBeg := overlappingGaps[0].Beg
 			gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
@@ -819,49 +835,21 @@ func (o *rebuilder) _wantRange(
 					End: gapsEnd,
 				})
 			}
-			return true
 		})
 
 	// Step 2: Fill each gap.
+	if gaps.Len() == 0 {
+		return
+	}
+	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
 	_ = gaps.Walk(func(rbNode *containers.RBNode[gap]) error {
 		gap := rbNode.Value
 		last := gap.Beg
-		runMin := btrfsprim.Key{
-			ObjectID: objID,
-			ItemType: typ,
-			Offset:   0, // *NOT* `gap.Beg`
-		}
-		runMax := btrfsprim.Key{
-			ObjectID: objID,
-			ItemType: typ,
-			Offset:   gap.End - 1,
-		}
-		o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-			func(key btrfsprim.Key, _ keyio.ItemPtr) int {
-				switch {
-				case runMin.Cmp(key) < 0:
-					return 1
-				case runMax.Cmp(key) > 0:
-					return -1
-				default:
-					return 0
-				}
-			},
-			func(k btrfsprim.Key, v keyio.ItemPtr) bool {
-				runSize, err := sizeFn(o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx), k)
-				if err != nil {
-					o.fsErr(ctx, fmt.Errorf("get size: %v: %w", keyAndTree{TreeID: treeID, Key: k}, err))
-					return true
-				}
-				if runSize == 0 {
-					return true
-				}
-				runBeg := k.Offset
-				runEnd := runBeg + runSize
-				if runEnd <= gap.Beg {
-					return true
-				}
-
+		o._walkRange(
+			ctx,
+			potentialItems,
+			treeID, objID, typ, gap.Beg, gap.End,
+			func(k btrfsprim.Key, v keyio.ItemPtr, runBeg, runEnd uint64) {
 				// TODO: This is dumb and greedy.
 				if last < runBeg {
 					// log an error
@@ -877,8 +865,6 @@ func (o *rebuilder) _wantRange(
 					o.wantAugment(wantCtx, treeID, wantKey, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(wantCtx, v.Node))
 				}
 				last = runEnd
-
-				return true
 			})
 		if last < gap.End {
 			// log an error
