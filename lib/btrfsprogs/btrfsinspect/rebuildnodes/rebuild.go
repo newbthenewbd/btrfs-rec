@@ -515,6 +515,10 @@ func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
 }
 
 func (treeQueue *treeAugmentQueue) store(wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
+	if len(choices) == 0 && (strings.Contains(wantKey, " name=") || strings.Contains(wantKey, "-")) {
+		// This wantKey is unlikely to come up again, so it's not worth storing a negative result.
+		return
+	}
 	wantKey = shortenWantKey(wantKey)
 	beg := treeQueue.keyBuf.Len()
 	if treeQueue.keyBuf.Cap()-beg < len(wantKey) {
