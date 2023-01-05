@@ -32,7 +32,7 @@ type RebuiltTree struct {
 	forrest   *RebuiltForrest
 
 	// mutable
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	// There are 3 more mutable "members" that are protected by
 	// `mu`; but they live in a shared LRUcache.  They are all
@@ -171,8 +171,8 @@ func (s itemStats) String() string {
 func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex],
 	leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool,
 ) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
-	tree.mu.Lock()
-	defer tree.mu.Unlock()
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
 
 	return cache.GetOrElse(tree.ID, func() *itemIndex {
 		var leafs []btrfsvol.LogicalAddr
@@ -344,8 +344,8 @@ func (tree *RebuiltTree) LeafToRoots(ctx context.Context, leaf btrfsvol.LogicalA
 		panic(fmt.Errorf("should not happen: (tree=%v).LeafToRoots(leaf=%v): not a leaf",
 			tree.ID, leaf))
 	}
-	tree.mu.Lock()
-	defer tree.mu.Unlock()
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for root := range tree.leafToRoots(ctx)[leaf] {
 		if tree.Roots.Has(root) {
