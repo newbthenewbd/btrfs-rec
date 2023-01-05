@@ -155,11 +155,7 @@ func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedM
 		})
 }
 
-type itemIndex struct {
-	NumDups int
-	Leafs   containers.Set[btrfsvol.LogicalAddr]
-	Items   containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
-}
+type itemIndex = containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
 
 type itemStats struct {
 	Leafs    textui.Portion[int]
@@ -178,58 +174,48 @@ func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[b
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 
-	var leafs []btrfsvol.LogicalAddr
-	for leaf, roots := range tree.leafToRoots(ctx) {
-		if leafFn(roots) {
-			leafs = append(leafs, leaf)
-		}
-	}
-	slices.Sort(leafs)
-
-	index := cache.GetOrElse(tree.ID, func() *itemIndex {
-		return &itemIndex{
-			Leafs: make(containers.Set[btrfsvol.LogicalAddr]),
-		}
-	})
-
-	var stats itemStats
-	stats.Leafs.D = len(leafs)
-	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	progress := func(doneLeafs int) {
-		stats.Leafs.N = doneLeafs
-		stats.NumItems = index.Items.Len()
-		stats.NumDups = index.NumDups
-		progressWriter.Set(stats)
-	}
-
-	for i, leaf := range leafs {
-		if index.Leafs.Has(leaf) {
-			continue
-		}
-		progress(i)
-		index.Leafs.Insert(leaf)
-		for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			newPtr := keyio.ItemPtr{
-				Node: leaf,
-				Idx:  j,
+	return cache.GetOrElse(tree.ID, func() *itemIndex {
+		var leafs []btrfsvol.LogicalAddr
+		for leaf, roots := range tree.leafToRoots(ctx) {
+			if leafFn(roots) {
+				leafs = append(leafs, leaf)
 			}
-			if oldPtr, exists := index.Items.Load(itemKey); !exists {
-				index.Items.Store(itemKey, newPtr)
-			} else {
-				index.NumDups++
-				if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
-					index.Items.Store(itemKey, newPtr)
+		}
+		slices.Sort(leafs)
+
+		var stats itemStats
+		stats.Leafs.D = len(leafs)
+		progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+
+		index := new(containers.SortedMap[btrfsprim.Key, keyio.ItemPtr])
+		for i, leaf := range leafs {
+			stats.Leafs.N = i
+			progressWriter.Set(stats)
+			for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+				newPtr := keyio.ItemPtr{
+					Node: leaf,
+					Idx:  j,
 				}
+				if oldPtr, exists := index.Load(itemKey); !exists {
+					index.Store(itemKey, newPtr)
+					stats.NumItems++
+				} else {
+					if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
+						index.Store(itemKey, newPtr)
+					}
+					stats.NumDups++
+				}
+				progressWriter.Set(stats)
 			}
-			progress(i)
 		}
-	}
-	if stats.Leafs.N > 0 {
-		progress(len(leafs))
-		progressWriter.Done()
-	}
+		if stats.Leafs.N > 0 {
+			stats.Leafs.N = len(leafs)
+			progressWriter.Set(stats)
+			progressWriter.Done()
+		}
 
-	return &index.Items
+		return index
+	})
 }
 
 func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
@@ -312,6 +298,8 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	progressWriter.Done()
 
 	tree.Roots.Insert(rootNode)
+	tree.forrest.incItems.Remove(tree.ID) // force re-gen
+	tree.forrest.excItems.Remove(tree.ID) // force re-gen
 
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
 		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
