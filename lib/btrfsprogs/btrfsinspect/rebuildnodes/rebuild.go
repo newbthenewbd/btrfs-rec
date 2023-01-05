@@ -495,18 +495,19 @@ func shortenWantKey(wantKey string) string {
 
 func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
 	if treeQueue != nil {
+		wantKey = shortenWantKey(wantKey)
 		if treeQueue.zero != nil {
-			if _, ok := treeQueue.zero[shortenWantKey(wantKey)]; ok {
+			if _, ok := treeQueue.zero[wantKey]; ok {
 				return true
 			}
 		}
 		if treeQueue.single != nil {
-			if _, ok := treeQueue.single[shortenWantKey(wantKey)]; ok {
+			if _, ok := treeQueue.single[wantKey]; ok {
 				return true
 			}
 		}
 		if treeQueue.multi != nil {
-			if _, ok := treeQueue.multi[shortenWantKey(wantKey)]; ok {
+			if _, ok := treeQueue.multi[wantKey]; ok {
 				return true
 			}
 		}
