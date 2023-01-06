@@ -59,6 +59,7 @@ func init() {
 			dlog.Infof(ctx, "Writing re-built nodes to %s...", dst.Name())
 			if err := writeJSONFile(dst, rebuilder.ListRoots(), lowmemjson.ReEncoderConfig{
 				Indent:                "\t",
+				CompactIfUnder:        80, //nolint:gomnd // This is what looks nice.
 				ForceTrailingNewlines: true,
 			}); err != nil {
 				if rebuildErr != nil {
