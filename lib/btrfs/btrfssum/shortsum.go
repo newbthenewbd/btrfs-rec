@@ -11,6 +11,7 @@ import (
 	"git.lukeshu.com/go/lowmemjson"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/jsonutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type ShortSum string
@@ -27,12 +28,12 @@ func (sum ShortSum) ToFullSum() CSum {
 }
 
 func (sum ShortSum) EncodeJSON(w io.Writer) error {
-	return jsonutil.EncodeHexString(w, sum)
+	return jsonutil.EncodeSplitHexString(w, sum, textui.Tunable(80))
 }
 
 func (sum *ShortSum) DecodeJSON(r io.RuneScanner) error {
 	var out strings.Builder
-	if err := jsonutil.DecodeHexString(r, &out); err != nil {
+	if err := jsonutil.DecodeSplitHexString(r, &out); err != nil {
 		return err
 	}
 	*sum = ShortSum(out.String())

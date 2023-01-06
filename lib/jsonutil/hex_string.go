@@ -40,3 +40,47 @@ func DecodeHexString(r io.RuneScanner, dst io.ByteWriter) error {
 	}
 	return dec.Close()
 }
+
+func EncodeSplitHexString[T ~[]byte | ~string](w io.Writer, str T, maxStrLen int) error {
+	if maxStrLen <= 0 || len(str) <= maxStrLen/2 {
+		return EncodeHexString(w, str)
+	}
+	var buf [1]byte
+	buf[0] = '['
+	if _, err := w.Write(buf[:]); err != nil {
+		return err
+	}
+	for len(str) > maxStrLen/2 {
+		if err := EncodeHexString(w, str[:maxStrLen/2]); err != nil {
+			return err
+		}
+		str = str[maxStrLen/2:]
+		if len(str) > 0 {
+			buf[0] = ','
+			if _, err := w.Write(buf[:]); err != nil {
+				return err
+			}
+		}
+	}
+	if len(str) > 0 {
+		if err := EncodeHexString(w, str); err != nil {
+			return err
+		}
+	}
+	buf[0] = ']'
+	if _, err := w.Write(buf[:]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func DecodeSplitHexString(r io.RuneScanner, dst io.ByteWriter) error {
+	c, _, _ := r.ReadRune()
+	_ = r.UnreadRune()
+	if c == '"' {
+		return DecodeHexString(r, dst)
+	}
+	return lowmemjson.DecodeArray(r, func(r io.RuneScanner) error {
+		return DecodeHexString(r, dst)
+	})
+}
