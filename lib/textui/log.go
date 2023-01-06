@@ -26,6 +26,8 @@ import (
 
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type LogLevelFlag struct {
@@ -153,7 +155,11 @@ func (l *logger) UnformattedLogf(lvl dlog.LogLevel, format string, args ...any) 
 }
 
 var (
-	logBuf     bytes.Buffer
+	logBufPool = containers.SyncPool[*bytes.Buffer]{
+		New: func() *bytes.Buffer {
+			return new(bytes.Buffer)
+		},
+	}
 	logMu      sync.Mutex
 	thisModDir string
 )
@@ -169,13 +175,8 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	if lvl > l.lvl {
 		return
 	}
-	// This is optimized for mostly-single-threaded usage.  If I cared more
-	// about multi-threaded performance, I'd trade in some
-	// memory-use/allocations and (1) instead of using a static `logBuf`,
-	// I'd have a `logBufPool` `sync.Pool`, and (2) have the final call to
-	// `l.out.Write()` be the only thing protected by `logMu`.
-	logMu.Lock()
-	defer logMu.Unlock()
+	logBuf, _ := logBufPool.Get()
+	defer logBufPool.Put(logBuf)
 	defer logBuf.Reset()
 
 	// time ////////////////////////////////////////////////////////////////
@@ -222,19 +223,19 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 			nextField = i
 			break
 		}
-		writeField(&logBuf, fieldKey, fields[fieldKey])
+		writeField(logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// message /////////////////////////////////////////////////////////////
 	logBuf.WriteString(" : ")
-	writeMsg(&logBuf)
+	writeMsg(logBuf)
 
 	// fields (late) ///////////////////////////////////////////////////////
 	if nextField < len(fieldKeys) {
 		logBuf.WriteString(" :")
 	}
 	for _, fieldKey := range fieldKeys[nextField:] {
-		writeField(&logBuf, fieldKey, fields[fieldKey])
+		writeField(logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// caller //////////////////////////////////////////////////////////////
@@ -258,13 +259,16 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 			logBuf.WriteString(" :")
 		}
 		file := f.File[strings.LastIndex(f.File, thisModDir+"/")+len(thisModDir+"/"):]
-		fmt.Fprintf(&logBuf, " (from %s:%d)", file, f.Line)
+		fmt.Fprintf(logBuf, " (from %s:%d)", file, f.Line)
 		break
 	}
 
 	// boilerplate /////////////////////////////////////////////////////////
 	logBuf.WriteByte('\n')
+
+	logMu.Lock()
 	_, _ = l.out.Write(logBuf.Bytes())
+	logMu.Unlock()
 }
 
 // fieldOrd returns the sort-position for a given log-field-key.  Lower return
