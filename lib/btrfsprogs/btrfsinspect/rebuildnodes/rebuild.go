@@ -91,12 +91,6 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	return o, nil
 }
 
-func (o *rebuilder) ioErr(ctx context.Context, err error) {
-	err = fmt.Errorf("should not happen: i/o error: %w", err)
-	dlog.Error(ctx, err)
-	panic(err)
-}
-
 func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
 	return o.rebuilt.ListRoots()
 }
@@ -174,13 +168,9 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 						return err
 					}
 					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
-					itemBody, ok := o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key)
-					if !ok {
-						o.ioErr(itemCtx, fmt.Errorf("could not read previously read item: %v", key))
-					}
 					itemChan <- keyAndBody{
 						keyAndTree: key,
-						Body:       itemBody,
+						Body:       o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key),
 					}
 				}
 				return nil
@@ -285,11 +275,7 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 		o.enqueueRetry()
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
-	if !ok {
-		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
-	}
-	switch itemBody := itemBody.(type) {
+	switch itemBody := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key).(type) {
 	case *btrfsitem.Root:
 		return btrfsprim.Generation(key.Offset), *itemBody, true
 	case *btrfsitem.Error:
@@ -310,11 +296,7 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 		o.enqueueRetry()
 		return 0, false
 	}
-	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
-	if !ok {
-		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
-	}
-	switch itemBody := itemBody.(type) {
+	switch itemBody := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key).(type) {
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:
