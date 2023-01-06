@@ -54,7 +54,10 @@ type rebuilder struct {
 
 	rebuilt *btrees.RebuiltForrest
 
-	curKey             keyAndTree
+	curKey struct {
+		TreeID btrfsprim.ObjID
+		Key    containers.Optional[btrfsprim.Key]
+	}
 	treeQueue          containers.Set[btrfsprim.ObjID]
 	itemQueue          containers.Set[keyAndTree]
 	augmentQueue       map[btrfsprim.ObjID]*treeAugmentQueue
@@ -133,12 +136,12 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			o.treeQueue = make(containers.Set[btrfsprim.ObjID])
 			// Because trees can be wildly different sizes, it's impossible to have a meaningful
 			// progress percentage here.
-			for _, treeID := range maps.SortedKeys(treeQueue) {
+			o.curKey.Key.OK = false
+			for _, o.curKey.TreeID = range maps.SortedKeys(treeQueue) {
 				if err := _ctx.Err(); err != nil {
 					return err
 				}
-				o.curKey = keyAndTree{TreeID: treeID}
-				o.rebuilt.Tree(stepCtx, treeID)
+				o.rebuilt.Tree(stepCtx, o.curKey.TreeID)
 			}
 		}
 		runtime.GC()
@@ -177,9 +180,11 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			})
 			grp.Go("cpu", func(stepCtx context.Context) error {
 				defer progressWriter.Done()
+				o.curKey.Key.OK = true
 				for item := range itemChan {
 					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
-					o.curKey = item.keyAndTree
+					o.curKey.TreeID = item.TreeID
+					o.curKey.Key.Val = item.Key
 					handleItem(o, itemCtx, item.TreeID, btrfstree.Item{
 						Key:  item.Key,
 						Body: item.Body,
@@ -242,10 +247,13 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 }
 
 func (o *rebuilder) enqueueRetry() {
-	if o.curKey.Key == (btrfsprim.Key{}) {
-		o.treeQueue.Insert(o.curKey.TreeID)
+	if o.curKey.Key.OK {
+		o.itemQueue.Insert(keyAndTree{
+			TreeID: o.curKey.TreeID,
+			Key:    o.curKey.Key.Val,
+		})
 	} else {
-		o.itemQueue.Insert(o.curKey)
+		o.treeQueue.Insert(o.curKey.TreeID)
 	}
 }
 
