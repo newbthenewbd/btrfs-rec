@@ -16,7 +16,7 @@ import (
 )
 
 func logLineRegexp(inner string) string {
-	return `[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{4} ` + inner + ` \(from lib/textui/log_test\.go:[0-9]+\)\n`
+	return `[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{4} ` + inner + ` \(from lib/textui/log_test\.go:[0-9]+\)\n`
 }
 
 func TestLogFormat(t *testing.T) {

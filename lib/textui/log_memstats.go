@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// LiveMemUse is an object that stringifies as the live memory use of
+// the program.
+//
+// It is intended to be used with dlog by attaching it as a field, so
+// that all log lines include the current memory use:
+//
+//	ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
 type LiveMemUse struct {
 	mu    sync.Mutex
 	stats runtime.MemStats
@@ -19,14 +26,19 @@ type LiveMemUse struct {
 
 var _ fmt.Stringer = (*LiveMemUse)(nil)
 
-var liveMemUseUpdateInterval = Tunable(1 * time.Second)
+// LiveMemUseUpdateInterval is the shortest interval on which
+// LiveMemUse is willing to update; we have this minimum interval
+// because it stops the world to collect memory statistics, so we
+// don't want to be updating the statistics too often.
+var LiveMemUseUpdateInterval = Tunable(1 * time.Second)
 
+// String implements fmt.Stringer.
 func (o *LiveMemUse) String() string {
 	o.mu.Lock()
 
 	// runtime.ReadMemStats() calls stopTheWorld(), so we want to
 	// rate-limit how often we call it.
-	if now := time.Now(); now.Sub(o.last) > liveMemUseUpdateInterval {
+	if now := time.Now(); now.Sub(o.last) > LiveMemUseUpdateInterval {
 		runtime.ReadMemStats(&o.stats)
 		o.last = now
 	}

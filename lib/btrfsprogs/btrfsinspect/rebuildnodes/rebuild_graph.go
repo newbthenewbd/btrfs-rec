@@ -7,11 +7,9 @@ package rebuildnodes
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
@@ -20,9 +18,31 @@ type rebuildCallbacks interface {
 	fsErr(ctx context.Context, e error)
 	want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
 	wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
-	wantFunc(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(btrfsitem.Item) bool)
-	wantCSum(ctx context.Context, reason string, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
+	wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte)
+	wantCSum(ctx context.Context, reason string, inodeTree, inodeItem btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
 	wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
+}
+
+// handleWouldBeNoOp returns whether or not a call to handleItem for a
+// given item type would be a no-op.
+func handleWouldBeNoOp(typ btrfsprim.ItemType) bool {
+	switch typ {
+	case // btrfsitem.Dev
+		btrfsprim.DEV_ITEM_KEY,
+		// btrfsitem.DevStats
+		btrfsprim.PERSISTENT_ITEM_KEY,
+		// btrfsitem.Empty
+		btrfsprim.ORPHAN_ITEM_KEY,
+		btrfsprim.TREE_BLOCK_REF_KEY,
+		btrfsprim.SHARED_BLOCK_REF_KEY,
+		btrfsprim.FREE_SPACE_EXTENT_KEY,
+		btrfsprim.QGROUP_RELATION_KEY,
+		// btrfsite.ExtentCSum
+		btrfsprim.EXTENT_CSUM_KEY:
+		return true
+	default:
+		return false
+	}
 }
 
 func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
@@ -65,13 +85,10 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		// siblings
 		switch item.Key.ItemType {
 		case btrfsitem.DIR_ITEM_KEY:
-			o.wantFunc(ctx, "corresponding DIR_INDEX",
+			o.wantDirIndex(ctx, "corresponding DIR_INDEX",
 				treeID,
 				item.Key.ObjectID,
-				btrfsitem.DIR_INDEX_KEY,
-				func(peerItem btrfsitem.Item) bool {
-					return reflect.DeepEqual(item, peerItem)
-				})
+				body.Name)
 		case btrfsitem.DIR_INDEX_KEY:
 			o.wantOff(ctx, "corresponding DIR_ITEM",
 				treeID,
@@ -169,10 +186,11 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		case btrfsitem.FILE_EXTENT_INLINE:
 			// nothing
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			// TODO: Check if inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM)
+			// NB: o.wantCSum checks inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) for us.
 			o.wantCSum(ctx, "data sum",
-				roundDown(body.BodyExtent.DiskByteNr, btrfssum.BlockSize),
-				roundUp(body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes), btrfssum.BlockSize))
+				treeID, item.Key.ObjectID,
+				body.BodyExtent.DiskByteNr,
+				body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes))
 		default:
 			o.fsErr(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
 		}

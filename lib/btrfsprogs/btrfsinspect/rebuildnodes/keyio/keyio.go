@@ -34,12 +34,19 @@ type SizeAndErr struct {
 	Err  error
 }
 
+type FlagsAndErr struct {
+	NoDataSum bool
+	Err       error
+}
+
 type Handle struct {
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
 	graph   graph.Graph
 
-	Sizes map[ItemPtr]SizeAndErr
+	Flags map[ItemPtr]FlagsAndErr // INODE_ITEM
+	Names map[ItemPtr][]byte      // DIR_INDEX
+	Sizes map[ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
 
 	cache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
@@ -49,6 +56,8 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 		rawFile: file,
 		sb:      sb,
 
+		Flags: make(map[ItemPtr]FlagsAndErr),
+		Names: make(map[ItemPtr][]byte),
 		Sizes: make(map[ItemPtr]SizeAndErr),
 
 		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](textui.Tunable(8)),
@@ -62,6 +71,15 @@ func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.
 			Idx:  i,
 		}
 		switch itemBody := item.Body.(type) {
+		case btrfsitem.Inode:
+			o.Flags[ptr] = FlagsAndErr{
+				NoDataSum: itemBody.Flags.Has(btrfsitem.INODE_NODATASUM),
+				Err:       nil,
+			}
+		case btrfsitem.DirEntry:
+			if item.Key.ItemType == btrfsprim.DIR_INDEX_KEY {
+				o.Names[ptr] = append([]byte(nil), itemBody.Name...)
+			}
 		case btrfsitem.ExtentCSum:
 			o.Sizes[ptr] = SizeAndErr{
 				Size: uint64(itemBody.Size()),
@@ -75,6 +93,11 @@ func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.
 			}
 		case btrfsitem.Error:
 			switch item.Key.ItemType {
+			case btrfsprim.INODE_ITEM_KEY:
+				o.Flags[ptr] = FlagsAndErr{
+					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
+						ptr, nodeRef.Data.Head.Owner, item.Key, itemBody.Err),
+				}
 			case btrfsprim.EXTENT_CSUM_KEY, btrfsprim.EXTENT_DATA_KEY:
 				o.Sizes[ptr] = SizeAndErr{
 					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",

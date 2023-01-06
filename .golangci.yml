@@ -51,7 +51,6 @@ linters:
     - revive
     - testpackage
     - thelper
-    - unparam
     - varnamelen
     - wrapcheck
 linters-settings:

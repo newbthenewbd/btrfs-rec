@@ -180,7 +180,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 
 	// time ////////////////////////////////////////////////////////////////
 	now := time.Now()
-	const timeFmt = "2006-01-02 15:04:05.0000"
+	const timeFmt = "15:04:05.0000"
 	logBuf.WriteString(timeFmt)
 	now.AppendFormat(logBuf.Bytes()[:0], timeFmt)
 
@@ -317,18 +317,22 @@ func fieldOrd(key string) int {
 		return -25
 	// step=rebuild (any substep)
 	case "btrfsinspect.rebuild-nodes.rebuild.want.key":
-		return -7
+		return -9
 	case "btrfsinspect.rebuild-nodes.rebuild.want.reason":
-		return -6
+		return -8
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree":
-		return -5
-	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep":
-		return -4
+		return -7
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key":
-		return -3
+		return -6
 	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason":
-		return -2
+		return -5
 	case "btrfsinspect.rebuild-nodes.rebuild.add-root":
+		return -4
+	case "btrfsinspect.rebuild-nodes.rebuild.index-inc-items":
+		return -3
+	case "btrfsinspect.rebuild-nodes.rebuild.index-all-items":
+		return -2
+	case "btrfsinspect.rebuild-nodes.rebuild.index-nodes":
 		return -1
 
 	// other ///////////////////////////////////////////////////////////////
@@ -368,6 +372,7 @@ func writeField(w io.Writer, key string, val any) {
 			if strings.HasPrefix(valStr, "/main/") {
 				valStr = strings.TrimPrefix(valStr, "/main")
 			}
+			valStr = strings.TrimPrefix(valStr, "/")
 		}
 	case strings.HasSuffix(name, ".pass"):
 		fmt.Fprintf(w, "/pass-%s", valStr)
