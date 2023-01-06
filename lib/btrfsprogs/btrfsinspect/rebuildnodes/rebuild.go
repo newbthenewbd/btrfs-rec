@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/datawire/dlib/dgroup"
@@ -64,10 +63,9 @@ type rebuilder struct {
 }
 
 type treeAugmentQueue struct {
-	keyBuf strings.Builder
-	zero   map[string]struct{}
-	single map[string]btrfsvol.LogicalAddr
-	multi  map[string]containers.Set[btrfsvol.LogicalAddr]
+	zero   map[Want]struct{}
+	single map[Want]btrfsvol.LogicalAddr
+	multi  map[Want]containers.Set[btrfsvol.LogicalAddr]
 }
 
 type Rebuilder interface {
@@ -401,7 +399,9 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	wantKeys := append(
 		maps.Keys(o.augmentQueue[treeID].single),
 		maps.Keys(o.augmentQueue[treeID].multi)...)
-	sort.Strings(wantKeys)
+	sort.Slice(wantKeys, func(i, j int) bool {
+		return wantKeys[i].Cmp(wantKeys[j]) < 0
+	})
 	for _, wantKey := range wantKeys {
 		list, ok := o.augmentQueue[treeID].multi[wantKey]
 		if !ok {
@@ -418,27 +418,14 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	// Free some memory
 	o.augmentQueue[treeID].single = nil
 	o.augmentQueue[treeID].multi = nil
-	o.augmentQueue[treeID].keyBuf.Reset()
 
 	return ret
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func shortenWantKey(wantKey string) string {
-	if !strings.HasPrefix(wantKey, "tree=") {
-		panic("should not happen")
-	}
-	sp := strings.IndexByte(wantKey, ' ')
-	if sp < 0 {
-		panic("should not happen")
-	}
-	return wantKey[sp+1:]
-}
-
-func (queue *treeAugmentQueue) has(wantKey string) bool {
+func (queue *treeAugmentQueue) has(wantKey Want) bool {
 	if queue != nil {
-		wantKey = shortenWantKey(wantKey)
 		if queue.zero != nil {
 			if _, ok := queue.zero[wantKey]; ok {
 				return true
@@ -458,49 +445,40 @@ func (queue *treeAugmentQueue) has(wantKey string) bool {
 	return false
 }
 
-func (queue *treeAugmentQueue) store(wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
-	if len(choices) == 0 && (strings.Contains(wantKey, " name=") || strings.Contains(wantKey, "-")) {
-		// This wantKey is unlikely to come up again, so it's not worth storing a negative result.
+func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsvol.LogicalAddr]) {
+	if len(choices) == 0 && wantKey.OffsetType > offsetExact {
+		// This wantKey is unlikely to come up again, so it's
+		// not worth the RAM of storing a negative result.
 		return
 	}
-	wantKey = shortenWantKey(wantKey)
-	beg := queue.keyBuf.Len()
-	if queue.keyBuf.Cap()-beg < len(wantKey) {
-		queue.keyBuf.Reset()
-		queue.keyBuf.Grow(textui.Tunable(4096))
-		beg = 0
-	}
-	queue.keyBuf.WriteString(wantKey)
-	wantKey = queue.keyBuf.String()[beg:]
-
 	switch len(choices) {
 	case 0:
 		if queue.zero == nil {
-			queue.zero = make(map[string]struct{})
+			queue.zero = make(map[Want]struct{})
 		}
 		queue.zero[wantKey] = struct{}{}
 	case 1:
 		if queue.single == nil {
-			queue.single = make(map[string]btrfsvol.LogicalAddr)
+			queue.single = make(map[Want]btrfsvol.LogicalAddr)
 		}
 		queue.single[wantKey] = choices.TakeOne()
 	default:
 		if queue.multi == nil {
-			queue.multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
+			queue.multi = make(map[Want]containers.Set[btrfsvol.LogicalAddr])
 		}
 		queue.multi[wantKey] = choices
 	}
 }
 
-func (o *rebuilder) hasAugment(treeID btrfsprim.ObjID, wantKey string) bool {
-	return o.augmentQueue[treeID].has(wantKey)
+func (o *rebuilder) hasAugment(wantKey WantWithTree) bool {
+	return o.augmentQueue[wantKey.TreeID].has(wantKey.Key)
 }
 
-func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
-	if o.augmentQueue[treeID] == nil {
-		o.augmentQueue[treeID] = new(treeAugmentQueue)
+func (o *rebuilder) wantAugment(ctx context.Context, wantKey WantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
+	if o.augmentQueue[wantKey.TreeID] == nil {
+		o.augmentQueue[wantKey.TreeID] = new(treeAugmentQueue)
 	}
-	o.augmentQueue[treeID].store(wantKey, choices)
+	o.augmentQueue[wantKey.TreeID].store(wantKey.Key, choices)
 	if len(choices) == 0 {
 		dlog.Error(ctx, "could not find wanted item")
 		o.numAugmentFailures++

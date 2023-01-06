@@ -8,8 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/datawire/dlib/dlog"
-
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
@@ -25,26 +23,25 @@ func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key b
 }
 
 func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "tree Root")
-	key := keyAndTree{
+	wantKey := WantWithTree{
 		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
-		Key: btrfsprim.Key{
-			ObjectID: tree,
-			ItemType: btrfsitem.ROOT_ITEM_KEY,
+		Key: Want{
+			ObjectID:   tree,
+			ItemType:   btrfsitem.ROOT_ITEM_KEY,
+			OffsetType: offsetAny,
 		},
 	}
-	wantKey := fmt.Sprintf("tree=%v key={%v %v ?}", key.TreeID, key.ObjectID, key.ItemType)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", wantKey)
-	key.Key, ok = o._want(ctx, key.TreeID, wantKey, key.ObjectID, key.ItemType)
+	ctx = withWant(ctx, logFieldTreeWant, "tree Root", wantKey)
+	foundKey, ok := o._want(ctx, wantKey)
 	if !ok {
 		o.enqueueRetry()
 		return 0, btrfsitem.Root{}, false
 	}
-	switch itemBody := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key).(type) {
+	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey).(type) {
 	case *btrfsitem.Root:
-		return btrfsprim.Generation(key.Offset), *itemBody, true
+		return btrfsprim.Generation(foundKey.Offset), *itemBody, true
 	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
+		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", foundKey, itemBody.Err))
 		return 0, btrfsitem.Root{}, false
 	default:
 		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
@@ -54,18 +51,20 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 }
 
 func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "resolve parent UUID")
-	key := keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: btrfsitem.UUIDToKey(uuid)}
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", key.String())
-	if !o._wantOff(ctx, key.TreeID, key.String(), key.Key) {
+	wantKey := WantWithTree{
+		TreeID: btrfsprim.UUID_TREE_OBJECTID,
+		Key:    wantFromKey(btrfsitem.UUIDToKey(uuid)),
+	}
+	ctx = withWant(ctx, logFieldTreeWant, "resolve parent UUID", wantKey)
+	if !o._wantOff(ctx, wantKey) {
 		o.enqueueRetry()
 		return 0, false
 	}
-	switch itemBody := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key).(type) {
+	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key()).(type) {
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
+		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
 		return 0, false
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
