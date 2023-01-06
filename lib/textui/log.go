@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -348,35 +347,49 @@ func fieldOrd(key string) int {
 }
 
 func writeField(w io.Writer, key string, val any) {
-	valStr := printer.Sprint(val)
+	valBuf, _ := logBufPool.Get()
+	defer func() {
+		// The wrapper `func()` is important to defer
+		// evaluating `valBuf`, since we might re-assign it
+		// below.
+		valBuf.Reset()
+		logBufPool.Put(valBuf)
+	}()
+	_, _ = printer.Fprint(valBuf, val)
 	needsQuote := false
-	if strings.HasPrefix(valStr, `"`) {
+	if bytes.HasPrefix(valBuf.Bytes(), []byte(`"`)) {
 		needsQuote = true
 	} else {
-		for _, r := range valStr {
-			if !(unicode.IsPrint(r) && r != ' ') {
+		for _, r := range valBuf.Bytes() {
+			if !(unicode.IsPrint(rune(r)) && r != ' ') {
 				needsQuote = true
 				break
 			}
 		}
 	}
 	if needsQuote {
-		valStr = strconv.Quote(valStr)
+		valBuf2, _ := logBufPool.Get()
+		fmt.Fprintf(valBuf2, "%q", valBuf.Bytes())
+		valBuf.Reset()
+		logBufPool.Put(valBuf)
+		valBuf = valBuf2
 	}
 
+	valStr := valBuf.Bytes()
 	name := key
 
 	switch {
 	case name == "THREAD":
 		name = "thread"
-		switch valStr {
-		case "", "/main":
+		switch {
+		case len(valStr) == 0 || bytes.Equal(valStr, []byte("/main")):
 			return
 		default:
-			if strings.HasPrefix(valStr, "/main/") {
-				valStr = strings.TrimPrefix(valStr, "/main")
+			if bytes.HasPrefix(valStr, []byte("/main/")) {
+				valStr = valStr[len("/main/"):]
+			} else if bytes.HasPrefix(valStr, []byte("/")) {
+				valStr = valStr[len("/"):]
 			}
-			valStr = strings.TrimPrefix(valStr, "/")
 		}
 	case strings.HasSuffix(name, ".pass"):
 		fmt.Fprintf(w, "/pass-%s", valStr)
