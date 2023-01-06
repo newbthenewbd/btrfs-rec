@@ -7,10 +7,11 @@ package textui
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/datawire/dlib/dlog"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type Stats interface {
@@ -26,7 +27,7 @@ type Progress[T Stats] struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	cur     atomic.Value // Value[T]
+	cur     containers.SyncValue[T]
 	oldStat T
 	oldLine string
 }
@@ -45,7 +46,7 @@ func NewProgress[T Stats](ctx context.Context, lvl dlog.LogLevel, interval time.
 }
 
 func (p *Progress[T]) Set(val T) {
-	if p.cur.Swap(val) == nil {
+	if _, hadOld := p.cur.Swap(val); !hadOld {
 		go p.run()
 	}
 }
@@ -56,8 +57,10 @@ func (p *Progress[T]) Done() {
 }
 
 func (p *Progress[T]) flush(force bool) {
-	//nolint:forcetypeassert // It wasn't worth it to me (yet?) to make a typed wrapper around atomic.Value.
-	cur := p.cur.Load().(T)
+	cur, ok := p.cur.Load()
+	if !ok {
+		panic("should not happen")
+	}
 	if !force && cur == p.oldStat {
 		return
 	}
