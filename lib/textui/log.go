@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2022-2023  Ambassador Labs
+// Copyright (C) 2019-2022  Ambassador Labs
 // Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: Apache-2.0
