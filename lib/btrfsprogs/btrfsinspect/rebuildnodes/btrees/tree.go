@@ -288,7 +288,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 		progressWriter.Set(stats)
 
 		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			tree.forrest.cbAddedItem(ctx, tree.ID, itemKey)
+			tree.forrest.cb.AddedItem(ctx, tree.ID, itemKey)
 			stats.AddedItems++
 			progressWriter.Set(stats)
 		}

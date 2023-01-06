@@ -85,8 +85,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		graph: nodeGraph,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO,
-		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
+	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
 	return o, nil
 }
 

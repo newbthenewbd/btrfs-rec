@@ -12,7 +12,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
-func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
+// AddedItem implements btrees.Callbacks.
+func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	if handleWouldBeNoOp(key.ItemType) {
 		return
 	}
@@ -22,7 +23,8 @@ func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key b
 	})
 }
 
-func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
+// LookupRoot implements btrees.Callbacks.
+func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
 	wantKey := WantWithTree{
 		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
 		Key: Want{
@@ -50,7 +52,8 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 	}
 }
 
-func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+// LookupUUID implements btrees.Callbacks.
+func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
 	wantKey := WantWithTree{
 		TreeID: btrfsprim.UUID_TREE_OBJECTID,
 		Key:    wantFromKey(btrfsitem.UUIDToKey(uuid)),

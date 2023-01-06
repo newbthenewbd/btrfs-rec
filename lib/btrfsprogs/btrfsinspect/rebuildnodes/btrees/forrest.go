@@ -21,6 +21,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
+type Callbacks interface {
+	AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
+	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
+	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+}
+
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
 //
@@ -56,11 +62,7 @@ type RebuiltForrest struct {
 	sb    btrfstree.Superblock
 	graph pkggraph.Graph
 	keyIO *keyio.Handle
-
-	// static callbacks
-	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
-	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+	cb    Callbacks
 
 	// mutable
 	trees    typedsync.Map[btrfsprim.ObjID, *RebuiltTree]
@@ -71,20 +73,12 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
 // the callbacks must be non-nil.
-func NewRebuiltForrest(
-	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle,
-	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool),
-	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
-) *RebuiltForrest {
+func NewRebuiltForrest(sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle, cb Callbacks) *RebuiltForrest {
 	return &RebuiltForrest{
 		sb:    sb,
 		graph: graph,
 		keyIO: keyIO,
-
-		cbAddedItem:  cbAddedItem,
-		cbLookupRoot: cbLookupRoot,
-		cbLookupUUID: cbLookupUUID,
+		cb:    cb,
 
 		leafs: containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]{
 			MaxLen: textui.Tunable(8),
@@ -150,7 +144,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")
 			return false
 		}
-		rootOff, rootItem, ok := ts.cbLookupRoot(ctx, treeID)
+		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
 		if !ok {
 			dlog.Error(ctx, "failed to add tree: lookup ROOT_ITEM")
 			return false
@@ -162,7 +156,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			if !ts.addTree(ctx, btrfsprim.UUID_TREE_OBJECTID, stack) {
 				return false
 			}
-			parentID, ok := ts.cbLookupUUID(ctx, rootItem.ParentUUID)
+			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
 				dlog.Error(ctx, "failed to add tree: lookup UUID")
 				return false
