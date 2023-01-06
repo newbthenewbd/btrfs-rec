@@ -498,21 +498,21 @@ func shortenWantKey(wantKey string) string {
 	return wantKey[sp+1:]
 }
 
-func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
-	if treeQueue != nil {
+func (queue *treeAugmentQueue) has(wantKey string) bool {
+	if queue != nil {
 		wantKey = shortenWantKey(wantKey)
-		if treeQueue.zero != nil {
-			if _, ok := treeQueue.zero[wantKey]; ok {
+		if queue.zero != nil {
+			if _, ok := queue.zero[wantKey]; ok {
 				return true
 			}
 		}
-		if treeQueue.single != nil {
-			if _, ok := treeQueue.single[wantKey]; ok {
+		if queue.single != nil {
+			if _, ok := queue.single[wantKey]; ok {
 				return true
 			}
 		}
-		if treeQueue.multi != nil {
-			if _, ok := treeQueue.multi[wantKey]; ok {
+		if queue.multi != nil {
+			if _, ok := queue.multi[wantKey]; ok {
 				return true
 			}
 		}
@@ -520,37 +520,37 @@ func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
 	return false
 }
 
-func (treeQueue *treeAugmentQueue) store(wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (queue *treeAugmentQueue) store(wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
 	if len(choices) == 0 && (strings.Contains(wantKey, " name=") || strings.Contains(wantKey, "-")) {
 		// This wantKey is unlikely to come up again, so it's not worth storing a negative result.
 		return
 	}
 	wantKey = shortenWantKey(wantKey)
-	beg := treeQueue.keyBuf.Len()
-	if treeQueue.keyBuf.Cap()-beg < len(wantKey) {
-		treeQueue.keyBuf.Reset()
-		treeQueue.keyBuf.Grow(textui.Tunable(4096))
+	beg := queue.keyBuf.Len()
+	if queue.keyBuf.Cap()-beg < len(wantKey) {
+		queue.keyBuf.Reset()
+		queue.keyBuf.Grow(textui.Tunable(4096))
 		beg = 0
 	}
-	treeQueue.keyBuf.WriteString(wantKey)
-	wantKey = treeQueue.keyBuf.String()[beg:]
+	queue.keyBuf.WriteString(wantKey)
+	wantKey = queue.keyBuf.String()[beg:]
 
 	switch len(choices) {
 	case 0:
-		if treeQueue.zero == nil {
-			treeQueue.zero = make(map[string]struct{})
+		if queue.zero == nil {
+			queue.zero = make(map[string]struct{})
 		}
-		treeQueue.zero[wantKey] = struct{}{}
+		queue.zero[wantKey] = struct{}{}
 	case 1:
-		if treeQueue.single == nil {
-			treeQueue.single = make(map[string]btrfsvol.LogicalAddr)
+		if queue.single == nil {
+			queue.single = make(map[string]btrfsvol.LogicalAddr)
 		}
-		treeQueue.single[wantKey] = choices.TakeOne()
+		queue.single[wantKey] = choices.TakeOne()
 	default:
-		if treeQueue.multi == nil {
-			treeQueue.multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
+		if queue.multi == nil {
+			queue.multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
 		}
-		treeQueue.multi[wantKey] = choices
+		queue.multi[wantKey] = choices
 	}
 }
 
