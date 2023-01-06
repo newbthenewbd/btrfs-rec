@@ -54,7 +54,7 @@ func init() {
 				}
 				numWidth := len(strconv.Itoa(slices.Max(treeErrCnt, totalItems)))
 
-				table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0) //nolint:gomnd // This is what looks Nice.
+				table := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0) //nolint:gomnd // This is what looks nice.
 				textui.Fprintf(table, "        errors\t% *s\n", numWidth, strconv.Itoa(treeErrCnt))
 				for _, typ := range maps.SortedKeys(treeItemCnt) {
 					textui.Fprintf(table, "        %v items\t% *s\n", typ, numWidth, strconv.Itoa(treeItemCnt[typ]))
