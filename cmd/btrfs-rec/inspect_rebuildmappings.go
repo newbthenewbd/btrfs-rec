@@ -50,7 +50,7 @@ func init() {
 			if err := writeJSONFile(os.Stdout, fs, lowmemjson.ReEncoder{
 				Indent:                "\t",
 				ForceTrailingNewlines: true,
-				CompactIfUnder:        120, //nolint:gomnd // This is what looks Nice.
+				CompactIfUnder:        120, //nolint:gomnd // This is what looks nice.
 			}); err != nil {
 				return err
 			}
