@@ -129,120 +129,135 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 	for passNum := 0; len(o.treeQueue) > 0 || len(o.itemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
 		passCtx := dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.rebuild.pass", passNum)
 
-		// Add items to the queue (drain o.treeQueue, fill o.itemQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
-			treeQueue := o.treeQueue
-			o.treeQueue = make(containers.Set[btrfsprim.ObjID])
-			// Because trees can be wildly different sizes, it's impossible to have a meaningful
-			// progress percentage here.
-			o.curKey.Key.OK = false
-			for _, o.curKey.TreeID = range maps.SortedKeys(treeQueue) {
-				if err := _ctx.Err(); err != nil {
-					return err
-				}
-				o.rebuilt.Tree(stepCtx, o.curKey.TreeID)
-			}
+		// Crawl trees (Drain o.treeQueue, fill o.itemQueue).
+		if err := o.processTreeQueue(passCtx); err != nil {
+			return err
 		}
 		runtime.GC()
 
-		// Handle items in the queue (drain o.itemQueue, fill o.augmentQueue and o.treeQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
-			itemQueue := maps.Keys(o.itemQueue)
-			o.itemQueue = make(containers.Set[keyAndTree])
-			sort.Slice(itemQueue, func(i, j int) bool {
-				return itemQueue[i].Compare(itemQueue[j]) < 0
-			})
-			var progress itemStats
-			progress.D = len(itemQueue)
-			progressWriter := textui.NewProgress[itemStats](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
-			type keyAndBody struct {
-				keyAndTree
-				Body btrfsitem.Item
-			}
-			itemChan := make(chan keyAndBody, textui.Tunable(300)) // average items-per-node≈100; let's have a buffer of ~3 nodes
-			grp := dgroup.NewGroup(stepCtx, dgroup.GroupConfig{})
-			grp.Go("io", func(stepCtx context.Context) error {
-				defer close(itemChan)
-				for _, key := range itemQueue {
-					if err := stepCtx.Err(); err != nil {
-						return err
-					}
-					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
-					itemChan <- keyAndBody{
-						keyAndTree: key,
-						Body:       o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key),
-					}
-				}
-				return nil
-			})
-			grp.Go("cpu", func(stepCtx context.Context) error {
-				defer progressWriter.Done()
-				o.curKey.Key.OK = true
-				for item := range itemChan {
-					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
-					o.curKey.TreeID = item.TreeID
-					o.curKey.Key.Val = item.Key
-					handleItem(o, itemCtx, item.TreeID, btrfstree.Item{
-						Key:  item.Key,
-						Body: item.Body,
-					})
-					if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
-						o.treeQueue.Insert(item.ObjectID)
-					}
-					progress.N++
-					progress.NumAugments = o.numAugments
-					progress.NumFailures = o.numAugmentFailures
-					progress.NumAugmentTrees = len(o.augmentQueue)
-					progressWriter.Set(progress)
-				}
-				return nil
-			})
-			if err := grp.Wait(); err != nil {
-				return err
-			}
+		// Process items (drain o.itemQueue, fill o.augmentQueue and o.treeQueue).
+		if err := o.processItemQueue(passCtx); err != nil {
+			return err
 		}
 		runtime.GC()
 
-		// Apply augments (drain o.augmentQueue, fill o.itemQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
-			resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.augmentQueue))
-			var progress textui.Portion[int]
-			for _, treeID := range maps.SortedKeys(o.augmentQueue) {
-				if err := _ctx.Err(); err != nil {
-					return err
-				}
-				treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
-				resolvedAugments[treeID] = o.resolveTreeAugments(treeCtx, treeID)
-				progress.D += len(resolvedAugments[treeID])
-			}
-			o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
-			o.numAugments = 0
-			o.numAugmentFailures = 0
-			runtime.GC()
-			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
-			for _, treeID := range maps.SortedKeys(resolvedAugments) {
-				treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
-				for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
-					if err := _ctx.Err(); err != nil {
-						progressWriter.Set(progress)
-						progressWriter.Done()
-						return err
-					}
-					progressWriter.Set(progress)
-					o.rebuilt.Tree(treeCtx, treeID).AddRoot(treeCtx, nodeAddr)
-					progress.N++
-				}
-			}
-			progressWriter.Set(progress)
-			progressWriter.Done()
+		// Apply augments (drain o.augmentQueue, fill o.itemQueue).
+		if err := o.processAugmentQueue(passCtx); err != nil {
+			return err
 		}
 		runtime.GC()
 	}
+	return nil
+}
+
+// processTreeQueue drains o.treeQueue, filling o.itemQueue.
+func (o *rebuilder) processTreeQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
+	treeQueue := o.treeQueue
+	o.treeQueue = make(containers.Set[btrfsprim.ObjID])
+	// Because trees can be wildly different sizes, it's impossible to have a meaningful
+	// progress percentage here.
+	o.curKey.Key.OK = false
+	for _, o.curKey.TreeID = range maps.SortedKeys(treeQueue) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		o.rebuilt.Tree(ctx, o.curKey.TreeID)
+	}
+	return nil
+}
+
+// processItemQueue drains o.itemQueue, filling o.augmentQueue and o.treeQueue.
+func (o *rebuilder) processItemQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
+	itemQueue := maps.Keys(o.itemQueue)
+	o.itemQueue = make(containers.Set[keyAndTree])
+	sort.Slice(itemQueue, func(i, j int) bool {
+		return itemQueue[i].Compare(itemQueue[j]) < 0
+	})
+	var progress itemStats
+	progress.D = len(itemQueue)
+	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+	type keyAndBody struct {
+		keyAndTree
+		Body btrfsitem.Item
+	}
+	itemChan := make(chan keyAndBody, textui.Tunable(300)) // average items-per-node≈100; let's have a buffer of ~3 nodes
+	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
+	grp.Go("io", func(ctx context.Context) error {
+		defer close(itemChan)
+		for _, key := range itemQueue {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			itemCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
+			itemChan <- keyAndBody{
+				keyAndTree: key,
+				Body:       o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key),
+			}
+		}
+		return nil
+	})
+	grp.Go("cpu", func(ctx context.Context) error {
+		defer progressWriter.Done()
+		o.curKey.Key.OK = true
+		for item := range itemChan {
+			itemCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
+			o.curKey.TreeID = item.TreeID
+			o.curKey.Key.Val = item.Key
+			handleItem(o, itemCtx, item.TreeID, btrfstree.Item{
+				Key:  item.Key,
+				Body: item.Body,
+			})
+			if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
+				o.treeQueue.Insert(item.ObjectID)
+			}
+			progress.N++
+			progress.NumAugments = o.numAugments
+			progress.NumFailures = o.numAugmentFailures
+			progress.NumAugmentTrees = len(o.augmentQueue)
+			progressWriter.Set(progress)
+		}
+		return nil
+	})
+	return grp.Wait()
+}
+
+// processAugmentQueue drains o.augmentQueue, filling o.itemQueue.
+func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
+	resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.augmentQueue))
+	var progress textui.Portion[int]
+	for _, treeID := range maps.SortedKeys(o.augmentQueue) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		treeCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
+		resolvedAugments[treeID] = o.resolveTreeAugments(treeCtx, treeID)
+		progress.D += len(resolvedAugments[treeID])
+	}
+	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
+	o.numAugments = 0
+	o.numAugmentFailures = 0
+	runtime.GC()
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+	for _, treeID := range maps.SortedKeys(resolvedAugments) {
+		treeCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
+		for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
+			if err := ctx.Err(); err != nil {
+				progressWriter.Set(progress)
+				progressWriter.Done()
+				return err
+			}
+			progressWriter.Set(progress)
+			o.rebuilt.Tree(treeCtx, treeID).AddRoot(treeCtx, nodeAddr)
+			progress.N++
+		}
+	}
+	progressWriter.Set(progress)
+	progressWriter.Done()
 	return nil
 }
 
