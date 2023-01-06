@@ -200,7 +200,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 					index.Store(itemKey, newPtr)
 					stats.NumItems++
 				} else {
-					if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
+					if tree.ShouldReplace(oldPtr.Node, newPtr.Node) {
 						index.Store(itemKey, newPtr)
 					}
 					stats.NumDups++
@@ -218,7 +218,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 	})
 }
 
-func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
+func (tree *RebuiltTree) ShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
 	oldDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[oldNode].Owner)
 	newDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[newNode].Owner)
 	switch {

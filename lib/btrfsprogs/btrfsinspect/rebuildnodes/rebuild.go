@@ -56,7 +56,8 @@ type rebuilder struct {
 		Key    containers.Optional[btrfsprim.Key]
 	}
 	treeQueue          containers.Set[btrfsprim.ObjID]
-	itemQueue          containers.Set[keyAndTree]
+	addedItemQueue     containers.Set[keyAndTree]
+	settledItemQueue   containers.Set[keyAndTree]
 	augmentQueue       map[btrfsprim.ObjID]*treeAugmentQueue
 	numAugments        int
 	numAugmentFailures int
@@ -97,7 +98,8 @@ func (o *rebuilder) Rebuild(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
 
 	// Initialize
-	o.itemQueue = make(containers.Set[keyAndTree])
+	o.addedItemQueue = make(containers.Set[keyAndTree])
+	o.settledItemQueue = make(containers.Set[keyAndTree])
 	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
 
 	// Seed the queue
@@ -109,22 +111,29 @@ func (o *rebuilder) Rebuild(ctx context.Context) error {
 	)
 
 	// Run
-	for passNum := 0; len(o.treeQueue) > 0 || len(o.itemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
+	for passNum := 0; len(o.treeQueue) > 0 || len(o.addedItemQueue) > 0 || len(o.settledItemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
 		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.pass", passNum)
 
-		// Crawl trees (Drain o.treeQueue, fill o.itemQueue).
+		// Crawl trees (Drain o.treeQueue, fill o.addedItemQueue).
 		if err := o.processTreeQueue(ctx); err != nil {
 			return err
 		}
 		runtime.GC()
 
-		// Process items (drain o.itemQueue, fill o.augmentQueue and o.treeQueue).
-		if err := o.processItemQueue(ctx); err != nil {
-			return err
+		if len(o.addedItemQueue) > 0 {
+			// Settle items (drain o.addedItemQueue, fill o.augmentQueue and o.settledItemQueue).
+			if err := o.processAddedItemQueue(ctx); err != nil {
+				return err
+			}
+		} else {
+			// Process items (drain o.settledItemQueue, fill o.augmentQueue and o.treeQueue).
+			if err := o.processSettledItemQueue(ctx); err != nil {
+				return err
+			}
 		}
 		runtime.GC()
 
-		// Apply augments (drain o.augmentQueue, fill o.itemQueue).
+		// Apply augments (drain o.augmentQueue, fill o.addedItemQueue).
 		if err := o.processAugmentQueue(ctx); err != nil {
 			return err
 		}
@@ -134,7 +143,7 @@ func (o *rebuilder) Rebuild(ctx context.Context) error {
 	return nil
 }
 
-// processTreeQueue drains o.treeQueue, filling o.itemQueue.
+// processTreeQueue drains o.treeQueue, filling o.addedItemQueue.
 func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
 
@@ -148,38 +157,98 @@ func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		o.rebuilt.Tree(ctx, o.curKey.TreeID)
+		// This will call o.AddedItem as nescessary, which
+		// inserts to o.addedItemQueue.
+		_ = o.rebuilt.Tree(ctx, o.curKey.TreeID)
 	}
 
 	return nil
 }
 
-type itemStats struct {
+type settleItemStats struct {
+	textui.Portion[int]
+	NumAugments     int
+	NumAugmentTrees int
+}
+
+func (s settleItemStats) String() string {
+	// return textui.Sprintf("%v (queued %v augments across %v trees)",
+	return textui.Sprintf("%v (aug:%v trees:%v)",
+		s.Portion, s.NumAugments, s.NumAugmentTrees)
+}
+
+// processAddedItemQueue drains o.addedItemQueue, filling o.augmentQueue and o.settledItemQueue.
+func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "settle-items")
+
+	queue := maps.Keys(o.addedItemQueue)
+	o.addedItemQueue = make(containers.Set[keyAndTree])
+	sort.Slice(queue, func(i, j int) bool {
+		return queue[i].Compare(queue[j]) < 0
+	})
+
+	var progress settleItemStats
+	progress.D = len(queue)
+	progressWriter := textui.NewProgress[settleItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+
+	for i, key := range queue {
+		progress.N = i
+		progressWriter.Set(progress)
+
+		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.settle.item", key)
+		tree := o.rebuilt.Tree(ctx, key.TreeID)
+		incPtr, ok := tree.Items(ctx).Load(key.Key)
+		if !ok {
+			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
+		}
+		excPtr, ok := tree.PotentialItems(ctx).Load(key.Key)
+		if ok && tree.ShouldReplace(incPtr.Node, excPtr.Node) {
+			wantKey := WantWithTree{
+				TreeID: key.TreeID,
+				Key:    wantFromKey(key.Key),
+			}
+			o.wantAugment(ctx, wantKey, tree.LeafToRoots(ctx, excPtr.Node))
+			progress.NumAugments = o.numAugments
+			progress.NumAugmentTrees = len(o.augmentQueue)
+			progressWriter.Set(progress)
+		} else if !handleWouldBeNoOp(key.ItemType) {
+			o.settledItemQueue.Insert(key)
+		}
+	}
+
+	progress.N = len(queue)
+	progressWriter.Set(progress)
+	progressWriter.Done()
+	return nil
+}
+
+type processItemStats struct {
 	textui.Portion[int]
 	NumAugments     int
 	NumFailures     int
 	NumAugmentTrees int
 }
 
-func (s itemStats) String() string {
+func (s processItemStats) String() string {
 	// return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
 	return textui.Sprintf("%v (aug:%v fail:%v trees:%v)",
 		s.Portion, s.NumAugments, s.NumFailures, s.NumAugmentTrees)
 }
 
-// processItemQueue drains o.itemQueue, filling o.augmentQueue and o.treeQueue.
-func (o *rebuilder) processItemQueue(ctx context.Context) error {
+// processSettledItemQueue drains o.settledItemQueue, filling o.augmentQueue and o.treeQueue.
+func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
 
-	queue := maps.Keys(o.itemQueue)
-	o.itemQueue = make(containers.Set[keyAndTree])
+	queue := maps.Keys(o.settledItemQueue)
+	o.settledItemQueue = make(containers.Set[keyAndTree])
 	sort.Slice(queue, func(i, j int) bool {
 		return queue[i].Compare(queue[j]) < 0
 	})
 
-	var progress itemStats
+	var progress processItemStats
 	progress.D = len(queue)
-	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter := textui.NewProgress[processItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
 
 	type keyAndBody struct {
@@ -227,7 +296,7 @@ func (o *rebuilder) processItemQueue(ctx context.Context) error {
 	return grp.Wait()
 }
 
-// processAugmentQueue drains o.augmentQueue, filling o.itemQueue.
+// processAugmentQueue drains o.augmentQueue, filling o.addedItemQueue.
 func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
 
@@ -257,6 +326,8 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 				return err
 			}
 			progressWriter.Set(progress)
+			// This will call o.AddedItem as nescessary, which
+			// inserts to o.addedItemQueue.
 			o.rebuilt.Tree(ctx, treeID).AddRoot(ctx, nodeAddr)
 			progress.N++
 		}
@@ -269,7 +340,7 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 
 func (o *rebuilder) enqueueRetry() {
 	if o.curKey.Key.OK {
-		o.itemQueue.Insert(keyAndTree{
+		o.settledItemQueue.Insert(keyAndTree{
 			TreeID: o.curKey.TreeID,
 			Key:    o.curKey.Key.Val,
 		})
@@ -410,7 +481,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		maps.Keys(o.augmentQueue[treeID].single),
 		maps.Keys(o.augmentQueue[treeID].multi)...)
 	sort.Slice(wantKeys, func(i, j int) bool {
-		return wantKeys[i].Cmp(wantKeys[j]) < 0
+		return wantKeys[i].Compare(wantKeys[j]) < 0
 	})
 	for _, wantKey := range wantKeys {
 		list, ok := o.augmentQueue[treeID].multi[wantKey]

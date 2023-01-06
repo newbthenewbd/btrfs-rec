@@ -14,10 +14,7 @@ import (
 
 // AddedItem implements btrees.Callbacks.
 func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
-	if handleWouldBeNoOp(key.ItemType) {
-		return
-	}
-	o.itemQueue.Insert(keyAndTree{
+	o.addedItemQueue.Insert(keyAndTree{
 		TreeID: tree,
 		Key:    key,
 	})

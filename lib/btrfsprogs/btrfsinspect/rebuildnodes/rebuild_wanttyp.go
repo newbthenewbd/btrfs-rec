@@ -32,7 +32,7 @@ type Want struct {
 	OffsetName string
 }
 
-func (a Want) Cmp(b Want) int {
+func (a Want) Compare(b Want) int {
 	if d := containers.NativeCompare(a.ObjectID, b.ObjectID); d != 0 {
 		return d
 	}
