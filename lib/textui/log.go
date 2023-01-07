@@ -330,7 +330,7 @@ func fieldOrd(key string) int {
 		return -4
 	case "btrfsinspect.rebuild-nodes.rebuild.index-inc-items":
 		return -3
-	case "btrfsinspect.rebuild-nodes.rebuild.index-all-items":
+	case "btrfsinspect.rebuild-nodes.rebuild.index-exc-items":
 		return -2
 	case "btrfsinspect.rebuild-nodes.rebuild.index-nodes":
 		return -1
