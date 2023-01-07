@@ -264,9 +264,13 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 				return err
 			}
 			ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
-			itemChan <- keyAndBody{
+			item := keyAndBody{
 				keyAndTree: key,
 				Body:       o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+			}
+			select {
+			case itemChan <- item:
+			case <-ctx.Done():
 			}
 		}
 		return nil
