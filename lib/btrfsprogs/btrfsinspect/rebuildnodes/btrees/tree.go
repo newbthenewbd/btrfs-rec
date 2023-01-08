@@ -270,6 +270,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
+	dlog.Info(ctx, "adding root...")
 
 	leafToRoots := tree.leafToRoots(ctx)
 
