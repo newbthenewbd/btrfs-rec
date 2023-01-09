@@ -1,13 +1,16 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package binstruct
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"reflect"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
 )
 
 type Unmarshaler interface {
@@ -40,12 +43,34 @@ func UnmarshalWithoutInterface(dat []byte, dstPtr any) (int, error) {
 	dst := _dstPtr.Elem()
 
 	switch dst.Kind() {
-	case reflect.Uint8, reflect.Int8, reflect.Uint16, reflect.Int16, reflect.Uint32, reflect.Int32, reflect.Uint64, reflect.Int64:
-		typ := intKind2Type[dst.Kind()]
-		newDstPtr := reflect.New(typ)
-		n, err := Unmarshal(dat, newDstPtr.Interface())
-		dst.Set(newDstPtr.Elem().Convert(dst.Type()))
-		return n, err
+	case reflect.Uint8, reflect.Int8:
+		if err := binutil.NeedNBytes(dat, sizeof8); err != nil {
+			return 0, err
+		}
+		val := reflect.ValueOf(dat[0])
+		dst.Set(val.Convert(dst.Type()))
+		return sizeof8, nil
+	case reflect.Uint16, reflect.Int16:
+		if err := binutil.NeedNBytes(dat, sizeof16); err != nil {
+			return 0, err
+		}
+		val := reflect.ValueOf(binary.LittleEndian.Uint16(dat[:sizeof16]))
+		dst.Set(val.Convert(dst.Type()))
+		return sizeof16, nil
+	case reflect.Uint32, reflect.Int32:
+		if err := binutil.NeedNBytes(dat, sizeof32); err != nil {
+			return 0, err
+		}
+		val := reflect.ValueOf(binary.LittleEndian.Uint32(dat[:sizeof32]))
+		dst.Set(val.Convert(dst.Type()))
+		return sizeof32, nil
+	case reflect.Uint64, reflect.Int64:
+		if err := binutil.NeedNBytes(dat, sizeof64); err != nil {
+			return 0, err
+		}
+		val := reflect.ValueOf(binary.LittleEndian.Uint64(dat[:sizeof64]))
+		dst.Set(val.Convert(dst.Type()))
+		return sizeof64, nil
 	case reflect.Ptr:
 		elemPtr := reflect.New(dst.Type().Elem())
 		n, err := Unmarshal(dat, elemPtr.Interface())
