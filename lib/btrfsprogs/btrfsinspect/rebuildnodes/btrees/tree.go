@@ -303,12 +303,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.forrest.excItems.Delete(tree.ID) // force re-gen
 
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
-		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
-			if otherTree == nil {
-				tree.forrest.trees.Delete(otherTreeID)
-			}
-			return true
-		})
+		tree.forrest.flushNegativeCache()
 	}
 }
 

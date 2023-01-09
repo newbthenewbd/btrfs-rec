@@ -112,7 +112,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	defer func() {
 		if !ok {
 			// Store a negative cache of this.  tree.AddRoot() for the ROOT or UUID
-			// trees will invalidate the negative cache.
+			// trees will call .flushNegativeCache().
 			ts.trees.Store(treeID, nil)
 		}
 	}()
@@ -175,6 +175,15 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	}
 
 	return true
+}
+
+func (ts *RebuiltForrest) flushNegativeCache() {
+	ts.trees.Range(func(treeID btrfsprim.ObjID, tree *RebuiltTree) bool {
+		if tree == nil {
+			ts.trees.Delete(treeID)
+		}
+		return true
+	})
 }
 
 // ListRoots returns a listing of all initialized trees and their root
