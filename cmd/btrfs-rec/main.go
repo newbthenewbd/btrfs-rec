@@ -16,6 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/profile"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -61,6 +62,7 @@ func main() {
 	if err := argparser.MarkPersistentFlagFilename("mappings"); err != nil {
 		panic(err)
 	}
+	stopProfiling := profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
 	openFlag := os.O_RDONLY
 
@@ -113,6 +115,9 @@ func main() {
 							err = _err
 						}
 					}
+					defer func() {
+						maybeSetErr(stopProfiling())
+					}()
 					fs, err := btrfsutil.Open(ctx, openFlag, pvsFlag...)
 					if err != nil {
 						return err
