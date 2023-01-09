@@ -69,7 +69,8 @@ type structHandler struct {
 }
 
 type structField struct {
-	name string
+	name          string
+	isUnmarshaler bool
 	tag
 }
 
@@ -82,7 +83,7 @@ func (sh structHandler) Unmarshal(dat []byte, dst reflect.Value) (int, error) {
 		if field.skip {
 			continue
 		}
-		_n, err := Unmarshal(dat[n:], dst.Field(i).Addr().Interface())
+		_n, err := unmarshal(dat[n:], dst.Field(i), field.isUnmarshaler)
 		if err != nil {
 			if _n >= 0 {
 				n += _n
@@ -166,8 +167,9 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 		curOffset += fieldTag.siz
 
 		ret.fields = append(ret.fields, structField{
-			name: fieldInfo.Name,
-			tag:  fieldTag,
+			name:          fieldInfo.Name,
+			isUnmarshaler: reflect.PtrTo(fieldInfo.Type).Implements(unmarshalerType),
+			tag:           fieldTag,
 		})
 	}
 	ret.Size = curOffset
