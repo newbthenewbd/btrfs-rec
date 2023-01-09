@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"git.lukeshu.com/go/typedsync"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
 )
 
@@ -178,21 +180,18 @@ func genStructHandler(structInfo reflect.Type) (structHandler, error) {
 	return ret, nil
 }
 
-var structCache = make(map[reflect.Type]structHandler)
+var structCache typedsync.CacheMap[reflect.Type, structHandler]
 
 func getStructHandler(typ reflect.Type) structHandler {
-	h, ok := structCache[typ]
-	if ok {
+	ret, _ := structCache.LoadOrCompute(typ, func(typ reflect.Type) structHandler {
+		h, err := genStructHandler(typ)
+		if err != nil {
+			panic(&InvalidTypeError{
+				Type: typ,
+				Err:  err,
+			})
+		}
 		return h
-	}
-
-	h, err := genStructHandler(typ)
-	if err != nil {
-		panic(&InvalidTypeError{
-			Type: typ,
-			Err:  err,
-		})
-	}
-	structCache[typ] = h
-	return h
+	})
+	return ret
 }

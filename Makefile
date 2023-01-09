@@ -54,7 +54,7 @@ go-mod-tidy:
 go-mod-tidy: go-mod-tidy/main
 go-mod-tidy/main:
 	rm -f go.sum
-	go mod tidy -go $(goversion) -compat $(goversion)
+	go mod tidy -go 1.20 -compat $(goversion)
 .PHONY: go-mod-tidy/main
 
 go-mod-tidy: $(patsubst tools/src/%/go.mod,go-mod-tidy/tools/%,$(wildcard tools/src/*/go.mod))

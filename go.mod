@@ -4,7 +4,7 @@
 
 module git.lukeshu.com/btrfs-progs-ng
 
-go 1.19
+go 1.20
 
 require (
 	git.lukeshu.com/go/lowmemjson v0.3.4
