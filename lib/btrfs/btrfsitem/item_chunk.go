@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -65,7 +65,7 @@ func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	chunk.Stripes = nil
+	chunk.Stripes = make([]ChunkStripe, 0, chunk.Head.NumStripes)
 	for i := 0; i < int(chunk.Head.NumStripes); i++ {
 		var stripe ChunkStripe
 		_n, err := binstruct.Unmarshal(dat[n:], &stripe)
