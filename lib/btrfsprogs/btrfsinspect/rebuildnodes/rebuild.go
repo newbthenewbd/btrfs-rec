@@ -71,7 +71,7 @@ type treeAugmentQueue struct {
 
 type Rebuilder interface {
 	Rebuild(context.Context) error
-	ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
+	ListRoots(context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
 }
 
 func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (Rebuilder, error) {
@@ -90,8 +90,8 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 	return o, nil
 }
 
-func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
-	return o.rebuilt.ListRoots()
+func (o *rebuilder) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+	return o.rebuilt.ListRoots(ctx)
 }
 
 func (o *rebuilder) Rebuild(ctx context.Context) error {

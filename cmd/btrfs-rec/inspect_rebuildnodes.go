@@ -57,7 +57,7 @@ func init() {
 				dlog.Errorf(ctx, "rebuild error: %v", rebuildErr)
 			}
 			dlog.Infof(ctx, "Writing re-built nodes to %s...", dst.Name())
-			if err := writeJSONFile(dst, rebuilder.ListRoots(), lowmemjson.ReEncoderConfig{
+			if err := writeJSONFile(dst, rebuilder.ListRoots(ctx), lowmemjson.ReEncoderConfig{
 				Indent:                "\t",
 				CompactIfUnder:        80, //nolint:gomnd // This is what looks nice.
 				ForceTrailingNewlines: true,
