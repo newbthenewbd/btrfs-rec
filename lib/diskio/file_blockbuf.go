@@ -7,6 +7,8 @@ package diskio
 import (
 	"sync"
 
+	"git.lukeshu.com/go/typedsync"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
@@ -20,18 +22,28 @@ type bufferedFile[A ~int64] struct {
 	mu         sync.RWMutex
 	blockSize  A
 	blockCache containers.ARCache[A, bufferedBlock]
+	blockPool  typedsync.Pool[[]byte]
 }
 
 var _ File[assertAddr] = (*bufferedFile[assertAddr])(nil)
 
 func NewBufferedFile[A ~int64](file File[A], blockSize A, cacheSize int) *bufferedFile[A] {
-	return &bufferedFile[A]{
+	ret := &bufferedFile[A]{
 		inner:     file,
 		blockSize: blockSize,
 		blockCache: containers.ARCache[A, bufferedBlock]{
 			MaxLen: cacheSize,
 		},
+		blockPool: typedsync.Pool[[]byte]{
+			New: func() []byte {
+				return make([]byte, blockSize)
+			},
+		},
 	}
+	ret.blockCache.OnRemove = func(_ A, buf bufferedBlock) {
+		ret.blockPool.Put(buf.Dat)
+	}
+	return ret
 }
 
 func (bf *bufferedFile[A]) Name() string { return bf.inner.Name() }
@@ -57,7 +69,7 @@ func (bf *bufferedFile[A]) maybeShortReadAt(dat []byte, off A) (n int, err error
 	blockOffset := off - offsetWithinBlock
 	cachedBlock, ok := bf.blockCache.Load(blockOffset)
 	if !ok {
-		cachedBlock.Dat = make([]byte, bf.blockSize)
+		cachedBlock.Dat, _ = bf.blockPool.Get()
 		n, err := bf.inner.ReadAt(cachedBlock.Dat, blockOffset)
 		cachedBlock.Dat = cachedBlock.Dat[:n]
 		cachedBlock.Err = err
