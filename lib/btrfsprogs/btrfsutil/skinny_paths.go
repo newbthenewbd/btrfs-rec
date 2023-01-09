@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -29,21 +29,13 @@ type SkinnyPathArena struct {
 	SB btrfstree.Superblock
 
 	fatRoots map[btrfsvol.LogicalAddr]btrfstree.TreePathElem
-	fatItems *containers.LRUCache[skinnyItem, btrfstree.TreePathElem]
+	fatItems containers.ARCache[skinnyItem, btrfstree.TreePathElem]
 }
 
 func (a *SkinnyPathArena) init() {
 	if a.fatRoots == nil {
 		a.fatRoots = make(map[btrfsvol.LogicalAddr]btrfstree.TreePathElem)
-		// This cache size is sorta arbitrary.  At first I figured
-		// "let's allow 1GB of cached items", and figured 67bytes per
-		// item, that's about 16M items.  But with overhead of the
-		// LRUCache, it's actually a lot higher than that.  So then I
-		// cut it to .5M, and that cut my total memory use to ~8GB,
-		// which is a good number for me.  Then I tought it to do a
-		// better job of recovering trees, and so the memory grew, and I
-		// cut it to 64K.  Then to 8K.  Then grew it to 128K.
-		a.fatItems = containers.NewLRUCache[skinnyItem, btrfstree.TreePathElem](textui.Tunable(128 * 1024))
+		a.fatItems.MaxLen = textui.Tunable(128 * 1024)
 	}
 }
 
@@ -54,7 +46,7 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 
 	a.init()
 
-	ret, ok := a.fatItems.Get(skinnyItem{
+	ret, ok := a.fatItems.Load(skinnyItem{
 		Node: parent.Node(-1).ToNodeAddr,
 		Item: itemIdx,
 	})
@@ -84,7 +76,7 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 				ToKey:            item.Key,
 				ToMaxKey:         toMaxKey,
 			}
-			a.fatItems.Add(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
+			a.fatItems.Store(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
 			if i == itemIdx {
 				ret = elem
 			}
@@ -100,7 +92,7 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 				ToKey:       item.Key,
 				ToMaxKey:    item.Key,
 			}
-			a.fatItems.Add(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
+			a.fatItems.Store(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
 			if i == itemIdx {
 				ret = elem
 			}
@@ -121,7 +113,7 @@ func (a *SkinnyPathArena) Deflate(fat btrfstree.TreePath) SkinnyPath {
 			a.fatRoots[elem.ToNodeAddr] = elem
 			ret.Root = elem.ToNodeAddr
 		} else {
-			a.fatItems.Add(skinnyItem{Node: prevNode, Item: elem.FromItemIdx}, elem)
+			a.fatItems.Store(skinnyItem{Node: prevNode, Item: elem.FromItemIdx}, elem)
 			ret.Items = append(ret.Items, elem.FromItemIdx)
 		}
 		prevNode = elem.ToNodeAddr

@@ -75,10 +75,10 @@ type Subvolume struct {
 	rootVal btrfsitem.Root
 	rootErr error
 
-	bareInodeCache *containers.LRUCache[btrfsprim.ObjID, *BareInode]
-	fullInodeCache *containers.LRUCache[btrfsprim.ObjID, *FullInode]
-	dirCache       *containers.LRUCache[btrfsprim.ObjID, *Dir]
-	fileCache      *containers.LRUCache[btrfsprim.ObjID, *File]
+	bareInodeCache containers.ARCache[btrfsprim.ObjID, *BareInode]
+	fullInodeCache containers.ARCache[btrfsprim.ObjID, *FullInode]
+	dirCache       containers.ARCache[btrfsprim.ObjID, *Dir]
+	fileCache      containers.ARCache[btrfsprim.ObjID, *File]
 }
 
 func (sv *Subvolume) init() {
@@ -97,10 +97,10 @@ func (sv *Subvolume) init() {
 			}
 		}
 
-		sv.bareInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *BareInode](textui.Tunable(128))
-		sv.fullInodeCache = containers.NewLRUCache[btrfsprim.ObjID, *FullInode](textui.Tunable(128))
-		sv.dirCache = containers.NewLRUCache[btrfsprim.ObjID, *Dir](textui.Tunable(128))
-		sv.fileCache = containers.NewLRUCache[btrfsprim.ObjID, *File](textui.Tunable(128))
+		sv.bareInodeCache.MaxLen = textui.Tunable(128)
+		sv.fullInodeCache.MaxLen = textui.Tunable(128)
+		sv.dirCache.MaxLen = textui.Tunable(128)
+		sv.fileCache.MaxLen = textui.Tunable(128)
 	})
 }
 
@@ -111,7 +111,7 @@ func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
 
 func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 	sv.init()
-	val := sv.bareInodeCache.GetOrElse(inode, func() (val *BareInode) {
+	val := containers.LoadOrElse[btrfsprim.ObjID, *BareInode](&sv.bareInodeCache, inode, func(inode btrfsprim.ObjID) (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
 		}
@@ -144,7 +144,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 
 func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 	sv.init()
-	val := sv.fullInodeCache.GetOrElse(inode, func() (val *FullInode) {
+	val := containers.LoadOrElse[btrfsprim.ObjID, *FullInode](&sv.fullInodeCache, inode, func(indoe btrfsprim.ObjID) (val *FullInode) {
 		val = &FullInode{
 			BareInode: BareInode{
 				Inode: inode,
@@ -200,7 +200,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 
 func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
 	sv.init()
-	val := sv.dirCache.GetOrElse(inode, func() (val *Dir) {
+	val := containers.LoadOrElse[btrfsprim.ObjID, *Dir](&sv.dirCache, inode, func(inode btrfsprim.ObjID) (val *Dir) {
 		val = new(Dir)
 		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {
@@ -336,7 +336,7 @@ func (dir *Dir) AbsPath() (string, error) {
 
 func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
 	sv.init()
-	val := sv.fileCache.GetOrElse(inode, func() (val *File) {
+	val := containers.LoadOrElse[btrfsprim.ObjID, *File](&sv.fileCache, inode, func(inode btrfsprim.ObjID) (val *File) {
 		val = new(File)
 		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {

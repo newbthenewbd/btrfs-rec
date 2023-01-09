@@ -64,9 +64,9 @@ type RebuiltForrest struct {
 
 	// mutable
 	trees    typedsync.Map[btrfsprim.ObjID, *RebuiltTree]
-	leafs    *containers.LRUCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	incItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
-	excItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
+	leafs    containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
+	incItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
+	excItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
@@ -86,9 +86,15 @@ func NewRebuiltForrest(
 		cbLookupRoot: cbLookupRoot,
 		cbLookupUUID: cbLookupUUID,
 
-		leafs:    containers.NewLRUCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](textui.Tunable(8)),
-		incItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
-		excItems: containers.NewLRUCache[btrfsprim.ObjID, *itemIndex](textui.Tunable(8)),
+		leafs: containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]{
+			MaxLen: textui.Tunable(8),
+		},
+		incItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
+			MaxLen: textui.Tunable(8),
+		},
+		excItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
+			MaxLen: textui.Tunable(8),
+		},
 	}
 }
 

@@ -53,6 +53,8 @@ type ARCache[K comparable, V any] struct {
 	noopChecker //nolint:unused // False positive; it is used.
 }
 
+var _ Map[int, string] = (*ARCache[int, string])(nil)
+
 //nolint:unused // False positive; it is used.
 type noopChecker struct{}
 

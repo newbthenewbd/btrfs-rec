@@ -36,6 +36,8 @@ type lruCache[K comparable, V any] struct {
 	byName map[K]*LinkedListEntry[lruEntry[K, V]]
 }
 
+var _ Map[int, string] = (*lruCache[int, string])(nil)
+
 func (c *lruCache[K, V]) rem(entry *LinkedListEntry[lruEntry[K, V]]) {
 	k, v := entry.Value.key, entry.Value.val
 	delete(c.byName, entry.Value.key)

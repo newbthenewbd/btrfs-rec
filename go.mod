@@ -12,7 +12,6 @@ require (
 	github.com/datawire/dlib v1.3.0
 	github.com/datawire/ocibuild v0.0.3-0.20220423003204-fc6a4e9f90dc
 	github.com/davecgh/go-spew v1.1.1
-	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jacobsa/fuse v0.0.0-20220702091825-13117049f383
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5

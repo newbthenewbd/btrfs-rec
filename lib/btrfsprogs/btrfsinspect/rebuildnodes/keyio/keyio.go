@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -48,7 +48,7 @@ type Handle struct {
 	Names map[ItemPtr][]byte      // DIR_INDEX
 	Sizes map[ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
 
-	cache *containers.LRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
+	cache containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
 func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *Handle {
@@ -60,7 +60,9 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 		Names: make(map[ItemPtr][]byte),
 		Sizes: make(map[ItemPtr]SizeAndErr),
 
-		cache: containers.NewLRUCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]](textui.Tunable(8)),
+		cache: containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]{
+			MaxLen: textui.Tunable(8),
+		},
 	}
 }
 
@@ -113,7 +115,7 @@ func (o *Handle) SetGraph(graph graph.Graph) {
 }
 
 func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
-	if cached, ok := o.cache.Get(laddr); ok {
+	if cached, ok := o.cache.Load(laddr); ok {
 		dlog.Tracef(ctx, "cache-hit node@%v", laddr)
 		return cached
 	}
@@ -142,7 +144,7 @@ func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *disk
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
 	}
 
-	o.cache.Add(laddr, ref)
+	o.cache.Store(laddr, ref)
 
 	return ref
 }
