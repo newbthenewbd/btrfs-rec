@@ -248,14 +248,13 @@ type KeyPointer struct {
 
 func (node *Node) unmarshalInternal(bodyBuf []byte) (int, error) {
 	n := 0
-	for i := uint32(0); i < node.Head.NumItems; i++ {
-		var item KeyPointer
-		_n, err := binstruct.Unmarshal(bodyBuf[n:], &item)
+	node.BodyInternal = make([]KeyPointer, node.Head.NumItems)
+	for i := range node.BodyInternal {
+		_n, err := binstruct.Unmarshal(bodyBuf[n:], &node.BodyInternal[i])
 		n += _n
 		if err != nil {
 			return n, fmt.Errorf("item %v: %w", i, err)
 		}
-		node.BodyInternal = append(node.BodyInternal, item)
 	}
 	node.Padding = bodyBuf[n:]
 	return len(bodyBuf), nil
@@ -299,7 +298,8 @@ type ItemHeader struct {
 func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 	head := 0
 	tail := len(bodyBuf)
-	for i := uint32(0); i < node.Head.NumItems; i++ {
+	node.BodyLeaf = make([]Item, node.Head.NumItems)
+	for i := range node.BodyLeaf {
 		var itemHead ItemHeader
 		n, err := binstruct.Unmarshal(bodyBuf[head:], &itemHead)
 		head += n
@@ -324,11 +324,11 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 		tail = dataOff
 		dataBuf := bodyBuf[dataOff : dataOff+dataSize]
 
-		node.BodyLeaf = append(node.BodyLeaf, Item{
+		node.BodyLeaf[i] = Item{
 			Key:      itemHead.Key,
 			BodySize: itemHead.DataSize,
 			Body:     btrfsitem.UnmarshalItem(itemHead.Key, node.ChecksumType, dataBuf),
-		})
+		}
 	}
 
 	node.Padding = bodyBuf[head:tail]
