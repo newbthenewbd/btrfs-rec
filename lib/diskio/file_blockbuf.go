@@ -34,16 +34,28 @@ func NewBufferedFile[A ~int64](file File[A], blockSize A, cacheSize int) *buffer
 		blockCache: containers.ARCache[A, bufferedBlock]{
 			MaxLen: cacheSize,
 		},
-		blockPool: typedsync.Pool[[]byte]{
-			New: func() []byte {
-				return make([]byte, blockSize)
-			},
-		},
 	}
-	ret.blockCache.OnRemove = func(_ A, buf bufferedBlock) {
-		ret.blockPool.Put(buf.Dat)
-	}
+	ret.blockPool.New = ret.malloc
+	ret.blockCache.OnRemove = ret.free
+	ret.blockCache.New = ret.readBlock
 	return ret
+}
+
+func (bf *bufferedFile[A]) malloc() []byte {
+	return make([]byte, bf.blockSize)
+}
+
+func (bf *bufferedFile[A]) free(_ A, buf bufferedBlock) {
+	bf.blockPool.Put(buf.Dat)
+}
+
+func (bf *bufferedFile[A]) readBlock(blockOffset A) bufferedBlock {
+	dat, _ := bf.blockPool.Get()
+	n, err := bf.inner.ReadAt(dat, blockOffset)
+	return bufferedBlock{
+		Dat: dat[:n],
+		Err: err,
+	}
 }
 
 func (bf *bufferedFile[A]) Name() string { return bf.inner.Name() }
@@ -67,14 +79,7 @@ func (bf *bufferedFile[A]) maybeShortReadAt(dat []byte, off A) (n int, err error
 	defer bf.mu.RUnlock()
 	offsetWithinBlock := off % bf.blockSize
 	blockOffset := off - offsetWithinBlock
-	cachedBlock, ok := bf.blockCache.Load(blockOffset)
-	if !ok {
-		cachedBlock.Dat, _ = bf.blockPool.Get()
-		n, err := bf.inner.ReadAt(cachedBlock.Dat, blockOffset)
-		cachedBlock.Dat = cachedBlock.Dat[:n]
-		cachedBlock.Err = err
-		bf.blockCache.Store(blockOffset, cachedBlock)
-	}
+	cachedBlock, _ := bf.blockCache.Load(blockOffset)
 	n = copy(dat, cachedBlock.Dat[offsetWithinBlock:])
 	if n < len(dat) {
 		return n, cachedBlock.Err
