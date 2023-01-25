@@ -47,7 +47,7 @@ func init() {
 			}
 
 			dlog.Infof(ctx, "Writing reconstructed mappings to stdout...")
-			if err := writeJSONFile(os.Stdout, fs, lowmemjson.ReEncoder{
+			if err := writeJSONFile(os.Stdout, fs.LV.Mappings(), lowmemjson.ReEncoder{
 				Indent:                "\t",
 				ForceTrailingNewlines: true,
 				CompactIfUnder:        120, //nolint:gomnd // This is what looks nice.

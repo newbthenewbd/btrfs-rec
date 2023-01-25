@@ -148,7 +148,7 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-all-items", fmt.Sprintf("tree=%v", tree.ID))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, tree.forrest.excItems,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
 			return !tree.Roots.HasAny(roots)
