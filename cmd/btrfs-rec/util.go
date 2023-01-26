@@ -31,7 +31,7 @@ func readJSONFile[T any](ctx context.Context, filename string) (T, error) {
 		return zero, err
 	}
 	var ret T
-	if err := lowmemjson.DecodeThenEOF(buf, &ret); err != nil {
+	if err := lowmemjson.NewDecoder(buf).DecodeThenEOF(&ret); err != nil {
 		var zero T
 		return zero, err
 	}
@@ -46,5 +46,5 @@ func writeJSONFile(w io.Writer, obj any, cfg lowmemjson.ReEncoder) (err error) {
 		}
 	}()
 	cfg.Out = buffer
-	return lowmemjson.Encode(&cfg, obj)
+	return lowmemjson.NewEncoder(&cfg).Encode(obj)
 }

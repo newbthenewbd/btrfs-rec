@@ -248,7 +248,7 @@ func (sg SumRunWithGaps[Addr]) EncodeJSON(w io.Writer) error {
 			}
 			fallthrough
 		default:
-			if err := lowmemjson.Encode(w, run); err != nil {
+			if err := lowmemjson.NewEncoder(w).Encode(run); err != nil {
 				return err
 			}
 			cur = run.Addr.Add(run.Size())
@@ -274,18 +274,18 @@ func (sg *SumRunWithGaps[Addr]) DecodeJSON(r io.RuneScanner) error {
 	var name string
 	return lowmemjson.DecodeObject(r,
 		func(r io.RuneScanner) error {
-			return lowmemjson.Decode(r, &name)
+			return lowmemjson.NewDecoder(r).Decode(&name)
 		},
 		func(r io.RuneScanner) error {
 			switch name {
 			case "Addr":
-				return lowmemjson.Decode(r, &sg.Addr)
+				return lowmemjson.NewDecoder(r).Decode(&sg.Addr)
 			case "Size":
-				return lowmemjson.Decode(r, &sg.Size)
+				return lowmemjson.NewDecoder(r).Decode(&sg.Size)
 			case "Runs":
 				return lowmemjson.DecodeArray(r, func(r io.RuneScanner) error {
 					var run SumRun[Addr]
-					if err := lowmemjson.Decode(r, &run); err != nil {
+					if err := lowmemjson.NewDecoder(r).Decode(&run); err != nil {
 						return err
 					}
 					if run.ChecksumSize > 0 {
