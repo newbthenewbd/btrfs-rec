@@ -23,6 +23,7 @@ type RuneScanner interface {
 
 type runeScanner struct {
 	ctx            context.Context //nolint:containedctx // For detecting shutdown from methods
+	done           <-chan struct{}
 	progress       textui.Portion[int64]
 	progressWriter *textui.Progress[textui.Portion[int64]]
 	unreadCnt      uint64
@@ -45,7 +46,8 @@ func NewRuneScanner(ctx context.Context, fh *os.File) (RuneScanner, error) {
 		return nil, err
 	}
 	ret := &runeScanner{
-		ctx: ctx,
+		ctx:  ctx,
+		done: ctx.Done(),
 		progress: textui.Portion[int64]{
 			D: fi.Size(),
 		},
@@ -56,26 +58,40 @@ func NewRuneScanner(ctx context.Context, fh *os.File) (RuneScanner, error) {
 	return ret, nil
 }
 
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+//nolint:gomnd // False positive: gomnd.ignored-functions=[textui.Tunable] doesn't support type params.
+var runeThrottle = textui.Tunable[int64](64)
+
 // ReadRune implements io.RuneReader.
 func (rs *runeScanner) ReadRune() (r rune, size int, err error) {
-	if err := rs.ctx.Err(); err != nil {
-		return 0, 0, err
+	// According to the profiler, checking if the rs.ctx.Done()
+	// channel is closed is faster than checking if rs.ctx.Err()
+	// is non-nil.
+	if rs.unreadCnt == 0 && isClosed(rs.done) {
+		return 0, 0, rs.ctx.Err()
 	}
 	r, size, err = rs.reader.ReadRune()
 	if rs.unreadCnt > 0 {
 		rs.unreadCnt--
 	} else {
 		rs.progress.N += int64(size)
-		rs.progressWriter.Set(rs.progress)
+		if rs.progress.D < runeThrottle || rs.progress.N%runeThrottle == 0 || rs.progress.N > rs.progress.D-runeThrottle {
+			rs.progressWriter.Set(rs.progress)
+		}
 	}
 	return
 }
 
 // ReadRune implements io.RuneScanner.
 func (rs *runeScanner) UnreadRune() error {
-	if err := rs.ctx.Err(); err != nil {
-		return err
-	}
 	if err := rs.reader.UnreadRune(); err != nil {
 		return err
 	}
