@@ -23,10 +23,9 @@ import (
 	"time"
 	"unicode"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
-
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type LogLevelFlag struct {
@@ -154,7 +153,7 @@ func (l *logger) UnformattedLogf(lvl dlog.LogLevel, format string, args ...any) 
 }
 
 var (
-	logBufPool = containers.SyncPool[*bytes.Buffer]{
+	logBufPool = typedsync.Pool[*bytes.Buffer]{
 		New: func() *bytes.Buffer {
 			return new(bytes.Buffer)
 		},

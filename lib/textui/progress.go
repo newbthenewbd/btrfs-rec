@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
-
-	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type Stats interface {
@@ -27,7 +26,7 @@ type Progress[T Stats] struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	cur     containers.SyncValue[T]
+	cur     typedsync.Value[T]
 	oldStat T
 	oldLine string
 }
