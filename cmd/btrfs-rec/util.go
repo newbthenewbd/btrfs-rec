@@ -38,13 +38,12 @@ func readJSONFile[T any](ctx context.Context, filename string) (T, error) {
 	return ret, nil
 }
 
-func writeJSONFile(w io.Writer, obj any, cfg lowmemjson.ReEncoder) (err error) {
+func writeJSONFile(w io.Writer, obj any, cfg lowmemjson.ReEncoderConfig) (err error) {
 	buffer := bufio.NewWriter(w)
 	defer func() {
 		if _err := buffer.Flush(); err == nil && _err != nil {
 			err = _err
 		}
 	}()
-	cfg.Out = buffer
-	return lowmemjson.NewEncoder(&cfg).Encode(obj)
+	return lowmemjson.NewEncoder(lowmemjson.NewReEncoder(buffer, cfg)).Encode(obj)
 }
