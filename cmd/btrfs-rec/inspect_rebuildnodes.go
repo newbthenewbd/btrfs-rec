@@ -57,7 +57,7 @@ func init() {
 				dlog.Errorf(ctx, "rebuild error: %v", rebuildErr)
 			}
 			dlog.Infof(ctx, "Writing re-built nodes to %s...", dst.Name())
-			if err := writeJSONFile(dst, rebuilder.ListRoots(), lowmemjson.ReEncoder{
+			if err := writeJSONFile(dst, rebuilder.ListRoots(), lowmemjson.ReEncoderConfig{
 				Indent:                "\t",
 				ForceTrailingNewlines: true,
 			}); err != nil {

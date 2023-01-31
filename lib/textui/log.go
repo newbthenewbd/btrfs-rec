@@ -18,12 +18,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
 )
@@ -153,7 +153,11 @@ func (l *logger) UnformattedLogf(lvl dlog.LogLevel, format string, args ...any) 
 }
 
 var (
-	logBuf     bytes.Buffer
+	logBufPool = typedsync.Pool[*bytes.Buffer]{
+		New: func() *bytes.Buffer {
+			return new(bytes.Buffer)
+		},
+	}
 	logMu      sync.Mutex
 	thisModDir string
 )
@@ -169,13 +173,8 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	if lvl > l.lvl {
 		return
 	}
-	// This is optimized for mostly-single-threaded usage.  If I cared more
-	// about multi-threaded performance, I'd trade in some
-	// memory-use/allocations and (1) instead of using a static `logBuf`,
-	// I'd have a `logBufPool` `sync.Pool`, and (2) have the final call to
-	// `l.out.Write()` be the only thing protected by `logMu`.
-	logMu.Lock()
-	defer logMu.Unlock()
+	logBuf, _ := logBufPool.Get()
+	defer logBufPool.Put(logBuf)
 	defer logBuf.Reset()
 
 	// time ////////////////////////////////////////////////////////////////
@@ -222,19 +221,19 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 			nextField = i
 			break
 		}
-		writeField(&logBuf, fieldKey, fields[fieldKey])
+		writeField(logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// message /////////////////////////////////////////////////////////////
 	logBuf.WriteString(" : ")
-	writeMsg(&logBuf)
+	writeMsg(logBuf)
 
 	// fields (late) ///////////////////////////////////////////////////////
 	if nextField < len(fieldKeys) {
 		logBuf.WriteString(" :")
 	}
 	for _, fieldKey := range fieldKeys[nextField:] {
-		writeField(&logBuf, fieldKey, fields[fieldKey])
+		writeField(logBuf, fieldKey, fields[fieldKey])
 	}
 
 	// caller //////////////////////////////////////////////////////////////
@@ -258,13 +257,16 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 			logBuf.WriteString(" :")
 		}
 		file := f.File[strings.LastIndex(f.File, thisModDir+"/")+len(thisModDir+"/"):]
-		fmt.Fprintf(&logBuf, " (from %s:%d)", file, f.Line)
+		fmt.Fprintf(logBuf, " (from %s:%d)", file, f.Line)
 		break
 	}
 
 	// boilerplate /////////////////////////////////////////////////////////
 	logBuf.WriteByte('\n')
+
+	logMu.Lock()
 	_, _ = l.out.Write(logBuf.Bytes())
+	logMu.Unlock()
 }
 
 // fieldOrd returns the sort-position for a given log-field-key.  Lower return
@@ -344,35 +346,49 @@ func fieldOrd(key string) int {
 }
 
 func writeField(w io.Writer, key string, val any) {
-	valStr := printer.Sprint(val)
+	valBuf, _ := logBufPool.Get()
+	defer func() {
+		// The wrapper `func()` is important to defer
+		// evaluating `valBuf`, since we might re-assign it
+		// below.
+		valBuf.Reset()
+		logBufPool.Put(valBuf)
+	}()
+	_, _ = printer.Fprint(valBuf, val)
 	needsQuote := false
-	if strings.HasPrefix(valStr, `"`) {
+	if bytes.HasPrefix(valBuf.Bytes(), []byte(`"`)) {
 		needsQuote = true
 	} else {
-		for _, r := range valStr {
-			if !(unicode.IsPrint(r) && r != ' ') {
+		for _, r := range valBuf.Bytes() {
+			if !(unicode.IsPrint(rune(r)) && r != ' ') {
 				needsQuote = true
 				break
 			}
 		}
 	}
 	if needsQuote {
-		valStr = strconv.Quote(valStr)
+		valBuf2, _ := logBufPool.Get()
+		fmt.Fprintf(valBuf2, "%q", valBuf.Bytes())
+		valBuf.Reset()
+		logBufPool.Put(valBuf)
+		valBuf = valBuf2
 	}
 
+	valStr := valBuf.Bytes()
 	name := key
 
 	switch {
 	case name == "THREAD":
 		name = "thread"
-		switch valStr {
-		case "", "/main":
+		switch {
+		case len(valStr) == 0 || bytes.Equal(valStr, []byte("/main")):
 			return
 		default:
-			if strings.HasPrefix(valStr, "/main/") {
-				valStr = strings.TrimPrefix(valStr, "/main")
+			if bytes.HasPrefix(valStr, []byte("/main/")) {
+				valStr = valStr[len("/main/"):]
+			} else if bytes.HasPrefix(valStr, []byte("/")) {
+				valStr = valStr[len("/"):]
 			}
-			valStr = strings.TrimPrefix(valStr, "/")
 		}
 	case strings.HasSuffix(name, ".pass"):
 		fmt.Fprintf(w, "/pass-%s", valStr)

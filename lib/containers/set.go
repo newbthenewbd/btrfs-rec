@@ -71,7 +71,7 @@ func (o Set[T]) EncodeJSON(w io.Writer) error {
 		return less(keys[i], keys[j])
 	})
 
-	return lowmemjson.Encode(w, keys)
+	return lowmemjson.NewEncoder(w).Encode(keys)
 }
 
 func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
@@ -87,7 +87,7 @@ func (o *Set[T]) DecodeJSON(r io.RuneScanner) error {
 	*o = Set[T]{}
 	return lowmemjson.DecodeArray(r, func(r io.RuneScanner) error {
 		var val T
-		if err := lowmemjson.Decode(r, &val); err != nil {
+		if err := lowmemjson.NewDecoder(r).Decode(&val); err != nil {
 			return err
 		}
 		(*o)[val] = struct{}{}

@@ -31,7 +31,7 @@ func init() {
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
-			if err := writeJSONFile(os.Stdout, results, lowmemjson.ReEncoder{
+			if err := writeJSONFile(os.Stdout, results, lowmemjson.ReEncoderConfig{
 				Indent:                "\t",
 				ForceTrailingNewlines: true,
 				CompactIfUnder:        16, //nolint:gomnd // This is what looks nice.

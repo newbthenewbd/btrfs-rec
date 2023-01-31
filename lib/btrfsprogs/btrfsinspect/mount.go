@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dcontext"
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
@@ -109,8 +110,8 @@ type subvolume struct {
 
 	fuseutil.NotImplementedFileSystem
 	lastHandle  uint64
-	dirHandles  containers.SyncMap[fuseops.HandleID, *dirState]
-	fileHandles containers.SyncMap[fuseops.HandleID, *fileState]
+	dirHandles  typedsync.Map[fuseops.HandleID, *dirState]
+	fileHandles typedsync.Map[fuseops.HandleID, *fileState]
 
 	subvolMu sync.Mutex
 	subvols  containers.Set[string]

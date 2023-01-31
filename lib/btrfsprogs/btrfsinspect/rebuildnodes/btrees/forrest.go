@@ -7,6 +7,7 @@ package btrees
 import (
 	"context"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -62,7 +63,7 @@ type RebuiltForrest struct {
 	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 
 	// mutable
-	trees    containers.SyncMap[btrfsprim.ObjID, *RebuiltTree]
+	trees    typedsync.Map[btrfsprim.ObjID, *RebuiltTree]
 	leafs    *containers.LRUCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
 	excItems *containers.LRUCache[btrfsprim.ObjID, *itemIndex]
