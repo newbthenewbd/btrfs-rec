@@ -1,7 +1,7 @@
-git.lukeshu.com/go/lowmemjson v0.3.1-0.20230131060011-5d5ac549dc1a h1:MTKwROriwARaSZJw+EWTFeCSu9bsmTRi9/qxPfgwcuQ=
-git.lukeshu.com/go/lowmemjson v0.3.1-0.20230131060011-5d5ac549dc1a/go.mod h1:qtIoSSoSFzcG4PuqSS6sNqd/A6YgDd+Mx6cFGiYSqig=
-git.lukeshu.com/go/typedsync v0.0.0-20230126205501-1e8afc0ceb1e h1:ZAzzElMx7aMgJXC9QXOxIPyoZrWxX00eP2sR4UHYP+4=
-git.lukeshu.com/go/typedsync v0.0.0-20230126205501-1e8afc0ceb1e/go.mod h1:EAn7NcfoGeGMv3DWxKQnifcT/rYPAIEqp9Rsz//oYqY=
+git.lukeshu.com/go/lowmemjson v0.3.2 h1:TkxtMZPZIm+imGmTTkmRlNDhKteUJnGL0ShwEpuRK0o=
+git.lukeshu.com/go/lowmemjson v0.3.2/go.mod h1:npiocDGSC57pmuETaMa+x8mA898iSFY1GhALG4tr4HU=
+git.lukeshu.com/go/typedsync v0.1.0 h1:BYv123nWCymA3zZpokP6nDdtNQ6p7Q51hSWGno/U3Dc=
+git.lukeshu.com/go/typedsync v0.1.0/go.mod h1:EAn7NcfoGeGMv3DWxKQnifcT/rYPAIEqp9Rsz//oYqY=
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/datawire/dlib v1.3.0 h1:KkmyXU1kwm3oPBk1ypR70YbcOlEXWzEbx5RE0iRXTGk=
 github.com/datawire/dlib v1.3.0/go.mod h1:NiGDmetmbkBvtznpWSx6C0vA0s0LK9aHna3LJDqjruk=
