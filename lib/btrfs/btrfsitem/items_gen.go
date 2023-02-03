@@ -5,6 +5,8 @@ package btrfsitem
 import (
 	"reflect"
 
+	"git.lukeshu.com/go/typedsync"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
@@ -110,6 +112,62 @@ var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{
 	btrfsprim.FREE_SPACE_OBJECTID: freeSpaceHeaderType,
 }
 
+// Pools.
+var (
+	blockGroupPool      = typedsync.Pool[Item]{New: func() Item { return new(BlockGroup) }}
+	chunkPool           = typedsync.Pool[Item]{New: func() Item { return new(Chunk) }}
+	devPool             = typedsync.Pool[Item]{New: func() Item { return new(Dev) }}
+	devExtentPool       = typedsync.Pool[Item]{New: func() Item { return new(DevExtent) }}
+	devStatsPool        = typedsync.Pool[Item]{New: func() Item { return new(DevStats) }}
+	dirEntryPool        = typedsync.Pool[Item]{New: func() Item { return new(DirEntry) }}
+	emptyPool           = typedsync.Pool[Item]{New: func() Item { return new(Empty) }}
+	extentPool          = typedsync.Pool[Item]{New: func() Item { return new(Extent) }}
+	extentCSumPool      = typedsync.Pool[Item]{New: func() Item { return new(ExtentCSum) }}
+	extentDataRefPool   = typedsync.Pool[Item]{New: func() Item { return new(ExtentDataRef) }}
+	fileExtentPool      = typedsync.Pool[Item]{New: func() Item { return new(FileExtent) }}
+	freeSpaceBitmapPool = typedsync.Pool[Item]{New: func() Item { return new(FreeSpaceBitmap) }}
+	freeSpaceHeaderPool = typedsync.Pool[Item]{New: func() Item { return new(FreeSpaceHeader) }}
+	freeSpaceInfoPool   = typedsync.Pool[Item]{New: func() Item { return new(FreeSpaceInfo) }}
+	inodePool           = typedsync.Pool[Item]{New: func() Item { return new(Inode) }}
+	inodeRefsPool       = typedsync.Pool[Item]{New: func() Item { return new(InodeRefs) }}
+	metadataPool        = typedsync.Pool[Item]{New: func() Item { return new(Metadata) }}
+	qGroupInfoPool      = typedsync.Pool[Item]{New: func() Item { return new(QGroupInfo) }}
+	qGroupLimitPool     = typedsync.Pool[Item]{New: func() Item { return new(QGroupLimit) }}
+	qGroupStatusPool    = typedsync.Pool[Item]{New: func() Item { return new(QGroupStatus) }}
+	rootPool            = typedsync.Pool[Item]{New: func() Item { return new(Root) }}
+	rootRefPool         = typedsync.Pool[Item]{New: func() Item { return new(RootRef) }}
+	sharedDataRefPool   = typedsync.Pool[Item]{New: func() Item { return new(SharedDataRef) }}
+	uuidMapPool         = typedsync.Pool[Item]{New: func() Item { return new(UUIDMap) }}
+)
+
+// gotype2pool is used by UnmarshalItem.
+var gotype2pool = map[reflect.Type]*typedsync.Pool[Item]{
+	blockGroupType:      &blockGroupPool,
+	chunkType:           &chunkPool,
+	devType:             &devPool,
+	devExtentType:       &devExtentPool,
+	devStatsType:        &devStatsPool,
+	dirEntryType:        &dirEntryPool,
+	emptyType:           &emptyPool,
+	extentType:          &extentPool,
+	extentCSumType:      &extentCSumPool,
+	extentDataRefType:   &extentDataRefPool,
+	fileExtentType:      &fileExtentPool,
+	freeSpaceBitmapType: &freeSpaceBitmapPool,
+	freeSpaceHeaderType: &freeSpaceHeaderPool,
+	freeSpaceInfoType:   &freeSpaceInfoPool,
+	inodeType:           &inodePool,
+	inodeRefsType:       &inodeRefsPool,
+	metadataType:        &metadataPool,
+	qGroupInfoType:      &qGroupInfoPool,
+	qGroupLimitType:     &qGroupLimitPool,
+	qGroupStatusType:    &qGroupStatusPool,
+	rootType:            &rootPool,
+	rootRefType:         &rootRefPool,
+	sharedDataRefType:   &sharedDataRefPool,
+	uuidMapType:         &uuidMapPool,
+}
+
 // isItem implements Item.
 func (*BlockGroup) isItem()      {}
 func (*Chunk) isItem()           {}
@@ -136,7 +194,145 @@ func (*RootRef) isItem()         {}
 func (*SharedDataRef) isItem()   {}
 func (*UUIDMap) isItem()         {}
 
-// Type assertions.
+// Free implements Item.
+func (o *BlockGroup) Free()      { *o = BlockGroup{}; blockGroupPool.Put(o) }
+func (o *Dev) Free()             { *o = Dev{}; devPool.Put(o) }
+func (o *DevExtent) Free()       { *o = DevExtent{}; devExtentPool.Put(o) }
+func (o *DevStats) Free()        { *o = DevStats{}; devStatsPool.Put(o) }
+func (o *Empty) Free()           { *o = Empty{}; emptyPool.Put(o) }
+func (o *ExtentCSum) Free()      { *o = ExtentCSum{}; extentCSumPool.Put(o) }
+func (o *ExtentDataRef) Free()   { *o = ExtentDataRef{}; extentDataRefPool.Put(o) }
+func (o *FreeSpaceHeader) Free() { *o = FreeSpaceHeader{}; freeSpaceHeaderPool.Put(o) }
+func (o *FreeSpaceInfo) Free()   { *o = FreeSpaceInfo{}; freeSpaceInfoPool.Put(o) }
+func (o *Inode) Free()           { *o = Inode{}; inodePool.Put(o) }
+func (o *QGroupInfo) Free()      { *o = QGroupInfo{}; qGroupInfoPool.Put(o) }
+func (o *QGroupLimit) Free()     { *o = QGroupLimit{}; qGroupLimitPool.Put(o) }
+func (o *QGroupStatus) Free()    { *o = QGroupStatus{}; qGroupStatusPool.Put(o) }
+func (o *Root) Free()            { *o = Root{}; rootPool.Put(o) }
+func (o *SharedDataRef) Free()   { *o = SharedDataRef{}; sharedDataRefPool.Put(o) }
+func (o *UUIDMap) Free()         { *o = UUIDMap{}; uuidMapPool.Put(o) }
+
+// Clone is a handy method.
+func (o BlockGroup) Clone() BlockGroup           { return o }
+func (o Dev) Clone() Dev                         { return o }
+func (o DevExtent) Clone() DevExtent             { return o }
+func (o DevStats) Clone() DevStats               { return o }
+func (o Empty) Clone() Empty                     { return o }
+func (o ExtentCSum) Clone() ExtentCSum           { return o }
+func (o ExtentDataRef) Clone() ExtentDataRef     { return o }
+func (o FreeSpaceHeader) Clone() FreeSpaceHeader { return o }
+func (o FreeSpaceInfo) Clone() FreeSpaceInfo     { return o }
+func (o Inode) Clone() Inode                     { return o }
+func (o QGroupInfo) Clone() QGroupInfo           { return o }
+func (o QGroupLimit) Clone() QGroupLimit         { return o }
+func (o QGroupStatus) Clone() QGroupStatus       { return o }
+func (o Root) Clone() Root                       { return o }
+func (o SharedDataRef) Clone() SharedDataRef     { return o }
+func (o UUIDMap) Clone() UUIDMap                 { return o }
+
+// CloneItem implements Item.
+func (o *BlockGroup) CloneItem() Item {
+	ret, _ := blockGroupPool.Get()
+	*(ret.(*BlockGroup)) = o.Clone()
+	return ret
+}
+func (o *Chunk) CloneItem() Item { ret, _ := chunkPool.Get(); *(ret.(*Chunk)) = o.Clone(); return ret }
+func (o *Dev) CloneItem() Item   { ret, _ := devPool.Get(); *(ret.(*Dev)) = o.Clone(); return ret }
+func (o *DevExtent) CloneItem() Item {
+	ret, _ := devExtentPool.Get()
+	*(ret.(*DevExtent)) = o.Clone()
+	return ret
+}
+func (o *DevStats) CloneItem() Item {
+	ret, _ := devStatsPool.Get()
+	*(ret.(*DevStats)) = o.Clone()
+	return ret
+}
+func (o *DirEntry) CloneItem() Item {
+	ret, _ := dirEntryPool.Get()
+	*(ret.(*DirEntry)) = o.Clone()
+	return ret
+}
+func (o *Empty) CloneItem() Item { ret, _ := emptyPool.Get(); *(ret.(*Empty)) = o.Clone(); return ret }
+func (o *Extent) CloneItem() Item {
+	ret, _ := extentPool.Get()
+	*(ret.(*Extent)) = o.Clone()
+	return ret
+}
+func (o *ExtentCSum) CloneItem() Item {
+	ret, _ := extentCSumPool.Get()
+	*(ret.(*ExtentCSum)) = o.Clone()
+	return ret
+}
+func (o *ExtentDataRef) CloneItem() Item {
+	ret, _ := extentDataRefPool.Get()
+	*(ret.(*ExtentDataRef)) = o.Clone()
+	return ret
+}
+func (o *FileExtent) CloneItem() Item {
+	ret, _ := fileExtentPool.Get()
+	*(ret.(*FileExtent)) = o.Clone()
+	return ret
+}
+func (o *FreeSpaceBitmap) CloneItem() Item {
+	ret, _ := freeSpaceBitmapPool.Get()
+	*(ret.(*FreeSpaceBitmap)) = o.Clone()
+	return ret
+}
+func (o *FreeSpaceHeader) CloneItem() Item {
+	ret, _ := freeSpaceHeaderPool.Get()
+	*(ret.(*FreeSpaceHeader)) = o.Clone()
+	return ret
+}
+func (o *FreeSpaceInfo) CloneItem() Item {
+	ret, _ := freeSpaceInfoPool.Get()
+	*(ret.(*FreeSpaceInfo)) = o.Clone()
+	return ret
+}
+func (o *Inode) CloneItem() Item { ret, _ := inodePool.Get(); *(ret.(*Inode)) = o.Clone(); return ret }
+func (o *InodeRefs) CloneItem() Item {
+	ret, _ := inodeRefsPool.Get()
+	*(ret.(*InodeRefs)) = o.Clone()
+	return ret
+}
+func (o *Metadata) CloneItem() Item {
+	ret, _ := metadataPool.Get()
+	*(ret.(*Metadata)) = o.Clone()
+	return ret
+}
+func (o *QGroupInfo) CloneItem() Item {
+	ret, _ := qGroupInfoPool.Get()
+	*(ret.(*QGroupInfo)) = o.Clone()
+	return ret
+}
+func (o *QGroupLimit) CloneItem() Item {
+	ret, _ := qGroupLimitPool.Get()
+	*(ret.(*QGroupLimit)) = o.Clone()
+	return ret
+}
+func (o *QGroupStatus) CloneItem() Item {
+	ret, _ := qGroupStatusPool.Get()
+	*(ret.(*QGroupStatus)) = o.Clone()
+	return ret
+}
+func (o *Root) CloneItem() Item { ret, _ := rootPool.Get(); *(ret.(*Root)) = o.Clone(); return ret }
+func (o *RootRef) CloneItem() Item {
+	ret, _ := rootRefPool.Get()
+	*(ret.(*RootRef)) = o.Clone()
+	return ret
+}
+func (o *SharedDataRef) CloneItem() Item {
+	ret, _ := sharedDataRefPool.Get()
+	*(ret.(*SharedDataRef)) = o.Clone()
+	return ret
+}
+func (o *UUIDMap) CloneItem() Item {
+	ret, _ := uuidMapPool.Get()
+	*(ret.(*UUIDMap)) = o.Clone()
+	return ret
+}
+
+// Item type assertions.
 var (
 	_ Item = (*BlockGroup)(nil)
 	_ Item = (*Chunk)(nil)
@@ -162,4 +358,32 @@ var (
 	_ Item = (*RootRef)(nil)
 	_ Item = (*SharedDataRef)(nil)
 	_ Item = (*UUIDMap)(nil)
+)
+
+// Clone type assertions.
+var (
+	_ interface{ Clone() BlockGroup }      = BlockGroup{}
+	_ interface{ Clone() Chunk }           = Chunk{}
+	_ interface{ Clone() Dev }             = Dev{}
+	_ interface{ Clone() DevExtent }       = DevExtent{}
+	_ interface{ Clone() DevStats }        = DevStats{}
+	_ interface{ Clone() DirEntry }        = DirEntry{}
+	_ interface{ Clone() Empty }           = Empty{}
+	_ interface{ Clone() Extent }          = Extent{}
+	_ interface{ Clone() ExtentCSum }      = ExtentCSum{}
+	_ interface{ Clone() ExtentDataRef }   = ExtentDataRef{}
+	_ interface{ Clone() FileExtent }      = FileExtent{}
+	_ interface{ Clone() FreeSpaceBitmap } = FreeSpaceBitmap{}
+	_ interface{ Clone() FreeSpaceHeader } = FreeSpaceHeader{}
+	_ interface{ Clone() FreeSpaceInfo }   = FreeSpaceInfo{}
+	_ interface{ Clone() Inode }           = Inode{}
+	_ interface{ Clone() InodeRefs }       = InodeRefs{}
+	_ interface{ Clone() Metadata }        = Metadata{}
+	_ interface{ Clone() QGroupInfo }      = QGroupInfo{}
+	_ interface{ Clone() QGroupLimit }     = QGroupLimit{}
+	_ interface{ Clone() QGroupStatus }    = QGroupStatus{}
+	_ interface{ Clone() Root }            = Root{}
+	_ interface{ Clone() RootRef }         = RootRef{}
+	_ interface{ Clone() SharedDataRef }   = SharedDataRef{}
+	_ interface{ Clone() UUIDMap }         = UUIDMap{}
 )

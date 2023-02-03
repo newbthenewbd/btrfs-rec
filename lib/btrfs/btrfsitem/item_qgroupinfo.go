@@ -11,7 +11,7 @@ import (
 
 // key.objectid = 0
 // key.offset = ID of the qgroup
-type QGroupInfo struct { // QGROUP_INFO=242
+type QGroupInfo struct { // trivial QGROUP_INFO=242
 	Generation                btrfsprim.Generation `bin:"off=0, siz=8"`
 	ReferencedBytes           uint64               `bin:"off=8, siz=8"`
 	ReferencedBytesCompressed uint64               `bin:"off=16, siz=8"`

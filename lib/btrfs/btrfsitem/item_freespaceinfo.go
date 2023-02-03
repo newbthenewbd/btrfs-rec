@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -11,7 +11,7 @@ import (
 
 // key.objectid = object ID of the BlockGroup (logical_addr)
 // key.offset = offset of the BlockGroup (size)
-type FreeSpaceInfo struct { // FREE_SPACE_INFO=198
+type FreeSpaceInfo struct { // trivial FREE_SPACE_INFO=198
 	ExtentCount   int32          `bin:"off=0, siz=4"`
 	Flags         FreeSpaceFlags `bin:"off=4, siz=4"`
 	binstruct.End `bin:"off=8"`

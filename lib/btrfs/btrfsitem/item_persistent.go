@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -17,7 +17,7 @@ const (
 	DEV_STAT_VALUES_MAX
 )
 
-type DevStats struct { // PERSISTENT_ITEM=249
+type DevStats struct { // trivial PERSISTENT_ITEM=249
 	Values        [DEV_STAT_VALUES_MAX]int64 `bin:"off=0, siz=40"`
 	binstruct.End `bin:"off=40"`
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -14,7 +14,7 @@ import (
 
 // key.objectid = inode
 // key.offset = offset within file
-type FileExtent struct { // EXTENT_DATA=108
+type FileExtent struct { // complex EXTENT_DATA=108
 	Generation btrfsprim.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
 	RAMBytes   int64                `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to
 
@@ -46,6 +46,17 @@ type FileExtentExtent struct {
 	binstruct.End `bin:"off=0x20"`
 }
 
+func (o *FileExtent) Free() {
+	bytePool.Put(o.BodyInline)
+	*o = FileExtent{}
+	fileExtentPool.Put(o)
+}
+
+func (o FileExtent) Clone() FileExtent {
+	o.BodyInline = cloneBytes(o.BodyInline)
+	return o
+}
+
 func (o *FileExtent) UnmarshalBinary(dat []byte) (int, error) {
 	n, err := binstruct.UnmarshalWithoutInterface(dat, o)
 	if err != nil {
@@ -53,7 +64,7 @@ func (o *FileExtent) UnmarshalBinary(dat []byte) (int, error) {
 	}
 	switch o.Type {
 	case FILE_EXTENT_INLINE:
-		o.BodyInline = dat[n:]
+		o.BodyInline = cloneBytes(dat[n:])
 		n += len(o.BodyInline)
 	case FILE_EXTENT_REG, FILE_EXTENT_PREALLOC:
 		_n, err := binstruct.Unmarshal(dat[n:], &o.BodyExtent)

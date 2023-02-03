@@ -9,18 +9,44 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
 // key.objectid = laddr of the extent
 // key.offset = length of the extent
-type Extent struct { // EXTENT_ITEM=168
+type Extent struct { // complex EXTENT_ITEM=168
 	Head ExtentHeader
 	Info TreeBlockInfo // only if .Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK)
 	Refs []ExtentInlineRef
 }
 
+var extentInlineRefPool containers.SlicePool[ExtentInlineRef]
+
+func (o *Extent) Free() {
+	for i := range o.Refs {
+		if o.Refs[i].Body != nil {
+			o.Refs[i].Body.Free()
+		}
+		o.Refs[i] = ExtentInlineRef{}
+	}
+	extentInlineRefPool.Put(o.Refs)
+	*o = Extent{}
+	extentPool.Put(o)
+}
+
+func (o Extent) Clone() Extent {
+	ret := o
+	ret.Refs = extentInlineRefPool.Get(len(o.Refs))
+	copy(ret.Refs, o.Refs)
+	for i := range ret.Refs {
+		ret.Refs[i].Body = o.Refs[i].Body.CloneItem()
+	}
+	return ret
+}
+
 func (o *Extent) UnmarshalBinary(dat []byte) (int, error) {
+	*o = Extent{}
 	n, err := binstruct.Unmarshal(dat, &o.Head)
 	if err != nil {
 		return n, err
@@ -32,7 +58,9 @@ func (o *Extent) UnmarshalBinary(dat []byte) (int, error) {
 			return n, err
 		}
 	}
-	o.Refs = nil
+	if n < len(dat) {
+		o.Refs = extentInlineRefPool.Get(1)[:0]
+	}
 	for n < len(dat) {
 		var ref ExtentInlineRef
 		_n, err := binstruct.Unmarshal(dat[n:], &ref)
@@ -114,7 +142,7 @@ func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
 			return n, err
 		}
 	case EXTENT_DATA_REF_KEY:
-		dref := new(ExtentDataRef)
+		dref, _ := extentDataRefPool.Get()
 		_n, err := binstruct.Unmarshal(dat[n:], dref)
 		n += _n
 		o.Body = dref
@@ -127,7 +155,7 @@ func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		sref := new(SharedDataRef)
+		sref, _ := sharedDataRefPool.Get()
 		_n, err = binstruct.Unmarshal(dat[n:], sref)
 		n += _n
 		o.Body = sref

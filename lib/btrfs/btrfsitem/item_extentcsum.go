@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -13,7 +13,7 @@ import (
 
 // key.objectid = BTRFS_EXTENT_CSUM_OBJECTID
 // key.offset = laddr of checksummed region
-type ExtentCSum struct { // EXTENT_CSUM=128
+type ExtentCSum struct { // trivial EXTENT_CSUM=128
 	// Checksum of each sector starting at key.offset
 	btrfssum.SumRun[btrfsvol.LogicalAddr]
 }

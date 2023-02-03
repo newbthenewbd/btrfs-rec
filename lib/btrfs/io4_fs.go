@@ -89,7 +89,7 @@ func (sv *Subvolume) init() {
 		} else {
 			switch rootBody := root.Body.(type) {
 			case *btrfsitem.Root:
-				sv.rootVal = *rootBody
+				sv.rootVal = rootBody.Clone()
 			case *btrfsitem.Error:
 				sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
 			default:
@@ -127,7 +127,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 
 		switch itemBody := item.Body.(type) {
 		case *btrfsitem.Inode:
-			bodyCopy := *itemBody
+			bodyCopy := itemBody.Clone()
 			val.InodeItem = &bodyCopy
 		case *btrfsitem.Error:
 			val.Errs = append(val.Errs, fmt.Errorf("malformed inode: %w", itemBody.Err))
@@ -172,7 +172,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 						}
 						continue
 					}
-					bodyCopy := *itemBody
+					bodyCopy := itemBody.Clone()
 					val.InodeItem = &bodyCopy
 				case *btrfsitem.Error:
 					val.Errs = append(val.Errs, fmt.Errorf("malformed INODE_ITEM: %w", itemBody.Err))
@@ -264,7 +264,7 @@ func (dir *Dir) populate() {
 					}
 					continue
 				}
-				dir.ChildrenByName[string(entry.Name)] = *entry
+				dir.ChildrenByName[string(entry.Name)] = entry.Clone()
 			case *btrfsitem.Error:
 				dir.Errs = append(dir.Errs, fmt.Errorf("malformed DIR_ITEM: %w", entry.Err))
 			default:
@@ -280,7 +280,7 @@ func (dir *Dir) populate() {
 					}
 					continue
 				}
-				dir.ChildrenByIndex[index] = *entry
+				dir.ChildrenByIndex[index] = entry.Clone()
 			case *btrfsitem.Error:
 				dir.Errs = append(dir.Errs, fmt.Errorf("malformed DIR_INDEX: %w", entry.Err))
 			default:

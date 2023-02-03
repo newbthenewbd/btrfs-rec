@@ -9,6 +9,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 // key.objectid = inode number of the file
@@ -16,12 +17,37 @@ import (
 //
 // Might have multiple entries if the same file has multiple hardlinks
 // in the same directory.
-type InodeRefs struct { // INODE_REF=12
+type InodeRefs struct { // complex INODE_REF=12
 	Refs []InodeRef
+}
+
+var inodeRefPool containers.SlicePool[InodeRef]
+
+func (o *InodeRefs) Free() {
+	for i := range o.Refs {
+		bytePool.Put(o.Refs[i].Name)
+		o.Refs[i] = InodeRef{}
+	}
+	inodeRefPool.Put(o.Refs)
+	*o = InodeRefs{}
+	inodeRefsPool.Put(o)
+}
+
+func (o InodeRefs) Clone() InodeRefs {
+	var ret InodeRefs
+	ret.Refs = inodeRefPool.Get(len(o.Refs))
+	copy(ret.Refs, o.Refs)
+	for i := range ret.Refs {
+		ret.Refs[i].Name = cloneBytes(o.Refs[i].Name)
+	}
+	return ret
 }
 
 func (o *InodeRefs) UnmarshalBinary(dat []byte) (int, error) {
 	o.Refs = nil
+	if len(dat) > 0 {
+		o.Refs = inodeRefPool.Get(1)[:0]
+	}
 	n := 0
 	for n < len(dat) {
 		var ref InodeRef
@@ -70,7 +96,7 @@ func (o *InodeRef) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	dat = dat[n:]
-	o.Name = dat[:o.NameLen]
+	o.Name = cloneBytes(dat[:o.NameLen])
 	n += int(o.NameLen)
 	return n, nil
 }

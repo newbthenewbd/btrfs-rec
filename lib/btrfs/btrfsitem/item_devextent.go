@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -12,7 +12,7 @@ import (
 
 // key.objectid = device_id
 // key.offset = physical_addr
-type DevExtent struct { // DEV_EXTENT=204
+type DevExtent struct { // trivial DEV_EXTENT=204
 	ChunkTree     btrfsprim.ObjID      `bin:"off=0, siz=8"`  // always CHUNK_TREE_OBJECTID
 	ChunkObjectID btrfsprim.ObjID      `bin:"off=8, siz=8"`  // which chunk within .ChunkTree owns this extent, always FIRST_CHUNK_TREE_OBJECTID
 	ChunkOffset   btrfsvol.LogicalAddr `bin:"off=16, siz=8"` // offset of the CHUNK_ITEM that owns this extent, within the .ChunkObjectID

@@ -6,15 +6,26 @@ package btrfsitem
 
 // key.objectid = object ID of the FreeSpaceInfo (logical_addr)
 // key.offset = offset of the FreeSpaceInfo (size)
-type FreeSpaceBitmap struct { // FREE_SPACE_BITMAP=200
+type FreeSpaceBitmap struct { // complex FREE_SPACE_BITMAP=200
 	Bitmap []byte
 }
 
+func (o *FreeSpaceBitmap) Free() {
+	bytePool.Put(o.Bitmap)
+	*o = FreeSpaceBitmap{}
+	freeSpaceBitmapPool.Put(o)
+}
+
+func (o FreeSpaceBitmap) Clone() FreeSpaceBitmap {
+	o.Bitmap = cloneBytes(o.Bitmap)
+	return o
+}
+
 func (o *FreeSpaceBitmap) UnmarshalBinary(dat []byte) (int, error) {
-	o.Bitmap = dat
+	o.Bitmap = cloneBytes(dat)
 	return len(dat), nil
 }
 
 func (o FreeSpaceBitmap) MarshalBinary() ([]byte, error) {
-	return o.Bitmap, nil
+	return append([]byte(nil), o.Bitmap...), nil
 }

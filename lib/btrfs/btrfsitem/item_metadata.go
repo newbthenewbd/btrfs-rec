@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -9,17 +9,42 @@ import (
 )
 
 // Metadata is like Extent, but doesn't have .Info.
-type Metadata struct { // METADATA_ITEM=169
+type Metadata struct { // complex METADATA_ITEM=169
 	Head ExtentHeader
 	Refs []ExtentInlineRef
 }
 
+func (o *Metadata) Free() {
+	for i := range o.Refs {
+		if o.Refs[i].Body != nil {
+			o.Refs[i].Body.Free()
+		}
+		o.Refs[i] = ExtentInlineRef{}
+	}
+	extentInlineRefPool.Put(o.Refs)
+	*o = Metadata{}
+	metadataPool.Put(o)
+}
+
+func (o Metadata) Clone() Metadata {
+	ret := o
+	ret.Refs = extentInlineRefPool.Get(len(o.Refs))
+	copy(ret.Refs, o.Refs)
+	for i := range ret.Refs {
+		ret.Refs[i].Body = o.Refs[i].Body.CloneItem()
+	}
+	return ret
+}
+
 func (o *Metadata) UnmarshalBinary(dat []byte) (int, error) {
+	*o = Metadata{}
 	n, err := binstruct.Unmarshal(dat, &o.Head)
 	if err != nil {
 		return n, err
 	}
-	o.Refs = nil
+	if n < len(dat) {
+		o.Refs = extentInlineRefPool.Get(1)[:0]
+	}
 	for n < len(dat) {
 		var ref ExtentInlineRef
 		_n, err := binstruct.Unmarshal(dat[n:], &ref)
