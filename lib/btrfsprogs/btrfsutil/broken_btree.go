@@ -237,11 +237,13 @@ func (bt *brokenTrees) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key,
 
 	itemPath := bt.arena.Inflate(indexItem.Value.Path)
 	node, err := bt.inner.ReadNode(itemPath.Parent())
+	defer btrfstree.FreeNodeRef(node)
 	if err != nil {
 		return btrfstree.Item{}, bt.addErrs(index, fn, err)
 	}
 
 	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+	item.Body = item.Body.CloneItem()
 
 	// Since we were only asked to return 1 item, it isn't
 	// necessary to augment this `nil` with bt.addErrs().
@@ -271,13 +273,16 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 		itemPath := bt.arena.Inflate(indexItems[i].Path)
 		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
 			var err error
+			btrfstree.FreeNodeRef(node)
 			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
+				btrfstree.FreeNodeRef(node)
 				return nil, bt.addErrs(index, fn, err)
 			}
 		}
 		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
 	}
+	btrfstree.FreeNodeRef(node)
 
 	return ret, bt.addErrs(index, fn, nil)
 }
@@ -306,8 +311,10 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 			itemPath := bt.arena.Inflate(indexItem.Value.Path)
 			if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
 				var err error
+				btrfstree.FreeNodeRef(node)
 				node, err = bt.inner.ReadNode(itemPath.Parent())
 				if err != nil {
+					btrfstree.FreeNodeRef(node)
 					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 					return true
 				}
@@ -319,6 +326,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 		}
 		return true
 	})
+	btrfstree.FreeNodeRef(node)
 }
 
 func (bt *brokenTrees) Superblock() (*btrfstree.Superblock, error) {
@@ -339,6 +347,7 @@ func (bt *brokenTrees) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.Logical
 		return nil, index.TreeRootErr
 	}
 	nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeAddr, btrfstree.NodeExpectations{})
+	defer btrfstree.FreeNodeRef(nodeRef)
 	if err != nil {
 		return nil, err
 	}

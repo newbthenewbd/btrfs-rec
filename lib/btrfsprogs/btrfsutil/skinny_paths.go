@@ -55,6 +55,7 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 	}
 
 	node, err := btrfstree.ReadNode(a.FS, a.SB, parent.Node(-1).ToNodeAddr, btrfstree.NodeExpectations{})
+	defer btrfstree.FreeNodeRef(node)
 	if err != nil {
 		return btrfstree.TreePathElem{}, err
 	}

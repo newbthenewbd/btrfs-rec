@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -48,11 +48,14 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 			})
 			if err != nil {
+				btrfstree.FreeNodeRef(nodeRef)
 				return btrfstree.Superblock{}, graph.Graph{}, nil, err
 			}
 
 			nodeGraph.InsertNode(nodeRef)
 			keyIO.InsertNode(nodeRef)
+
+			btrfstree.FreeNodeRef(nodeRef)
 
 			stats.N++
 			progressWriter.Set(stats)

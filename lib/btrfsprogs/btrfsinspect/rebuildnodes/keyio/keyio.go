@@ -62,6 +62,9 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 
 		cache: containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]{
 			MaxLen: textui.Tunable(8),
+			OnRemove: func(_ btrfsvol.LogicalAddr, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
+				btrfstree.FreeNodeRef(nodeRef)
+			},
 		},
 	}
 }

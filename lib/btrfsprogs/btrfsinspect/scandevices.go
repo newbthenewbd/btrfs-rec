@@ -245,6 +245,7 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 				}
 				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)
 			}
+			btrfstree.FreeNodeRef(nodeRef)
 		}
 	}
 	progress(devSize)

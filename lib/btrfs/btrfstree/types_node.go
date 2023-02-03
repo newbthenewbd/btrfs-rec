@@ -8,7 +8,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"unsafe"
 
+	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/derror"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
@@ -300,12 +302,24 @@ type ItemHeader struct {
 	binstruct.End `bin:"off=0x19"`
 }
 
+var itemPool containers.SlicePool[Item]
+
+func (node *Node) Free() {
+	for i := range node.BodyLeaf {
+		node.BodyLeaf[i].Body.Free()
+		node.BodyLeaf[i] = Item{}
+	}
+	itemPool.Put(node.BodyLeaf)
+	*node = Node{}
+}
+
 func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 	head := 0
 	tail := len(bodyBuf)
-	node.BodyLeaf = make([]Item, node.Head.NumItems)
+	node.BodyLeaf = itemPool.Get(int(node.Head.NumItems))
+	var itemHead ItemHeader
 	for i := range node.BodyLeaf {
-		var itemHead ItemHeader
+		itemHead = ItemHeader{} // zero it out
 		n, err := binstruct.Unmarshal(bodyBuf[head:], &itemHead)
 		head += n
 		if err != nil {
@@ -423,6 +437,25 @@ func (e *IOError) Unwrap() error { return e.Err }
 
 var bytePool containers.SlicePool[byte]
 
+var nodePool = typedsync.Pool[*diskio.Ref[int64, Node]]{
+	New: func() *diskio.Ref[int64, Node] {
+		return new(diskio.Ref[int64, Node])
+	},
+}
+
+func FreeNodeRef[Addr ~int64](ref *diskio.Ref[Addr, Node]) {
+	if ref == nil {
+		return
+	}
+	ref.Data.Free()
+	nodePool.Put((*diskio.Ref[int64, Node])(unsafe.Pointer(ref))) //nolint:gosec // I know it's unsafe.
+}
+
+func newNodeRef[Addr ~int64]() *diskio.Ref[Addr, Node] {
+	ret, _ := nodePool.Get()
+	return (*diskio.Ref[Addr, Node])(unsafe.Pointer(ret)) //nolint:gosec // I know it's unsafe.
+}
+
 // It is possible that both a non-nil diskio.Ref and an error are
 // returned.  The error returned (if non-nil) is always of type
 // *NodeError[Addr].  Notable errors that may be inside of the
@@ -443,7 +476,8 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 
 	// parse (early)
 
-	nodeRef := &diskio.Ref[Addr, Node]{
+	nodeRef := newNodeRef[Addr]()
+	*nodeRef = diskio.Ref[Addr, Node]{
 		File: fs,
 		Addr: addr,
 		Data: Node{
