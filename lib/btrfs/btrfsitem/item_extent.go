@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -114,8 +114,8 @@ func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
 			return n, err
 		}
 	case EXTENT_DATA_REF_KEY:
-		var dref ExtentDataRef
-		_n, err := binstruct.Unmarshal(dat[n:], &dref)
+		dref := new(ExtentDataRef)
+		_n, err := binstruct.Unmarshal(dat[n:], dref)
 		n += _n
 		o.Body = dref
 		if err != nil {
@@ -127,8 +127,8 @@ func (o *ExtentInlineRef) UnmarshalBinary(dat []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		var sref SharedDataRef
-		_n, err = binstruct.Unmarshal(dat[n:], &sref)
+		sref := new(SharedDataRef)
+		_n, err = binstruct.Unmarshal(dat[n:], sref)
 		n += _n
 		o.Body = sref
 		if err != nil {

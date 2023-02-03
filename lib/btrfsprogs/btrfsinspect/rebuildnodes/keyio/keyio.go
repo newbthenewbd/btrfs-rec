@@ -73,27 +73,27 @@ func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.
 			Idx:  i,
 		}
 		switch itemBody := item.Body.(type) {
-		case btrfsitem.Inode:
+		case *btrfsitem.Inode:
 			o.Flags[ptr] = FlagsAndErr{
 				NoDataSum: itemBody.Flags.Has(btrfsitem.INODE_NODATASUM),
 				Err:       nil,
 			}
-		case btrfsitem.DirEntry:
+		case *btrfsitem.DirEntry:
 			if item.Key.ItemType == btrfsprim.DIR_INDEX_KEY {
 				o.Names[ptr] = append([]byte(nil), itemBody.Name...)
 			}
-		case btrfsitem.ExtentCSum:
+		case *btrfsitem.ExtentCSum:
 			o.Sizes[ptr] = SizeAndErr{
 				Size: uint64(itemBody.Size()),
 				Err:  nil,
 			}
-		case btrfsitem.FileExtent:
+		case *btrfsitem.FileExtent:
 			size, err := itemBody.Size()
 			o.Sizes[ptr] = SizeAndErr{
 				Size: uint64(size),
 				Err:  err,
 			}
-		case btrfsitem.Error:
+		case *btrfsitem.Error:
 			switch item.Key.ItemType {
 			case btrfsprim.INODE_ITEM_KEY:
 				o.Flags[ptr] = FlagsAndErr{

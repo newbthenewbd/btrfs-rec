@@ -183,14 +183,14 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 					switch item.Key.ItemType {
 					case btrfsitem.CHUNK_ITEM_KEY:
 						switch itemBody := item.Body.(type) {
-						case btrfsitem.Chunk:
+						case *btrfsitem.Chunk:
 							dlog.Tracef(ctx, "node@%v: item %v: found chunk",
 								nodeRef.Addr, i)
 							result.FoundChunks = append(result.FoundChunks, btrfstree.SysChunk{
 								Key:   item.Key,
-								Chunk: itemBody,
+								Chunk: *itemBody,
 							})
-						case btrfsitem.Error:
+						case *btrfsitem.Error:
 							dlog.Errorf(ctx, "node@%v: item %v: error: malformed CHUNK_ITEM: %v",
 								nodeRef.Addr, i, itemBody.Err)
 						default:
@@ -198,14 +198,14 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 						}
 					case btrfsitem.BLOCK_GROUP_ITEM_KEY:
 						switch itemBody := item.Body.(type) {
-						case btrfsitem.BlockGroup:
+						case *btrfsitem.BlockGroup:
 							dlog.Tracef(ctx, "node@%v: item %v: found block group",
 								nodeRef.Addr, i)
 							result.FoundBlockGroups = append(result.FoundBlockGroups, SysBlockGroup{
 								Key: item.Key,
-								BG:  itemBody,
+								BG:  *itemBody,
 							})
-						case btrfsitem.Error:
+						case *btrfsitem.Error:
 							dlog.Errorf(ctx, "node@%v: item %v: error: malformed BLOCK_GROUP_ITEM: %v",
 								nodeRef.Addr, i, itemBody.Err)
 						default:
@@ -213,14 +213,14 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 						}
 					case btrfsitem.DEV_EXTENT_KEY:
 						switch itemBody := item.Body.(type) {
-						case btrfsitem.DevExtent:
+						case *btrfsitem.DevExtent:
 							dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
 								nodeRef.Addr, i)
 							result.FoundDevExtents = append(result.FoundDevExtents, SysDevExtent{
 								Key:    item.Key,
-								DevExt: itemBody,
+								DevExt: *itemBody,
 							})
-						case btrfsitem.Error:
+						case *btrfsitem.Error:
 							dlog.Errorf(ctx, "node@%v: item %v: error: malformed DEV_EXTENT: %v",
 								nodeRef.Addr, i, itemBody.Err)
 						default:
@@ -228,14 +228,14 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblo
 						}
 					case btrfsitem.EXTENT_CSUM_KEY:
 						switch itemBody := item.Body.(type) {
-						case btrfsitem.ExtentCSum:
+						case *btrfsitem.ExtentCSum:
 							dlog.Tracef(ctx, "node@%v: item %v: found csums",
 								nodeRef.Addr, i)
 							result.FoundExtentCSums = append(result.FoundExtentCSums, SysExtentCSum{
 								Generation: nodeRef.Data.Head.Generation,
-								Sums:       itemBody,
+								Sums:       *itemBody,
 							})
-						case btrfsitem.Error:
+						case *btrfsitem.Error:
 							dlog.Errorf(ctx, "node@%v: item %v: error: malformed is EXTENT_CSUM: %v",
 								nodeRef.Addr, i, itemBody.Err)
 						default:

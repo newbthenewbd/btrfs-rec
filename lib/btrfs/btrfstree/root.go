@@ -72,14 +72,14 @@ func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*Tr
 			return nil, err
 		}
 		switch rootItemBody := rootItem.Body.(type) {
-		case btrfsitem.Root:
+		case *btrfsitem.Root:
 			return &TreeRoot{
 				TreeID:     treeID,
 				RootNode:   rootItemBody.ByteNr,
 				Level:      rootItemBody.Level,
 				Generation: rootItemBody.Generation,
 			}, nil
-		case btrfsitem.Error:
+		case *btrfsitem.Error:
 			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v: %w", treeID, rootItemBody.Err)
 		default:
 			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootItemBody))

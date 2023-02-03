@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -16,10 +16,12 @@ import (
 //
 // Might have multiple entries if the same file has multiple hardlinks
 // in the same directory.
-type InodeRefs []InodeRef // INODE_REF=12
+type InodeRefs struct { // INODE_REF=12
+	Refs []InodeRef
+}
 
 func (o *InodeRefs) UnmarshalBinary(dat []byte) (int, error) {
-	*o = nil
+	o.Refs = nil
 	n := 0
 	for n < len(dat) {
 		var ref InodeRef
@@ -28,14 +30,14 @@ func (o *InodeRefs) UnmarshalBinary(dat []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		*o = append(*o, ref)
+		o.Refs = append(o.Refs, ref)
 	}
 	return n, nil
 }
 
 func (o InodeRefs) MarshalBinary() ([]byte, error) {
 	var dat []byte
-	for _, ref := range o {
+	for _, ref := range o.Refs {
 		_dat, err := binstruct.Marshal(ref)
 		dat = append(dat, _dat...)
 		if err != nil {

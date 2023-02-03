@@ -25,7 +25,7 @@ type Error struct {
 	Err error
 }
 
-func (Error) isItem() {}
+func (*Error) isItem() {}
 
 func (o Error) MarshalBinary() ([]byte, error) {
 	return o.Dat, nil
@@ -43,7 +43,7 @@ func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) It
 		var ok bool
 		gotyp, ok = untypedObjID2gotype[key.ObjectID]
 		if !ok {
-			return Error{
+			return &Error{
 				Dat: dat,
 				Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v, ObjectID:%v}, dat): unknown object ID for untyped item",
 					key.ItemType, key.ObjectID),
@@ -53,31 +53,31 @@ func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) It
 		var ok bool
 		gotyp, ok = keytype2gotype[key.ItemType]
 		if !ok {
-			return Error{
+			return &Error{
 				Dat: dat,
 				Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): unknown item type", key.ItemType),
 			}
 		}
 	}
-	retPtr := reflect.New(gotyp)
-	if csums, ok := retPtr.Interface().(*ExtentCSum); ok {
+	ptr := reflect.New(gotyp)
+	if csums, ok := ptr.Interface().(*ExtentCSum); ok {
 		csums.ChecksumSize = csumType.Size()
 		csums.Addr = btrfsvol.LogicalAddr(key.Offset)
 	}
-	n, err := binstruct.Unmarshal(dat, retPtr.Interface())
+	n, err := binstruct.Unmarshal(dat, ptr.Interface())
 	if err != nil {
-		return Error{
+		return &Error{
 			Dat: dat,
 			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): %w", key.ItemType, err),
 		}
 	}
 	if n < len(dat) {
-		return Error{
+		return &Error{
 			Dat: dat,
 			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): left over data: got %v bytes but only consumed %v",
 				key.ItemType, len(dat), n),
 		}
 	}
 	//nolint:forcetypeassert // items_gen.go has all types in keytype2gotype implement the Item interface.
-	return retPtr.Elem().Interface().(Item)
+	return ptr.Interface().(Item)
 }

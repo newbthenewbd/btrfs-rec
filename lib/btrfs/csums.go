@@ -60,9 +60,9 @@ func LookupCSum(fs btrfstree.TreeOperator, alg btrfssum.CSumType, laddr btrfsvol
 		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, fmt.Errorf("item type is %v, not EXTENT_CSUM", item.Key.ItemType)
 	}
 	switch body := item.Body.(type) {
-	case btrfsitem.ExtentCSum:
+	case *btrfsitem.ExtentCSum:
 		return body.SumRun, nil
-	case btrfsitem.Error:
+	case *btrfsitem.Error:
 		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, body.Err
 	default:
 		panic(fmt.Errorf("should not happen: EXTENT_CSUM has unexpected item type: %T", body))

@@ -207,7 +207,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 				ToKey:       item.Key,
 				ToMaxKey:    item.Key,
 			})
-			if errBody, isErr := item.Body.(btrfsitem.Error); isErr {
+			if errBody, isErr := item.Body.(*btrfsitem.Error); isErr {
 				if cbs.BadItem == nil {
 					errHandle(&TreeError{Path: itemPath, Err: errBody.Err})
 				} else {

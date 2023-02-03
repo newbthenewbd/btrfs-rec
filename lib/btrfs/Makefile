@@ -35,7 +35,7 @@ btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{'; \
 	  sed -En 's|UNTYPED=0:(.*) (.*)|btrfsprim.\1: reflect.TypeOf(\2{}),|p' $<; \
 	  echo '}'; \
-	  sed -En 's,(.*)=(.*) (.+),\3,p' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
+	  sed -En 's,(.*)=(.*) (.+),\3,p' $< | LC_COLLATE=C sort -u | sed 's,.*,func (*&) isItem() {},'; \
 	} | gofmt >$@
 files += btrfsitem/items_gen.go
 

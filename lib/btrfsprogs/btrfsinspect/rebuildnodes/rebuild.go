@@ -290,9 +290,9 @@ func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (off
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
 	switch itemBody := itemBody.(type) {
-	case btrfsitem.Root:
-		return btrfsprim.Generation(key.Offset), itemBody, true
-	case btrfsitem.Error:
+	case *btrfsitem.Root:
+		return btrfsprim.Generation(key.Offset), *itemBody, true
+	case *btrfsitem.Error:
 		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
 		return 0, btrfsitem.Root{}, false
 	default:
@@ -315,9 +315,9 @@ func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id b
 		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
 	}
 	switch itemBody := itemBody.(type) {
-	case btrfsitem.UUIDMap:
+	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
-	case btrfsitem.Error:
+	case *btrfsitem.Error:
 		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
 		return 0, false
 	default:

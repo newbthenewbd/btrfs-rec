@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -43,7 +43,7 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 			},
 			btrfstree.TreeWalkHandler{
 				Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
-					itemBody, ok := item.Body.(btrfsitem.Root)
+					itemBody, ok := item.Body.(*btrfsitem.Root)
 					if !ok {
 						return nil
 					}

@@ -173,13 +173,13 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 					return nil
 				}
 				switch itemBody := item.Body.(type) {
-				case btrfsitem.Chunk:
+				case *btrfsitem.Chunk:
 					for _, mapping := range itemBody.Mappings(item.Key) {
 						if err := fs.LV.AddMapping(mapping); err != nil {
 							return err
 						}
 					}
-				case btrfsitem.Error:
+				case *btrfsitem.Error:
 					// do nothing
 				default:
 					// This is a panic because the item decoder should not emit CHUNK_ITEM items as
