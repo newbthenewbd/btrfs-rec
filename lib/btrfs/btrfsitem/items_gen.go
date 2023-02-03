@@ -43,43 +43,74 @@ const (
 	XATTR_ITEM_KEY           = btrfsprim.XATTR_ITEM_KEY
 )
 
+var (
+	blockGroupType      = reflect.TypeOf(BlockGroup{})
+	chunkType           = reflect.TypeOf(Chunk{})
+	devType             = reflect.TypeOf(Dev{})
+	devExtentType       = reflect.TypeOf(DevExtent{})
+	devStatsType        = reflect.TypeOf(DevStats{})
+	dirEntryType        = reflect.TypeOf(DirEntry{})
+	emptyType           = reflect.TypeOf(Empty{})
+	extentType          = reflect.TypeOf(Extent{})
+	extentCSumType      = reflect.TypeOf(ExtentCSum{})
+	extentDataRefType   = reflect.TypeOf(ExtentDataRef{})
+	fileExtentType      = reflect.TypeOf(FileExtent{})
+	freeSpaceBitmapType = reflect.TypeOf(FreeSpaceBitmap{})
+	freeSpaceHeaderType = reflect.TypeOf(FreeSpaceHeader{})
+	freeSpaceInfoType   = reflect.TypeOf(FreeSpaceInfo{})
+	inodeType           = reflect.TypeOf(Inode{})
+	inodeRefsType       = reflect.TypeOf(InodeRefs{})
+	metadataType        = reflect.TypeOf(Metadata{})
+	qGroupInfoType      = reflect.TypeOf(QGroupInfo{})
+	qGroupLimitType     = reflect.TypeOf(QGroupLimit{})
+	qGroupStatusType    = reflect.TypeOf(QGroupStatus{})
+	rootType            = reflect.TypeOf(Root{})
+	rootRefType         = reflect.TypeOf(RootRef{})
+	sharedDataRefType   = reflect.TypeOf(SharedDataRef{})
+	uuidMapType         = reflect.TypeOf(UUIDMap{})
+)
+
+// keytype2gotype is used by UnmarshalItem.
 var keytype2gotype = map[Type]reflect.Type{
-	BLOCK_GROUP_ITEM_KEY:     reflect.TypeOf(BlockGroup{}),
-	CHUNK_ITEM_KEY:           reflect.TypeOf(Chunk{}),
-	DEV_EXTENT_KEY:           reflect.TypeOf(DevExtent{}),
-	DEV_ITEM_KEY:             reflect.TypeOf(Dev{}),
-	DIR_INDEX_KEY:            reflect.TypeOf(DirEntry{}),
-	DIR_ITEM_KEY:             reflect.TypeOf(DirEntry{}),
-	EXTENT_CSUM_KEY:          reflect.TypeOf(ExtentCSum{}),
-	EXTENT_DATA_KEY:          reflect.TypeOf(FileExtent{}),
-	EXTENT_DATA_REF_KEY:      reflect.TypeOf(ExtentDataRef{}),
-	EXTENT_ITEM_KEY:          reflect.TypeOf(Extent{}),
-	FREE_SPACE_BITMAP_KEY:    reflect.TypeOf(FreeSpaceBitmap{}),
-	FREE_SPACE_EXTENT_KEY:    reflect.TypeOf(Empty{}),
-	FREE_SPACE_INFO_KEY:      reflect.TypeOf(FreeSpaceInfo{}),
-	INODE_ITEM_KEY:           reflect.TypeOf(Inode{}),
-	INODE_REF_KEY:            reflect.TypeOf(InodeRefs{}),
-	METADATA_ITEM_KEY:        reflect.TypeOf(Metadata{}),
-	ORPHAN_ITEM_KEY:          reflect.TypeOf(Empty{}),
-	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
-	QGROUP_INFO_KEY:          reflect.TypeOf(QGroupInfo{}),
-	QGROUP_LIMIT_KEY:         reflect.TypeOf(QGroupLimit{}),
-	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
-	QGROUP_STATUS_KEY:        reflect.TypeOf(QGroupStatus{}),
-	ROOT_BACKREF_KEY:         reflect.TypeOf(RootRef{}),
-	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
-	ROOT_REF_KEY:             reflect.TypeOf(RootRef{}),
-	SHARED_BLOCK_REF_KEY:     reflect.TypeOf(Empty{}),
-	SHARED_DATA_REF_KEY:      reflect.TypeOf(SharedDataRef{}),
-	TREE_BLOCK_REF_KEY:       reflect.TypeOf(Empty{}),
-	UUID_RECEIVED_SUBVOL_KEY: reflect.TypeOf(UUIDMap{}),
-	UUID_SUBVOL_KEY:          reflect.TypeOf(UUIDMap{}),
-	XATTR_ITEM_KEY:           reflect.TypeOf(DirEntry{}),
-}
-var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{
-	btrfsprim.FREE_SPACE_OBJECTID: reflect.TypeOf(FreeSpaceHeader{}),
+	BLOCK_GROUP_ITEM_KEY:     blockGroupType,
+	CHUNK_ITEM_KEY:           chunkType,
+	DEV_EXTENT_KEY:           devExtentType,
+	DEV_ITEM_KEY:             devType,
+	DIR_INDEX_KEY:            dirEntryType,
+	DIR_ITEM_KEY:             dirEntryType,
+	EXTENT_CSUM_KEY:          extentCSumType,
+	EXTENT_DATA_KEY:          fileExtentType,
+	EXTENT_DATA_REF_KEY:      extentDataRefType,
+	EXTENT_ITEM_KEY:          extentType,
+	FREE_SPACE_BITMAP_KEY:    freeSpaceBitmapType,
+	FREE_SPACE_EXTENT_KEY:    emptyType,
+	FREE_SPACE_INFO_KEY:      freeSpaceInfoType,
+	INODE_ITEM_KEY:           inodeType,
+	INODE_REF_KEY:            inodeRefsType,
+	METADATA_ITEM_KEY:        metadataType,
+	ORPHAN_ITEM_KEY:          emptyType,
+	PERSISTENT_ITEM_KEY:      devStatsType,
+	QGROUP_INFO_KEY:          qGroupInfoType,
+	QGROUP_LIMIT_KEY:         qGroupLimitType,
+	QGROUP_RELATION_KEY:      emptyType,
+	QGROUP_STATUS_KEY:        qGroupStatusType,
+	ROOT_BACKREF_KEY:         rootRefType,
+	ROOT_ITEM_KEY:            rootType,
+	ROOT_REF_KEY:             rootRefType,
+	SHARED_BLOCK_REF_KEY:     emptyType,
+	SHARED_DATA_REF_KEY:      sharedDataRefType,
+	TREE_BLOCK_REF_KEY:       emptyType,
+	UUID_RECEIVED_SUBVOL_KEY: uuidMapType,
+	UUID_SUBVOL_KEY:          uuidMapType,
+	XATTR_ITEM_KEY:           dirEntryType,
 }
 
+// untypedObjID2gotype is used by UnmarshalItem.
+var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{
+	btrfsprim.FREE_SPACE_OBJECTID: freeSpaceHeaderType,
+}
+
+// isItem implements Item.
 func (*BlockGroup) isItem()      {}
 func (*Chunk) isItem()           {}
 func (*Dev) isItem()             {}
@@ -104,3 +135,31 @@ func (*Root) isItem()            {}
 func (*RootRef) isItem()         {}
 func (*SharedDataRef) isItem()   {}
 func (*UUIDMap) isItem()         {}
+
+// Type assertions.
+var (
+	_ Item = (*BlockGroup)(nil)
+	_ Item = (*Chunk)(nil)
+	_ Item = (*Dev)(nil)
+	_ Item = (*DevExtent)(nil)
+	_ Item = (*DevStats)(nil)
+	_ Item = (*DirEntry)(nil)
+	_ Item = (*Empty)(nil)
+	_ Item = (*Extent)(nil)
+	_ Item = (*ExtentCSum)(nil)
+	_ Item = (*ExtentDataRef)(nil)
+	_ Item = (*FileExtent)(nil)
+	_ Item = (*FreeSpaceBitmap)(nil)
+	_ Item = (*FreeSpaceHeader)(nil)
+	_ Item = (*FreeSpaceInfo)(nil)
+	_ Item = (*Inode)(nil)
+	_ Item = (*InodeRefs)(nil)
+	_ Item = (*Metadata)(nil)
+	_ Item = (*QGroupInfo)(nil)
+	_ Item = (*QGroupLimit)(nil)
+	_ Item = (*QGroupStatus)(nil)
+	_ Item = (*Root)(nil)
+	_ Item = (*RootRef)(nil)
+	_ Item = (*SharedDataRef)(nil)
+	_ Item = (*UUIDMap)(nil)
+)

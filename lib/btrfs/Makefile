@@ -27,16 +27,26 @@ btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo   '"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"'; \
 	  echo ')'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=(.*) (.*),\1_KEY=btrfsprim.\1_KEY,' $<; \
+	  sed -E 's/(.*)=(.*) (.*)/\1_KEY=btrfsprim.\1_KEY/' $<; \
 	  echo ')'; \
+	  echo 'var ('; \
+	  sed -E 's/(.*)=(.*) (.*)/\3/p' $< | LC_COLLATE=C sort -u | sed 's/.*/\l&Type = reflect.TypeOf(&{})/'; \
+	  echo ')'; \
+	  echo '// keytype2gotype is used by UnmarshalItem.'; \
 	  echo 'var keytype2gotype = map[Type]reflect.Type{'; \
-	  sed -En 's|(.*)=([^:]*) (.*)|\1_KEY: reflect.TypeOf(\3{}),|p' $<; \
+	  sed -En 's/(.*)=([^:]*) (.*)/\1_KEY: \l\3Type,/p' $<; \
 	  echo '}'; \
+	  echo '// untypedObjID2gotype is used by UnmarshalItem.'; \
 	  echo 'var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{'; \
-	  sed -En 's|UNTYPED=0:(.*) (.*)|btrfsprim.\1: reflect.TypeOf(\2{}),|p' $<; \
+	  sed -En 's/UNTYPED=0:(.*) (.*)/btrfsprim.\1: \l\2Type,/p' $<; \
 	  echo '}'; \
-	  sed -En 's,(.*)=(.*) (.+),\3,p' $< | LC_COLLATE=C sort -u | sed 's,.*,func (*&) isItem() {},'; \
-	} | gofmt >$@
+	  echo '// isItem implements Item.'; \
+	  sed -En 's/(.*)=(.*) (.+)/\3/p' $< | LC_COLLATE=C sort -u | sed 's/.*/func (*&) isItem() {}/'; \
+	  echo '// Type assertions.'; \
+	  echo 'var ('; \
+	  sed -En 's/(.*)=(.*) (.+)/\3/p' $< | LC_COLLATE=C sort -u | sed 's/.*/_ Item = (*&)(nil)/'; \
+	  echo ')'; \
+	} | sed 's/uUID/uuid/g' | gofmt >$@
 files += btrfsitem/items_gen.go
 
 btrfsprim/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
