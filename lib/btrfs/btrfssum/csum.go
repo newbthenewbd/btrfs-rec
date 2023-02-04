@@ -14,6 +14,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
+const BlockSize = 4 * 1024
+
 type CSum [0x20]byte
 
 var (
