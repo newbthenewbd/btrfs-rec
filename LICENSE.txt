@@ -31,8 +31,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 General Public License for more details.
 
 Along with this program, you should have received a copy of the GNU
-General Public License (in the COPYING.gpl-2.0.txt and
-COPYING.gpl-3.0.txt files) and the Apache License (in the
-COPYING.apache-2.0.txt file).  If not, see
+General Public License (in the LICENSE.gpl-2.0.txt and
+LICENSE.gpl-3.0.txt files) and the Apache License (in the
+LICENSE.apache-2.0.txt file).  If not, see
 <https://www.gnu.org/licenses/> and
 <http://www.apache.org/licenses/LICENSE-2.0>.
