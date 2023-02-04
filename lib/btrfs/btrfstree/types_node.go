@@ -21,6 +21,13 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
+var (
+	nodeHeaderSize = binstruct.StaticSize(NodeHeader{})
+	keyPointerSize = binstruct.StaticSize(KeyPointer{})
+	itemHeaderSize = binstruct.StaticSize(ItemHeader{})
+	csumSize       = binstruct.StaticSize(btrfssum.CSum{})
+)
+
 type NodeFlags uint64
 
 const sizeofNodeFlags = 7
@@ -103,11 +110,11 @@ type NodeHeader struct {
 // MaxItems returns the maximum possible valid value of
 // .Head.NumItems.
 func (node Node) MaxItems() uint32 {
-	bodyBytes := node.Size - uint32(binstruct.StaticSize(NodeHeader{}))
+	bodyBytes := node.Size - uint32(nodeHeaderSize)
 	if node.Head.Level > 0 {
-		return bodyBytes / uint32(binstruct.StaticSize(KeyPointer{}))
+		return bodyBytes / uint32(keyPointerSize)
 	} else {
-		return bodyBytes / uint32(binstruct.StaticSize(ItemHeader{}))
+		return bodyBytes / uint32(itemHeaderSize)
 	}
 }
 
@@ -144,7 +151,7 @@ func (node Node) CalculateChecksum() (btrfssum.CSum, error) {
 	if err != nil {
 		return btrfssum.CSum{}, err
 	}
-	return node.ChecksumType.Sum(data[binstruct.StaticSize(btrfssum.CSum{}):])
+	return node.ChecksumType.Sum(data[csumSize:])
 }
 
 func (node Node) ValidateChecksum() error {
@@ -165,17 +172,16 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 		Size:         uint32(len(nodeBuf)),
 		ChecksumType: node.ChecksumType,
 	}
-	if len(nodeBuf) <= binstruct.StaticSize(NodeHeader{}) {
+	if len(nodeBuf) <= nodeHeaderSize {
 		return 0, fmt.Errorf("size must be greater than %v, but is %v",
-			binstruct.StaticSize(NodeHeader{}),
-			len(nodeBuf))
+			nodeHeaderSize, len(nodeBuf))
 	}
 	n, err := binstruct.Unmarshal(nodeBuf, &node.Head)
 	if err != nil {
 		return n, err
-	} else if n != binstruct.StaticSize(NodeHeader{}) {
+	} else if n != nodeHeaderSize {
 		return n, fmt.Errorf("header consumed %v bytes but expected %v",
-			n, binstruct.StaticSize(NodeHeader{}))
+			n, nodeHeaderSize)
 	}
 	if node.Head.Level > 0 {
 		_n, err := node.unmarshalInternal(nodeBuf[n:])
@@ -201,10 +207,9 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	if node.Size == 0 {
 		return nil, fmt.Errorf(".Size must be set")
 	}
-	if node.Size <= uint32(binstruct.StaticSize(NodeHeader{})) {
+	if node.Size <= uint32(nodeHeaderSize) {
 		return nil, fmt.Errorf(".Size must be greater than %v, but is %v",
-			binstruct.StaticSize(NodeHeader{}),
-			node.Size)
+			nodeHeaderSize, node.Size)
 	}
 	if node.Head.Level > 0 {
 		node.Head.NumItems = uint32(len(node.BodyInternal))
@@ -217,19 +222,19 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	if bs, err := binstruct.Marshal(node.Head); err != nil {
 		return buf, err
 	} else {
-		if len(bs) != binstruct.StaticSize(NodeHeader{}) {
+		if len(bs) != nodeHeaderSize {
 			return nil, fmt.Errorf("header is %v bytes but expected %v",
-				len(bs), binstruct.StaticSize(NodeHeader{}))
+				len(bs), nodeHeaderSize)
 		}
 		copy(buf, bs)
 	}
 
 	if node.Head.Level > 0 {
-		if err := node.marshalInternalTo(buf[binstruct.StaticSize(NodeHeader{}):]); err != nil {
+		if err := node.marshalInternalTo(buf[nodeHeaderSize:]); err != nil {
 			return buf, err
 		}
 	} else {
-		if err := node.marshalLeafTo(buf[binstruct.StaticSize(NodeHeader{}):]); err != nil {
+		if err := node.marshalLeafTo(buf[nodeHeaderSize:]); err != nil {
 			return buf, err
 		}
 	}
@@ -374,9 +379,9 @@ func (node *Node) LeafFreeSpace() uint32 {
 		panic(fmt.Errorf("Node.LeafFreeSpace: not a leaf node"))
 	}
 	freeSpace := node.Size
-	freeSpace -= uint32(binstruct.StaticSize(NodeHeader{}))
+	freeSpace -= uint32(nodeHeaderSize)
 	for _, item := range node.BodyLeaf {
-		freeSpace -= uint32(binstruct.StaticSize(ItemHeader{}))
+		freeSpace -= uint32(itemHeaderSize)
 		bs, _ := binstruct.Marshal(item.Body)
 		freeSpace -= uint32(len(bs))
 	}
@@ -423,11 +428,11 @@ var bytePool containers.SlicePool[byte]
 // *NodeError[Addr].  Notable errors that may be inside of the
 // NodeError are ErrNotANode and *IOError.
 func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
-	if int(sb.NodeSize) < binstruct.StaticSize(NodeHeader{}) {
+	if int(sb.NodeSize) < nodeHeaderSize {
 		return nil, &NodeError[Addr]{
 			Op: "btrfstree.ReadNode", NodeAddr: addr,
 			Err: fmt.Errorf("superblock.NodeSize=%v is too small to contain even a node header (%v bytes)",
-				sb.NodeSize, binstruct.StaticSize(NodeHeader{})),
+				sb.NodeSize, nodeHeaderSize),
 		}
 	}
 	nodeBuf := bytePool.Get(int(sb.NodeSize))
@@ -461,7 +466,7 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	}
 
 	stored := nodeRef.Data.Head.Checksum
-	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(btrfssum.CSum{}):])
+	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[csumSize:])
 	if err != nil {
 		bytePool.Put(nodeBuf)
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}

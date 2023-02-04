@@ -92,6 +92,8 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 	textui.Fprintf(out, "uuid %v\n", superblock.FSUUID)
 }
 
+var nodeHeaderSize = binstruct.StaticSize(btrfstree.NodeHeader{})
+
 // printTree mimics btrfs-progs
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
@@ -100,7 +102,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 	handlers := btrfstree.TreeWalkHandler{
 		Node: func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
 			printHeaderInfo(out, nodeRef.Data)
-			itemOffset = nodeRef.Data.Size - uint32(binstruct.StaticSize(btrfstree.NodeHeader{}))
+			itemOffset = nodeRef.Data.Size - uint32(nodeHeaderSize)
 			return nil
 		},
 		PreKeyPointer: func(_ btrfstree.TreePath, item btrfstree.KeyPointer) error {
