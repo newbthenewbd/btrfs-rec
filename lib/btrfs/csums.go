@@ -12,23 +12,31 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
+// dat doesn't escape to the heap in .ReadAt(dat, …), but the compiler
+// can't figure that out, so we use a Pool for our byte arrays, since
+// the compiler won't let us allocate them on the stack.
+var blockPool containers.SlicePool[byte]
+
 func ChecksumLogical(fs diskio.File[btrfsvol.LogicalAddr], alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.CSum, error) {
-	var dat [btrfssum.BlockSize]byte
-	if _, err := fs.ReadAt(dat[:], laddr); err != nil {
+	dat := blockPool.Get(btrfssum.BlockSize)
+	defer blockPool.Put(dat)
+	if _, err := fs.ReadAt(dat, laddr); err != nil {
 		return btrfssum.CSum{}, err
 	}
-	return alg.Sum(dat[:])
+	return alg.Sum(dat)
 }
 
 func ChecksumPhysical(dev *Device, alg btrfssum.CSumType, paddr btrfsvol.PhysicalAddr) (btrfssum.CSum, error) {
-	var dat [btrfssum.BlockSize]byte
-	if _, err := dev.ReadAt(dat[:], paddr); err != nil {
+	dat := blockPool.Get(btrfssum.BlockSize)
+	defer blockPool.Put(dat)
+	if _, err := dev.ReadAt(dat, paddr); err != nil {
 		return btrfssum.CSum{}, err
 	}
-	return alg.Sum(dat[:])
+	return alg.Sum(dat)
 }
 
 func ChecksumQualifiedPhysical(fs *FS, alg btrfssum.CSumType, paddr btrfsvol.QualifiedPhysicalAddr) (btrfssum.CSum, error) {
