@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -20,7 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
+func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) SumRunWithGaps[btrfsvol.LogicalAddr] {
 	var records []btrfsinspect.SysExtentCSum
 	for _, devResults := range scanResults {
 		records = append(records, devResults.FoundExtentCSums...)
@@ -38,7 +38,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 		}
 	})
 	if len(records) == 0 {
-		return btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{}
+		return SumRunWithGaps[btrfsvol.LogicalAddr]{}
 	}
 	sumSize := records[0].Sums.ChecksumSize
 
@@ -149,7 +149,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	}
 
 	// Now flatten that RBTree in to a SumRunWithGaps.
-	var flattened btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]
+	var flattened SumRunWithGaps[btrfsvol.LogicalAddr]
 	var curAddr btrfsvol.LogicalAddr
 	var curSums strings.Builder
 	_ = addrspace.Walk(func(node *containers.RBNode[btrfsinspect.SysExtentCSum]) error {
@@ -183,7 +183,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	return flattened
 }
 
-func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]) []btrfssum.SumRun[btrfsvol.LogicalAddr] {
+func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums SumRunWithGaps[btrfsvol.LogicalAddr]) []btrfssum.SumRun[btrfsvol.LogicalAddr] {
 	// There are a lot of ways this algorithm could be made
 	// faster.
 	var ret []btrfssum.SumRun[btrfsvol.LogicalAddr]
@@ -226,8 +226,8 @@ func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums btrfssum.SumRunWithGap
 	return ret
 }
 
-func SumsForLogicalRegion(sums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr] {
-	runs := btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr]{
+func SumsForLogicalRegion(sums SumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) SumRunWithGaps[btrfsvol.LogicalAddr] {
+	runs := SumRunWithGaps[btrfsvol.LogicalAddr]{
 		Addr: beg,
 		Size: size,
 	}

@@ -22,7 +22,7 @@ func matchBlockGroupSums(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
+	logicalSums SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
 	regions := ListUnmappedPhysicalRegions(fs)
 	numBlockgroups := len(blockgroups)

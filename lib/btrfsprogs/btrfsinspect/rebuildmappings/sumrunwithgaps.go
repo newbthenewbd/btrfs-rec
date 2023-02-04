@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrfssum
+package rebuildmappings
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"git.lukeshu.com/go/lowmemjson"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
@@ -22,7 +23,7 @@ type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
 	Addr Addr
 	Size btrfsvol.AddrDelta
 
-	Runs []SumRun[Addr]
+	Runs []btrfssum.SumRun[Addr]
 }
 
 var (
@@ -31,7 +32,7 @@ var (
 )
 
 func (sg SumRunWithGaps[Addr]) NumSums() int {
-	return int(sg.Size / BlockSize)
+	return int(sg.Size / btrfssum.BlockSize)
 }
 
 func (sg SumRunWithGaps[Addr]) PctFull() float64 {
@@ -43,20 +44,20 @@ func (sg SumRunWithGaps[Addr]) PctFull() float64 {
 	return float64(full) / float64(total)
 }
 
-func (sg SumRunWithGaps[Addr]) RunForAddr(addr Addr) (SumRun[Addr], Addr, bool) {
+func (sg SumRunWithGaps[Addr]) RunForAddr(addr Addr) (btrfssum.SumRun[Addr], Addr, bool) {
 	for _, run := range sg.Runs {
 		if run.Addr > addr {
-			return SumRun[Addr]{}, run.Addr, false
+			return btrfssum.SumRun[Addr]{}, run.Addr, false
 		}
 		if run.Addr.Add(run.Size()) <= addr {
 			continue
 		}
 		return run, 0, true
 	}
-	return SumRun[Addr]{}, math.MaxInt64, false
+	return btrfssum.SumRun[Addr]{}, math.MaxInt64, false
 }
 
-func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
+func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, error) {
 	if addr < sg.Addr || addr >= sg.Addr.Add(sg.Size) {
 		return "", io.EOF
 	}
@@ -67,13 +68,13 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (ShortSum, error) {
 		if run.Addr.Add(run.Size()) <= addr {
 			continue
 		}
-		off := int((addr-run.Addr)/BlockSize) * run.ChecksumSize
+		off := int((addr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
 		return run.Sums[off : off+run.ChecksumSize], nil
 	}
 	return "", diskio.ErrWildcard
 }
 
-func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum) error) error {
+func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, btrfssum.ShortSum) error) error {
 	for _, run := range sg.Runs {
 		if err := run.Walk(ctx, fn); err != nil {
 			return err
@@ -83,8 +84,8 @@ func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, ShortSum)
 }
 
 // Get implements diskio.Sequence[int, ShortSum]
-func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (ShortSum, error) {
-	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * BlockSize)
+func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (btrfssum.ShortSum, error) {
+	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * btrfssum.BlockSize)
 	return sg.SumForAddr(addr)
 }
 
@@ -144,7 +145,7 @@ func (sg *SumRunWithGaps[Addr]) DecodeJSON(r io.RuneScanner) error {
 				return lowmemjson.NewDecoder(r).Decode(&sg.Size)
 			case "Runs":
 				return lowmemjson.DecodeArray(r, func(r io.RuneScanner) error {
-					var run SumRun[Addr]
+					var run btrfssum.SumRun[Addr]
 					if err := lowmemjson.NewDecoder(r).Decode(&run); err != nil {
 						return err
 					}

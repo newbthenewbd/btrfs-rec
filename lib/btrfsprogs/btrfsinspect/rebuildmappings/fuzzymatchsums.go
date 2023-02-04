@@ -41,7 +41,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
+	logicalSums SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
 	_ctx := ctx
 
