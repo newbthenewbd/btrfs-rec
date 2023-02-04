@@ -416,6 +416,8 @@ type IOError struct {
 func (e *IOError) Error() string { return "i/o error: " + e.Err.Error() }
 func (e *IOError) Unwrap() error { return e.Err }
 
+var bytePool containers.SlicePool[byte]
+
 // It is possible that both a non-nil diskio.Ref and an error are
 // returned.  The error returned (if non-nil) is always of type
 // *NodeError[Addr].  Notable errors that may be inside of the
@@ -428,8 +430,9 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 				sb.NodeSize, binstruct.StaticSize(NodeHeader{})),
 		}
 	}
-	nodeBuf := make([]byte, sb.NodeSize)
+	nodeBuf := bytePool.Get(int(sb.NodeSize))
 	if _, err := fs.ReadAt(nodeBuf, addr); err != nil {
+		bytePool.Put(nodeBuf)
 		return nil, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: &IOError{Err: err}}
 	}
 
@@ -453,15 +456,18 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	// sanity checking (that prevents the main parse)
 
 	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
+		bytePool.Put(nodeBuf)
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: ErrNotANode}
 	}
 
 	stored := nodeRef.Data.Head.Checksum
 	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[binstruct.StaticSize(btrfssum.CSum{}):])
 	if err != nil {
+		bytePool.Put(nodeBuf)
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 	if stored != calced {
+		bytePool.Put(nodeBuf)
 		return nodeRef, &NodeError[Addr]{
 			Op: "btrfstree.ReadNode", NodeAddr: addr,
 			Err: fmt.Errorf("looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
@@ -481,8 +487,11 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	// isn't useful.
 
 	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
+		bytePool.Put(nodeBuf)
 		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
+
+	bytePool.Put(nodeBuf)
 
 	// sanity checking (that doesn't prevent parsing)
 
