@@ -2,16 +2,18 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package diskio
+package rebuildmappings
 
 import (
 	"errors"
 	"io"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 var ErrWildcard = errors.New("wildcard")
 
-func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], bI K) bool {
+func kmpEq2[K ~int64, V comparable](aS diskio.Sequence[K, V], aI K, bS diskio.Sequence[K, V], bI K) bool {
 	aV, aErr := aS.Get(aI)
 	bV, bErr := bS.Get(bI)
 	if aErr != nil {
@@ -38,7 +40,7 @@ func kmpEq2[K ~int64, V comparable](aS Sequence[K, V], aI K, bS Sequence[K, V], 
 	return aV == bV
 }
 
-func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
+func kmpEq1[K ~int64, V comparable](aV V, bS diskio.Sequence[K, V], bI K) bool {
 	bV, bErr := bS.Get(bI)
 	if bErr != nil {
 		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
@@ -53,7 +55,7 @@ func kmpEq1[K ~int64, V comparable](aV V, bS Sequence[K, V], bI K) bool {
 // buildKMPTable takes the string 'substr', and returns a table such
 // that 'table[matchLen-1]' is the largest value 'val' for which 'val < matchLen' and
 // 'substr[:val] == substr[matchLen-val:matchLen]'.
-func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
+func buildKMPTable[K ~int64, V comparable](substr diskio.Sequence[K, V]) ([]K, error) {
 	var substrLen K
 	for {
 		//nolint:errorlint // The == is just a fast-path; we still fall back to errors.Is.
@@ -102,14 +104,14 @@ func buildKMPTable[K ~int64, V comparable](substr Sequence[K, V]) ([]K, error) {
 // ErrWildcard for a position.
 //
 // Uses the Knuth-Morris-Pratt algorithm.
-func IndexAll[K ~int64, V comparable](str, substr Sequence[K, V]) ([]K, error) {
+func IndexAll[K ~int64, V comparable](str, substr diskio.Sequence[K, V]) ([]K, error) {
 	table, err := buildKMPTable(substr)
 	if err != nil {
 		return nil, err
 	}
 	substrLen := K(len(table))
 	if substrLen == 0 {
-		panic(errors.New("diskio.IndexAll: empty substring"))
+		panic(errors.New("rebuildmappings.IndexAll: empty substring"))
 	}
 
 	var matches []K

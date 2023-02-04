@@ -14,7 +14,6 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
@@ -63,7 +62,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, error) 
 	}
 	for _, run := range sg.Runs {
 		if run.Addr > addr {
-			return "", diskio.ErrWildcard
+			return "", ErrWildcard
 		}
 		if run.Addr.Add(run.Size()) <= addr {
 			continue
@@ -71,7 +70,7 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, error) 
 		off := int((addr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
 		return run.Sums[off : off+run.ChecksumSize], nil
 	}
-	return "", diskio.ErrWildcard
+	return "", ErrWildcard
 }
 
 func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, btrfssum.ShortSum) error) error {

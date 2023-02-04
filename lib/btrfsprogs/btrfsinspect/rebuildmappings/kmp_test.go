@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package diskio
+package rebuildmappings
 
 import (
 	"bytes"
@@ -11,11 +11,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 func TestBuildKMPTable(t *testing.T) {
 	t.Parallel()
-	substr := SliceSequence[int64, byte]([]byte("ababaa"))
+	substr := diskio.SliceSequence[int64, byte]([]byte("ababaa"))
 	table, err := buildKMPTable[int64, byte](substr)
 	require.NoError(t, err)
 	require.Equal(t,
@@ -31,7 +33,7 @@ func TestBuildKMPTable(t *testing.T) {
 func FuzzBuildKMPTable(f *testing.F) {
 	f.Add([]byte("ababaa"))
 	f.Fuzz(func(t *testing.T, substr []byte) {
-		table, err := buildKMPTable[int64, byte](SliceSequence[int64, byte](substr))
+		table, err := buildKMPTable[int64, byte](diskio.SliceSequence[int64, byte](substr))
 		require.NoError(t, err)
 		require.Equal(t, len(substr), len(table), "length")
 		for j, val := range table {
@@ -61,8 +63,8 @@ func FuzzIndexAll(f *testing.F) {
 		t.Logf("substr=%q", substr)
 		exp := NaiveIndexAll(str, substr)
 		act, err := IndexAll[int64, byte](
-			&ByteReaderSequence[int64]{R: bytes.NewReader(str)},
-			SliceSequence[int64, byte](substr))
+			&diskio.ByteReaderSequence[int64]{R: bytes.NewReader(str)},
+			diskio.SliceSequence[int64, byte](substr))
 		assert.NoError(t, err)
 		assert.Equal(t, exp, act)
 	})
@@ -115,7 +117,7 @@ func TestKMPWildcard(t *testing.T) {
 		t.Run(tcName, func(t *testing.T) {
 			t.Parallel()
 			matches, err := IndexAll[int64, byte](
-				StringSequence[int64](tc.InStr),
+				diskio.StringSequence[int64](tc.InStr),
 				RESeq(tc.InSubstr))
 			assert.NoError(t, err)
 			assert.Equal(t, tc.ExpMatches, matches)
