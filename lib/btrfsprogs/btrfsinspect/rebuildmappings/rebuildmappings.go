@@ -158,10 +158,6 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect
 	// The fuzzy-search is only fast because the exact-search is so good at getting `physicalBlocks` down.
 	// Empirically: if I remove the exact-search step, then the fuzzy-match step is more than an order of magnitude
 	// slower.
-	//
-	// The exact-search probably could be optimized to be substantially faster (by a constant factor; not affecting
-	// the big-O) by figuring out how to inline function calls and get reduce allocations, but IMO it's "fast
-	// enough" for now.
 	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "5/6")
 	dlog.Infof(_ctx, "5/6: Searching for %d block groups in checksum map (exact)...", len(bgs))
 	physicalSums := ExtractPhysicalSums(scanResults)

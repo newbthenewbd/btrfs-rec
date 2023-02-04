@@ -30,15 +30,16 @@ var (
 	_ lowmemjson.Decodable = (*SumRunWithGaps[btrfsvol.LogicalAddr])(nil)
 )
 
-func (sg SumRunWithGaps[Addr]) NumSums() int {
+// PatLen implements kmpPattern[int, ShortSum].
+func (sg SumRunWithGaps[Addr]) PatLen() int {
 	return int(sg.Size / btrfssum.BlockSize)
 }
 
 func (sg SumRunWithGaps[Addr]) PctFull() float64 {
-	total := sg.NumSums()
+	total := sg.PatLen()
 	var full int
 	for _, run := range sg.Runs {
-		full += run.NumSums()
+		full += run.SeqLen()
 	}
 	return float64(full) / float64(total)
 }
@@ -56,21 +57,21 @@ func (sg SumRunWithGaps[Addr]) RunForAddr(addr Addr) (btrfssum.SumRun[Addr], Add
 	return btrfssum.SumRun[Addr]{}, math.MaxInt64, false
 }
 
-func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, error) {
+func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, bool) {
 	if addr < sg.Addr || addr >= sg.Addr.Add(sg.Size) {
-		return "", io.EOF
+		return "", false
 	}
 	for _, run := range sg.Runs {
 		if run.Addr > addr {
-			return "", ErrWildcard
+			return "", false
 		}
 		if run.Addr.Add(run.Size()) <= addr {
 			continue
 		}
 		off := int((addr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
-		return run.Sums[off : off+run.ChecksumSize], nil
+		return run.Sums[off : off+run.ChecksumSize], true
 	}
-	return "", ErrWildcard
+	return "", false
 }
 
 func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, btrfssum.ShortSum) error) error {
@@ -82,8 +83,8 @@ func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, btrfssum.
 	return nil
 }
 
-// Get implements diskio.Sequence[int, ShortSum]
-func (sg SumRunWithGaps[Addr]) Get(sumIdx int64) (btrfssum.ShortSum, error) {
+// PatGet implements kmpPattern[int, ShortSum].
+func (sg SumRunWithGaps[Addr]) PatGet(sumIdx int) (btrfssum.ShortSum, bool) {
 	addr := sg.Addr.Add(btrfsvol.AddrDelta(sumIdx) * btrfssum.BlockSize)
 	return sg.SumForAddr(addr)
 }

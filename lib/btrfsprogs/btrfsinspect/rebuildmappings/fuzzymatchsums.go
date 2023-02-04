@@ -69,7 +69,7 @@ func fuzzyMatchBlockGroupSums(ctx context.Context,
 		blockgroup := blockgroups[bgLAddr]
 		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 
-		d := bgRun.NumSums()
+		d := bgRun.PatLen()
 		matches := make(map[btrfsvol.QualifiedPhysicalAddr]int)
 		if err := bgRun.Walk(ctx, func(laddr btrfsvol.LogicalAddr, sum btrfssum.ShortSum) error { // O(n*…
 			off := laddr.Sub(bgRun.Addr)

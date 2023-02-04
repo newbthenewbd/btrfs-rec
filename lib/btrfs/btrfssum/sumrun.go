@@ -6,9 +6,9 @@ package btrfssum
 
 import (
 	"context"
-	"io"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type SumRun[Addr btrfsvol.IntAddr[Addr]] struct {
@@ -20,21 +20,21 @@ type SumRun[Addr btrfsvol.IntAddr[Addr]] struct {
 	Sums ShortSum
 }
 
-func (run SumRun[Addr]) NumSums() int {
+var _ diskio.Sequence[int, ShortSum] = SumRun[btrfsvol.LogicalAddr]{}
+
+// SeqLen implements diskio.Sequence[int, ShortSum].
+func (run SumRun[Addr]) SeqLen() int {
 	return len(run.Sums) / run.ChecksumSize
 }
 
 func (run SumRun[Addr]) Size() btrfsvol.AddrDelta {
-	return btrfsvol.AddrDelta(run.NumSums()) * BlockSize
+	return btrfsvol.AddrDelta(run.SeqLen()) * BlockSize
 }
 
-// Get implements diskio.Sequence[int, ShortSum]
-func (run SumRun[Addr]) Get(sumIdx int64) (ShortSum, error) {
-	if sumIdx < 0 || int(sumIdx) >= run.NumSums() {
-		return "", io.EOF
-	}
-	off := int(sumIdx) * run.ChecksumSize
-	return run.Sums[off : off+run.ChecksumSize], nil
+// SeqGet implements diskio.Sequence[int, ShortSum].
+func (run SumRun[Addr]) SeqGet(sumIdx int) ShortSum {
+	off := sumIdx * run.ChecksumSize
+	return run.Sums[off : off+run.ChecksumSize]
 }
 
 func (run SumRun[Addr]) SumForAddr(addr Addr) (ShortSum, bool) {

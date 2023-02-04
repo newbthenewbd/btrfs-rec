@@ -36,10 +36,7 @@ func matchBlockGroupSums(ctx context.Context,
 
 		var matches []btrfsvol.QualifiedPhysicalAddr
 		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
-			rawMatches, err := IndexAll[int64, btrfssum.ShortSum](region, bgRun)
-			if err != nil {
-				return err
-			}
+			rawMatches := indexAll[int, btrfssum.ShortSum](region, bgRun)
 			for _, match := range rawMatches {
 				matches = append(matches, btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
