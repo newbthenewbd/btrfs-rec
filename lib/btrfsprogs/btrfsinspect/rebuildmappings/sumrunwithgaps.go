@@ -14,6 +14,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 type SumRunWithGaps[Addr btrfsvol.IntAddr[Addr]] struct {
@@ -61,17 +62,22 @@ func (sg SumRunWithGaps[Addr]) SumForAddr(addr Addr) (btrfssum.ShortSum, bool) {
 	if addr < sg.Addr || addr >= sg.Addr.Add(sg.Size) {
 		return "", false
 	}
-	for _, run := range sg.Runs {
-		if run.Addr > addr {
-			return "", false
+	runIdx, ok := slices.Search(sg.Runs, func(run btrfssum.SumRun[Addr]) int {
+		switch {
+		case addr < run.Addr:
+			return -1
+		case addr >= run.Addr.Add(run.Size()):
+			return 1
+		default:
+			return 0
 		}
-		if run.Addr.Add(run.Size()) <= addr {
-			continue
-		}
-		off := int((addr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
-		return run.Sums[off : off+run.ChecksumSize], true
+	})
+	if !ok {
+		return "", false
 	}
-	return "", false
+	run := sg.Runs[runIdx]
+	off := int((addr-run.Addr)/btrfssum.BlockSize) * run.ChecksumSize
+	return run.Sums[off : off+run.ChecksumSize], true
 }
 
 func (sg SumRunWithGaps[Addr]) Walk(ctx context.Context, fn func(Addr, btrfssum.ShortSum) error) error {
