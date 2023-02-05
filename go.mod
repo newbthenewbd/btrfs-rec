@@ -7,7 +7,7 @@ module git.lukeshu.com/btrfs-progs-ng
 go 1.19
 
 require (
-	git.lukeshu.com/go/lowmemjson v0.3.2
+	git.lukeshu.com/go/lowmemjson v0.3.3
 	git.lukeshu.com/go/typedsync v0.1.0
 	github.com/datawire/dlib v1.3.0
 	github.com/datawire/ocibuild v0.0.3-0.20220423003204-fc6a4e9f90dc
