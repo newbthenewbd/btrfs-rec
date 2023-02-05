@@ -144,6 +144,10 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 		Flags:      m.Flags,
 	}
 	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.compareRange)
+	numOverlappingStripes := 0
+	for _, chunk := range logicalOverlaps {
+		numOverlappingStripes += len(chunk.PAddrs)
+	}
 	var err error
 	newChunk, err = newChunk.union(logicalOverlaps...)
 	if err != nil {
@@ -162,6 +166,28 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 	newExt, err = newExt.union(physicalOverlaps...)
 	if err != nil {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
+	}
+
+	if newChunk.Flags != newExt.Flags {
+		// If these don't match up, it's a bug in this code.
+		panic(fmt.Errorf("should not happen: newChunk.Flags:%+v != newExt.Flags:%+v",
+			newChunk.Flags, newExt.Flags))
+	}
+	switch {
+	case len(physicalOverlaps) == numOverlappingStripes:
+		// normal case
+	case len(physicalOverlaps) < numOverlappingStripes:
+		// .Flags = DUP or RAID{X}
+		if newChunk.Flags.OK && newChunk.Flags.Val&BLOCK_GROUP_RAID_MASK == 0 {
+			return fmt.Errorf("multiple stripes but flags=%v does not allow multiple stripes",
+				newChunk.Flags.Val)
+		}
+	case len(physicalOverlaps) > numOverlappingStripes:
+		// This should not happen because calling .AddMapping
+		// should update the two in lockstep; if these don't
+		// match up, it's a bug in this code.
+		panic(fmt.Errorf("should not happen: len(physicalOverlaps):%d != numOverlappingStripes:%d",
+			len(physicalOverlaps), numOverlappingStripes))
 	}
 
 	if dryRun {
