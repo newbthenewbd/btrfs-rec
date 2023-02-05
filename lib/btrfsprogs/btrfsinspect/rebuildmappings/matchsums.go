@@ -14,7 +14,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
@@ -22,7 +21,7 @@ func matchBlockGroupSums(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	logicalSums btrfssum.SumRunWithGaps[btrfsvol.LogicalAddr],
+	logicalSums SumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
 	regions := ListUnmappedPhysicalRegions(fs)
 	numBlockgroups := len(blockgroups)
@@ -37,10 +36,7 @@ func matchBlockGroupSums(ctx context.Context,
 
 		var matches []btrfsvol.QualifiedPhysicalAddr
 		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
-			rawMatches, err := diskio.IndexAll[int64, btrfssum.ShortSum](region, bgRun)
-			if err != nil {
-				return err
-			}
+			rawMatches := indexAll[int, btrfssum.ShortSum](region, bgRun)
 			for _, match := range rawMatches {
 				matches = append(matches, btrfsvol.QualifiedPhysicalAddr{
 					Dev:  devID,
