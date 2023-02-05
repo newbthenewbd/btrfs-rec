@@ -12,11 +12,11 @@ func (ival intervalKey[K]) ContainsFn(fn func(K) int) bool {
 	return fn(ival.Min) >= 0 && fn(ival.Max) <= 0
 }
 
-func (a intervalKey[K]) Cmp(b intervalKey[K]) int {
-	if d := a.Min.Cmp(b.Min); d != 0 {
+func (a intervalKey[K]) Compare(b intervalKey[K]) int {
+	if d := a.Min.Compare(b.Min); d != 0 {
 		return d
 	}
-	return a.Max.Cmp(b.Max)
+	return a.Max.Compare(b.Max)
 }
 
 type intervalValue[K Ordered[K], V any] struct {
@@ -39,19 +39,19 @@ func (t *IntervalTree[K, V]) keyFn(v intervalValue[K, V]) intervalKey[K] {
 
 func (t *IntervalTree[K, V]) attrFn(node *RBNode[intervalValue[K, V]]) {
 	max := t.MaxFn(node.Value.Val)
-	if node.Left != nil && node.Left.Value.SpanOfChildren.Max.Cmp(max) > 0 {
+	if node.Left != nil && node.Left.Value.SpanOfChildren.Max.Compare(max) > 0 {
 		max = node.Left.Value.SpanOfChildren.Max
 	}
-	if node.Right != nil && node.Right.Value.SpanOfChildren.Max.Cmp(max) > 0 {
+	if node.Right != nil && node.Right.Value.SpanOfChildren.Max.Compare(max) > 0 {
 		max = node.Right.Value.SpanOfChildren.Max
 	}
 	node.Value.SpanOfChildren.Max = max
 
 	min := t.MinFn(node.Value.Val)
-	if node.Left != nil && node.Left.Value.SpanOfChildren.Min.Cmp(min) < 0 {
+	if node.Left != nil && node.Left.Value.SpanOfChildren.Min.Compare(min) < 0 {
 		min = node.Left.Value.SpanOfChildren.Min
 	}
-	if node.Right != nil && node.Right.Value.SpanOfChildren.Min.Cmp(min) < 0 {
+	if node.Right != nil && node.Right.Value.SpanOfChildren.Min.Compare(min) < 0 {
 		min = node.Right.Value.SpanOfChildren.Min
 	}
 	node.Value.SpanOfChildren.Min = min
@@ -98,7 +98,7 @@ func (t *IntervalTree[K, V]) Max() (K, bool) {
 }
 
 func (t *IntervalTree[K, V]) Lookup(k K) (V, bool) {
-	return t.Search(k.Cmp)
+	return t.Search(k.Compare)
 }
 
 func (t *IntervalTree[K, V]) Search(fn func(K) int) (V, bool) {

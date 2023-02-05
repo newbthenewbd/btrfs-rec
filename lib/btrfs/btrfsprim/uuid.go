@@ -47,7 +47,7 @@ func (uuid UUID) Format(f fmt.State, verb rune) {
 	fmtutil.FormatByteArrayStringer(uuid, uuid[:], f, verb)
 }
 
-func (a UUID) Cmp(b UUID) int {
+func (a UUID) Compare(b UUID) int {
 	for i := range a {
 		if d := int(a[i]) - int(b[i]); d != 0 {
 			return d

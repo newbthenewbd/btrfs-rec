@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -9,7 +9,7 @@ import (
 )
 
 type _Ordered[T any] interface {
-	Cmp(T) int
+	Compare(T) int
 }
 
 type Ordered[T _Ordered[T]] _Ordered[T]
@@ -18,7 +18,7 @@ type NativeOrdered[T constraints.Ordered] struct {
 	Val T
 }
 
-func NativeCmp[T constraints.Ordered](a, b T) int {
+func NativeCompare[T constraints.Ordered](a, b T) int {
 	switch {
 	case a < b:
 		return -1
@@ -29,8 +29,8 @@ func NativeCmp[T constraints.Ordered](a, b T) int {
 	}
 }
 
-func (a NativeOrdered[T]) Cmp(b NativeOrdered[T]) int {
-	return NativeCmp(a.Val, b.Val)
+func (a NativeOrdered[T]) Compare(b NativeOrdered[T]) int {
+	return NativeCompare(a.Val, b.Val)
 }
 
 var _ Ordered[NativeOrdered[int]] = NativeOrdered[int]{}

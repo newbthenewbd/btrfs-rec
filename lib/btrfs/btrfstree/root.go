@@ -30,7 +30,7 @@ func RootItemSearchFn(treeID btrfsprim.ObjID) func(btrfsprim.Key, uint32) int {
 			ObjectID: treeID,
 			ItemType: btrfsitem.ROOT_ITEM_KEY,
 			Offset:   0,
-		}.Cmp(key)
+		}.Compare(key)
 	}
 }
 

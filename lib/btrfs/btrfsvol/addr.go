@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -50,7 +50,7 @@ func (a QualifiedPhysicalAddr) Add(b AddrDelta) QualifiedPhysicalAddr {
 	}
 }
 
-func (a QualifiedPhysicalAddr) Cmp(b QualifiedPhysicalAddr) int {
+func (a QualifiedPhysicalAddr) Compare(b QualifiedPhysicalAddr) int {
 	if d := int(a.Dev - b.Dev); d != 0 {
 		return d
 	}

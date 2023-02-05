@@ -143,7 +143,7 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 		SizeLocked: m.SizeLocked,
 		Flags:      m.Flags,
 	}
-	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.cmpRange)
+	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.compareRange)
 	var err error
 	newChunk, err = newChunk.union(logicalOverlaps...)
 	if err != nil {
@@ -158,7 +158,7 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 		SizeLocked: m.SizeLocked,
 		Flags:      m.Flags,
 	}
-	physicalOverlaps := lv.physical2logical[m.PAddr.Dev].SearchRange(newExt.cmpRange)
+	physicalOverlaps := lv.physical2logical[m.PAddr.Dev].SearchRange(newExt.compareRange)
 	newExt, err = newExt.union(physicalOverlaps...)
 	if err != nil {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
@@ -261,7 +261,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 
 func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs containers.Set[QualifiedPhysicalAddr], maxlen AddrDelta) {
 	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
-		return chunkMapping{LAddr: laddr, Size: 1}.cmpRange(chunk)
+		return chunkMapping{LAddr: laddr, Size: 1}.compareRange(chunk)
 	})
 	if node == nil {
 		return nil, 0
@@ -281,7 +281,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs cont
 
 func (lv *LogicalVolume[PhysicalVolume]) ResolveAny(laddr LogicalAddr, size AddrDelta) (LogicalAddr, QualifiedPhysicalAddr) {
 	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
-		return chunkMapping{LAddr: laddr, Size: size}.cmpRange(chunk)
+		return chunkMapping{LAddr: laddr, Size: size}.compareRange(chunk)
 	})
 	if node == nil {
 		return -1, QualifiedPhysicalAddr{0, -1}
@@ -291,7 +291,7 @@ func (lv *LogicalVolume[PhysicalVolume]) ResolveAny(laddr LogicalAddr, size Addr
 
 func (lv *LogicalVolume[PhysicalVolume]) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
 	node := lv.physical2logical[paddr.Dev].Search(func(ext devextMapping) int {
-		return devextMapping{PAddr: paddr.Addr, Size: 1}.cmpRange(ext)
+		return devextMapping{PAddr: paddr.Addr, Size: 1}.compareRange(ext)
 	})
 	if node == nil {
 		return -1

@@ -194,7 +194,7 @@ func (bt *brokenTrees) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry treeIndex
 }
 
 func (bt *brokenTrees) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	item, err := bt.TreeSearch(treeID, btrfstree.KeySearch(key.Cmp))
+	item, err := bt.TreeSearch(treeID, btrfstree.KeySearch(key.Compare))
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
 	}

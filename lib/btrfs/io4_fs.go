@@ -152,7 +152,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 			XAttrs: make(map[string]string),
 		}
 		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key btrfsprim.Key, _ uint32) int {
-			return containers.NativeCmp(inode, key.ObjectID)
+			return containers.NativeCompare(inode, key.ObjectID)
 		})
 		if err != nil {
 			val.Errs = append(val.Errs, err)

@@ -36,11 +36,11 @@ type keyAndTree struct {
 	TreeID btrfsprim.ObjID
 }
 
-func (a keyAndTree) Cmp(b keyAndTree) int {
-	if d := containers.NativeCmp(a.TreeID, b.TreeID); d != 0 {
+func (a keyAndTree) Compare(b keyAndTree) int {
+	if d := containers.NativeCompare(a.TreeID, b.TreeID); d != 0 {
 		return d
 	}
-	return a.Key.Cmp(b.Key)
+	return a.Key.Compare(b.Key)
 }
 
 func (o keyAndTree) String() string {
@@ -155,7 +155,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			itemQueue := maps.Keys(o.itemQueue)
 			o.itemQueue = make(containers.Set[keyAndTree])
 			sort.Slice(itemQueue, func(i, j int) bool {
-				return itemQueue[i].Cmp(itemQueue[j]) < 0
+				return itemQueue[i].Compare(itemQueue[j]) < 0
 			})
 			var progress itemStats
 			progress.D = len(itemQueue)
@@ -596,7 +596,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey s
 	}
 	if key, _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Search(func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 		key.Offset = 0
-		return tgt.Cmp(key)
+		return tgt.Compare(key)
 	}); ok {
 		return key, true
 	}
@@ -608,7 +608,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey s
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
@@ -649,7 +649,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, wantKe
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
@@ -674,7 +674,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantK
 	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
 		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 			key.Offset = 0
-			return tgt.Cmp(key)
+			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, itemPtr keyio.ItemPtr) bool {
 			if fn(itemPtr) {
@@ -693,7 +693,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantK
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 			if fn(v) {
 				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
@@ -735,9 +735,9 @@ func (o *rebuilder) _walkRange(
 	items.Subrange(
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr) int {
 			switch {
-			case min.Cmp(runKey) < 0:
+			case min.Compare(runKey) < 0:
 				return 1
-			case max.Cmp(runKey) > 0:
+			case max.Compare(runKey) > 0:
 				return -1
 			default:
 				return 0

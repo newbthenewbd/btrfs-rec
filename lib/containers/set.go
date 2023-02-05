@@ -32,7 +32,7 @@ func (o Set[T]) EncodeJSON(w io.Writer) error {
 	var zero T
 	switch (any(zero)).(type) {
 	case _Ordered[T]:
-		less = func(a, b T) bool { return cast[_Ordered[T]](a).Cmp(b) < 0 }
+		less = func(a, b T) bool { return cast[_Ordered[T]](a).Compare(b) < 0 }
 	// This is the constraints.Ordered list
 	case string:
 		less = func(a, b T) bool { return cast[string](a) < cast[string](b) }

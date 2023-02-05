@@ -111,7 +111,7 @@ func (node *RBNode[V]) search(fn func(V) int) (exact, nearest *RBNode[V]) {
 func (t *RBTree[K, V]) exactKey(key K) func(V) int {
 	return func(val V) int {
 		valKey := t.KeyFn(val)
-		return key.Cmp(valKey)
+		return key.Compare(valKey)
 	}
 }
 
@@ -341,7 +341,7 @@ func (t *RBTree[K, V]) Insert(val V) {
 	switch {
 	case parent == nil:
 		t.root = node
-	case key.Cmp(t.KeyFn(parent.Value)) < 0:
+	case key.Compare(t.KeyFn(parent.Value)) < 0:
 		parent.Left = node
 	default:
 		parent.Right = node
