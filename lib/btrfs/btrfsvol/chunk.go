@@ -22,7 +22,10 @@ type chunkMapping struct {
 	Flags      containers.Optional[BlockGroupFlags]
 }
 
-type ChunkMapping = chunkMapping
+// Compare implements containers.Ordered.
+func (a chunkMapping) Compare(b chunkMapping) int {
+	return containers.NativeCompare(a.LAddr, b.LAddr)
+}
 
 // return -1 if 'a' is wholly to the left of 'b'
 // return 0 if there is some overlap between 'a' and 'b'

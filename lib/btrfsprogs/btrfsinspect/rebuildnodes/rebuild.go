@@ -770,6 +770,16 @@ func (o *rebuilder) _walkRange(
 		})
 }
 
+type gap struct {
+	// range is [Beg,End)
+	Beg, End uint64
+}
+
+// Compare implements containers.Ordered.
+func (a gap) Compare(b gap) int {
+	return containers.NativeCompare(a.Beg, b.Beg)
+}
+
 func (o *rebuilder) _wantRange(
 	ctx context.Context,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
@@ -787,15 +797,7 @@ func (o *rebuilder) _wantRange(
 	//
 	// Start with a gap of the whole range, then subtract each run
 	// from it.
-	type gap struct {
-		// range is [Beg,End)
-		Beg, End uint64
-	}
-	gaps := &containers.RBTree[containers.NativeOrdered[uint64], gap]{
-		KeyFn: func(gap gap) containers.NativeOrdered[uint64] {
-			return containers.NativeOrdered[uint64]{Val: gap.Beg}
-		},
-	}
+	gaps := new(containers.RBTree[gap])
 	gaps.Insert(gap{
 		Beg: beg,
 		End: end,
@@ -805,23 +807,29 @@ func (o *rebuilder) _wantRange(
 		o.rebuilt.Tree(ctx, treeID).Items(ctx),
 		treeID, objID, typ, beg, end,
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr, runBeg, runEnd uint64) {
-			overlappingGaps := gaps.SearchRange(func(gap gap) int {
-				switch {
-				case gap.End <= runBeg:
-					return 1
-				case runEnd <= gap.Beg:
-					return -1
-				default:
-					return 0
-				}
-			})
+			var overlappingGaps []*containers.RBNode[gap]
+			gaps.Subrange(
+				func(gap gap) int {
+					switch {
+					case gap.End <= runBeg:
+						return 1
+					case runEnd <= gap.Beg:
+						return -1
+					default:
+						return 0
+					}
+				},
+				func(node *containers.RBNode[gap]) bool {
+					overlappingGaps = append(overlappingGaps, node)
+					return true
+				})
 			if len(overlappingGaps) == 0 {
 				return
 			}
-			gapsBeg := overlappingGaps[0].Beg
-			gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
+			gapsBeg := overlappingGaps[0].Value.Beg
+			gapsEnd := overlappingGaps[len(overlappingGaps)-1].Value.End
 			for _, gap := range overlappingGaps {
-				gaps.Delete(containers.NativeOrdered[uint64]{Val: gap.Beg})
+				gaps.Delete(gap)
 			}
 			if gapsBeg < runBeg {
 				gaps.Insert(gap{
@@ -842,7 +850,7 @@ func (o *rebuilder) _wantRange(
 		return
 	}
 	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
-	_ = gaps.Walk(func(rbNode *containers.RBNode[gap]) error {
+	gaps.Range(func(rbNode *containers.RBNode[gap]) bool {
 		gap := rbNode.Value
 		last := gap.Beg
 		o._walkRange(
@@ -874,7 +882,7 @@ func (o *rebuilder) _wantRange(
 				o.wantAugment(wantCtx, treeID, wantKey, nil)
 			}
 		}
-		return nil
+		return true
 	})
 }
 

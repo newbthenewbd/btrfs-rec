@@ -20,6 +20,11 @@ type devextMapping struct {
 	Flags      containers.Optional[BlockGroupFlags]
 }
 
+// Compare implements containers.Ordered.
+func (a devextMapping) Compare(b devextMapping) int {
+	return containers.NativeCompare(a.PAddr, b.PAddr)
+}
+
 // return -1 if 'a' is wholly to the left of 'b'
 // return 0 if there is some overlap between 'a' and 'b'
 // return 1 if 'a is wholly to the right of 'b'

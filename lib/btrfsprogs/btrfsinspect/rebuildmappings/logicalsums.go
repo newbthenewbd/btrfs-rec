@@ -53,11 +53,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	// "AAAAAAA" shouldn't be present, and if we just discard "BBBBBBBB"
 	// because it conflicts with "CCCCCCC", then we would erroneously
 	// include "AAAAAAA".
-	addrspace := &containers.RBTree[containers.NativeOrdered[btrfsvol.LogicalAddr], btrfsinspect.SysExtentCSum]{
-		KeyFn: func(item btrfsinspect.SysExtentCSum) containers.NativeOrdered[btrfsvol.LogicalAddr] {
-			return containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: item.Sums.Addr}
-		},
-	}
+	addrspace := new(containers.RBTree[btrfsinspect.SysExtentCSum])
 	for _, newRecord := range records {
 		for {
 			conflict := addrspace.Search(func(oldRecord btrfsinspect.SysExtentCSum) int {
@@ -85,7 +81,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 			}
 			if oldRecord.Generation < newRecord.Generation {
 				// Newer generation wins.
-				addrspace.Delete(containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: oldRecord.Sums.Addr})
+				addrspace.Delete(conflict)
 				// loop around to check for more conflicts
 				continue
 			}
@@ -142,7 +138,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 					},
 				},
 			}
-			addrspace.Delete(containers.NativeOrdered[btrfsvol.LogicalAddr]{Val: oldRecord.Sums.Addr})
+			addrspace.Delete(conflict)
 			newRecord = unionRecord
 			// loop around to check for more conflicts
 		}
@@ -152,7 +148,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	var flattened SumRunWithGaps[btrfsvol.LogicalAddr]
 	var curAddr btrfsvol.LogicalAddr
 	var curSums strings.Builder
-	_ = addrspace.Walk(func(node *containers.RBNode[btrfsinspect.SysExtentCSum]) error {
+	addrspace.Range(func(node *containers.RBNode[btrfsinspect.SysExtentCSum]) bool {
 		curEnd := curAddr + (btrfsvol.LogicalAddr(curSums.Len()/sumSize) * btrfssum.BlockSize)
 		if node.Value.Sums.Addr != curEnd {
 			if curSums.Len() > 0 {
@@ -166,7 +162,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 			curSums.Reset()
 		}
 		curSums.WriteString(string(node.Value.Sums.Sums))
-		return nil
+		return true
 	})
 	if curSums.Len() > 0 {
 		flattened.Runs = append(flattened.Runs, btrfssum.SumRun[btrfsvol.LogicalAddr]{
