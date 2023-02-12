@@ -16,6 +16,8 @@ run-btrfs-rec() {
 		command time --verbose \
 			./bin/btrfs-rec \
 			--pv="$image" \
+			--profile.cpu="${tgt%.*}.cpu.pprof" \
+			--profile.allocs="${tgt%.*}.allocs.pprof" \
 			"$@"
 	} >"$tgt" 2> >(tee >&2 "$log")
 }
