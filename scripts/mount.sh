@@ -1,14 +1,20 @@
 #!/bin/bash
+readonly image=../scratch/dump-zero.img
+
+######################################################################
+
 set -e
 set -x
 
-go build ./cmd/btrfs-rec
+make build
 
-mkdir -p ../scratch/dump-zero.mnt
+gendir="${image%.img}.gen"
+mountpoint="${image%.img}.mnt"
+mkdir -p "$mountpoint"
 
-sudo ./btrfs-rec \
-     --pv ../scratch/dump-zero.img \
-     --mappings=../scratch/dump-zero.gen/2.mappings.json \
+sudo ./bin/btrfs-rec \
+     --pv="$image"
+     --mappings="$gendir/2.mappings.json" \
      inspect mount \
      --skip-filesums \
-     ../scratch/dump-zero.mnt
+     "$mountpoint"

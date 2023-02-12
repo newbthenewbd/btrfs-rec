@@ -1,30 +1,40 @@
 #!/bin/bash
+readonly image=../scratch/dump-zero.img
+
+######################################################################
+
 set -e
-b=../scratch/dump-zero
-gen() (
+
+run-btrfs-rec() {
 	local tgt=$1; shift
 	local log=${tgt%.*}.log
 	if test -s "$tgt"; then
 		return
 	fi
-	{ set -x; command time --verbose "$@"; } \
-	     >"$tgt" \
-	     2> >(tee >&2 "$log")
-)
+	{
+		set -x;
+		command time --verbose \
+			./bin/btrfs-rec \
+			--pv="$image" \
+			--profile.cpu="${tgt%.*}.cpu.pprof" \
+			--profile.allocs="${tgt%.*}.allocs.pprof" \
+			"$@"
+	} >"$tgt" 2> >(tee >&2 "$log")
+}
 
 set -x
-CGO_ENABLED=0 go build -trimpath ./cmd/btrfs-rec
-mkdir -p "$b.gen"
+make build
+gendir="${image%.img}.gen"
+mkdir -p "$gendir"
+export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
 { set +x; } &>/dev/null
 
-export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
+######################################################################
 
-gen $b.gen/0.scandevices.json \
-    ./btrfs-rec --pv=$b.img \
+run-btrfs-rec $gendir/0.scandevices.json \
     inspect scandevices
-gen $b.gen/1.mappings.json \
-    ./btrfs-rec --pv=$b.img \
-    inspect rebuild-mappings $b.gen/0.scandevices.json
+run-btrfs-rec $gendir/1.mappings.json \
+    inspect rebuild-mappings $gendir/0.scandevices.json
 
 # 1.mappings.log says:
 #
@@ -44,19 +54,19 @@ gen $b.gen/1.mappings.json \
 #
 # And then run that through `rebuild-mappings` again to fill in the
 # flags and normalize it.
-gen $b.gen/2.mappings.json \
-    ./btrfs-rec --pv=$b.img --mappings=<(sed <$b.gen/1.mappings.json \
+run-btrfs-rec $gendir/2.mappings.json \
+    --mappings=<(sed <$gendir/1.mappings.json \
       -e '2a{"LAddr":5242880,"PAddr":{"Dev":1,"Addr":5242880},"Size":1},' \
       -e '2a{"LAddr":13631488,"PAddr":{"Dev":1,"Addr":13631488},"Size":1},') \
-    inspect rebuild-mappings $b.gen/0.scandevices.json
+    inspect rebuild-mappings $gendir/0.scandevices.json
 
-gen $b.gen/3.nodes.json \
-    ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-    inspect rebuild-nodes $b.gen/0.scandevices.json
+run-btrfs-rec $gendir/3.nodes.json \
+    --mappings=$gendir/2.mappings.json \
+    inspect rebuild-nodes $gendir/0.scandevices.json
 
-# gen $b.gen/4.ls-files.txt \
-#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
+# run-btrfs-rec $gendir/4.ls-files.txt \
+#     --mappings=$gendir/2.mappings.json \
 #     inspect ls-files
-# gen $b.gen/4.ls-trees.txt \
-#     ./btrfs-rec --pv=$b.img --mappings=$b.gen/2.mappings.json \
-#     inspect ls-trees --scandevices=$b.gen/0.scandevices.json
+# run-btrfs-rec $gendir/4.ls-trees.txt \
+#     --mappings=$gendir/2.mappings.json \
+#     inspect ls-trees --scandevices=$gendir/0.scandevices.json

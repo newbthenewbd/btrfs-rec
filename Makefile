@@ -5,7 +5,7 @@
 # main
 
 build:
-	go build -o bin/ ./cmd/...
+	go build -trimpath -o bin/ ./cmd/...
 .PHONY: build
 
 check:
