@@ -151,7 +151,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.TransID, body.DataLen, body.NameLen)
 				textui.Fprintf(out, "\t\tname: %s\n", body.Name)
 				if len(body.Data) > 0 {
-					textui.Fprintf(out, "\t\tdata %v\n", body.Data)
+					textui.Fprintf(out, "\t\tdata %s\n", body.Data)
 				}
 			// case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			// 	// TODO
@@ -253,7 +253,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				textui.Fprintf(out, "\t\tblock group used %v chunk_objectid %v flags %v\n",
 					body.Used, body.ChunkObjectID, body.Flags)
 			case btrfsitem.FreeSpaceInfo:
-				textui.Fprintf(out, "\t\tfree space info extent count %v flags %v\n",
+				textui.Fprintf(out, "\t\tfree space info extent count %v flags %d\n",
 					body.ExtentCount, body.Flags)
 			case btrfsitem.FreeSpaceBitmap:
 				textui.Fprintf(out, "\t\tfree space bitmap\n")
@@ -286,7 +286,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.FSUUID)
 			case btrfsitem.DevExtent:
 				textui.Fprintf(out, ""+
-					"\t\tdev extent chunk_tree %v\n"+
+					"\t\tdev extent chunk_tree %d\n"+
 					"\t\tchunk_objectid %v chunk_offset %d length %d\n"+
 					"\t\tchunk_tree_uuid %v\n",
 					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
