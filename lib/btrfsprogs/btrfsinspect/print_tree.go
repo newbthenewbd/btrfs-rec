@@ -151,7 +151,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.TransID, body.DataLen, body.NameLen)
 				textui.Fprintf(out, "\t\tname: %s\n", body.Name)
 				if len(body.Data) > 0 {
-					textui.Fprintf(out, "\t\tdata %v\n", body.Data)
+					textui.Fprintf(out, "\t\tdata %s\n", body.Data)
 				}
 			// case btrfsitem.DIR_LOG_INDEX_KEY, btrfsitem.DIR_LOG_ITEM_KEY:
 			// 	// TODO
@@ -253,7 +253,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				textui.Fprintf(out, "\t\tblock group used %v chunk_objectid %v flags %v\n",
 					body.Used, body.ChunkObjectID, body.Flags)
 			case btrfsitem.FreeSpaceInfo:
-				textui.Fprintf(out, "\t\tfree space info extent count %v flags %v\n",
+				textui.Fprintf(out, "\t\tfree space info extent count %v flags %d\n",
 					body.ExtentCount, body.Flags)
 			case btrfsitem.FreeSpaceBitmap:
 				textui.Fprintf(out, "\t\tfree space bitmap\n")
@@ -286,17 +286,31 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.FSUUID)
 			case btrfsitem.DevExtent:
 				textui.Fprintf(out, ""+
-					"\t\tdev extent chunk_tree %v\n"+
+					"\t\tdev extent chunk_tree %d\n"+
 					"\t\tchunk_objectid %v chunk_offset %d length %d\n"+
 					"\t\tchunk_tree_uuid %v\n",
 					body.ChunkTree, body.ChunkObjectID, body.ChunkOffset, body.Length,
 					body.ChunkTreeUUID)
-			// case btrfsitem.QGROUP_STATUS_KEY:
-			// 	// TODO
-			// case btrfsitem.QGROUP_INFO_KEY:
-			// 	// TODO
-			// case btrfsitem.QGROUP_LIMIT_KEY:
-			// 	// TODO
+			case btrfsitem.QGroupStatus:
+				textui.Fprintf(out, ""+
+					"\t\tversion %v generation %v flags %v scan %d\n",
+					body.Version, body.Generation, body.Flags, body.RescanProgress)
+			case btrfsitem.QGroupInfo:
+				textui.Fprintf(out, ""+
+					"\t\tgeneration %v\n"+
+					"\t\treferenced %d referenced_compressed %d\n"+
+					"\t\texclusive %d exclusive_compressed %d\n",
+					body.Generation,
+					body.ReferencedBytes, body.ReferencedBytesCompressed,
+					body.ExclusiveBytes, body.ExclusiveBytesCompressed)
+			case btrfsitem.QGroupLimit:
+				textui.Fprintf(out, ""+
+					"\t\tflags %x\n"+
+					"\t\tmax_referenced %d max_exclusive %d\n"+
+					"\t\trsv_referenced %d rsv_exclusive %d\n",
+					uint64(body.Flags),
+					body.MaxReferenced, body.MaxExclusive,
+					body.RsvReferenced, body.RsvExclusive)
 			case btrfsitem.UUIDMap:
 				textui.Fprintf(out, "\t\tsubvol_id %d\n", body.ObjID)
 			// case btrfsitem.STRING_ITEM_KEY:
@@ -426,8 +440,8 @@ func fmtKey(key btrfsprim.Key) string {
 	var out strings.Builder
 	textui.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
 	switch key.ItemType {
-	case btrfsitem.QGROUP_RELATION_KEY: // TODO, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
-		panic("TODO: printing qgroup items not yet implemented")
+	case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
+		textui.Fprintf(&out, " %v)", btrfsprim.ObjID(key.Offset).Format(btrfsprim.QGROUP_RELATION_KEY))
 	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
 		textui.Fprintf(&out, " %#08x)", key.Offset)
 	case btrfsitem.ROOT_ITEM_KEY:

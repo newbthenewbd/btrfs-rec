@@ -68,7 +68,7 @@ func (id ObjID) Format(typ ItemType) string {
 	case DEV_EXTENT_KEY:
 		return fmt.Sprintf("%d", int64(id))
 	case QGROUP_RELATION_KEY:
-		//nolint:gomnd // TODO: I'm not sure what the 48/16 bit split means.
+		//nolint:gomnd // The left 48 bits are the "qgroup level", and the right 16 bits are the subvolume ID.
 		return fmt.Sprintf("%d/%d",
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
