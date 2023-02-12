@@ -23,7 +23,7 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
-			const version = "5.18.1"
+			const version = "6.1.3"
 			out := os.Stdout
 			textui.Fprintf(out, "btrfs-progs v%v\n", version)
 			btrfsinspect.DumpTrees(cmd.Context(), out, fs)
