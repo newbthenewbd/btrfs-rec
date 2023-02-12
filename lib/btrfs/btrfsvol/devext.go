@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -20,10 +20,15 @@ type devextMapping struct {
 	Flags      containers.Optional[BlockGroupFlags]
 }
 
+// Compare implements containers.Ordered.
+func (a devextMapping) Compare(b devextMapping) int {
+	return containers.NativeCompare(a.PAddr, b.PAddr)
+}
+
 // return -1 if 'a' is wholly to the left of 'b'
 // return 0 if there is some overlap between 'a' and 'b'
 // return 1 if 'a is wholly to the right of 'b'
-func (a devextMapping) cmpRange(b devextMapping) int {
+func (a devextMapping) compareRange(b devextMapping) int {
 	switch {
 	case a.PAddr.Add(a.Size) <= b.PAddr:
 		// 'a' is wholly to the left of 'b'.
@@ -40,7 +45,7 @@ func (a devextMapping) cmpRange(b devextMapping) int {
 func (a devextMapping) union(rest ...devextMapping) (devextMapping, error) {
 	// sanity check
 	for _, ext := range rest {
-		if a.cmpRange(ext) != 0 {
+		if a.compareRange(ext) != 0 {
 			return devextMapping{}, fmt.Errorf("devexts don't overlap")
 		}
 	}

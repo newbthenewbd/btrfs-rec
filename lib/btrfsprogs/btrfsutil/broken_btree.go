@@ -23,7 +23,7 @@ import (
 
 type treeIndex struct {
 	TreeRootErr error
-	Items       *containers.RBTree[btrfsprim.Key, treeIndexValue]
+	Items       *containers.RBTree[treeIndexValue]
 	Errors      *containers.IntervalTree[btrfsprim.Key, treeIndexError]
 }
 
@@ -38,13 +38,14 @@ type treeIndexValue struct {
 	ItemSize uint32
 }
 
+// Compare implements containers.Ordered.
+func (a treeIndexValue) Compare(b treeIndexValue) int {
+	return a.Key.Compare(b.Key)
+}
+
 func newTreeIndex(arena *SkinnyPathArena) treeIndex {
 	return treeIndex{
-		Items: &containers.RBTree[btrfsprim.Key, treeIndexValue]{
-			KeyFn: func(iv treeIndexValue) btrfsprim.Key {
-				return iv.Key
-			},
-		},
+		Items: new(containers.RBTree[treeIndexValue]),
 		Errors: &containers.IntervalTree[btrfsprim.Key, treeIndexError]{
 			MinFn: func(err treeIndexError) btrfsprim.Key {
 				return arena.Inflate(err.Path).Node(-1).ToKey
@@ -173,7 +174,7 @@ func (bt *brokenTrees) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry treeIndex
 		},
 		btrfstree.TreeWalkHandler{
 			Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
-				if cacheEntry.Items.Lookup(item.Key) != nil {
+				if cacheEntry.Items.Search(func(v treeIndexValue) int { return item.Key.Compare(v.Key) }) != nil {
 					// This is a panic because I'm not really sure what the best way to
 					// handle this is, and so if this happens I want the program to crash
 					// and force me to figure out how to handle it.
@@ -194,7 +195,7 @@ func (bt *brokenTrees) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry treeIndex
 }
 
 func (bt *brokenTrees) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	item, err := bt.TreeSearch(treeID, btrfstree.KeySearch(key.Cmp))
+	item, err := bt.TreeSearch(treeID, btrfstree.KeySearch(key.Compare))
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
 	}
@@ -203,15 +204,15 @@ func (bt *brokenTrees) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (bt
 
 func (bt *brokenTrees) addErrs(index treeIndex, fn func(btrfsprim.Key, uint32) int, err error) error {
 	var errs derror.MultiError
-	if _errs := index.Errors.SearchAll(func(k btrfsprim.Key) int { return fn(k, 0) }); len(_errs) > 0 {
-		errs = make(derror.MultiError, len(_errs))
-		for i := range _errs {
-			errs[i] = &btrfstree.TreeError{
-				Path: bt.arena.Inflate(_errs[i].Path),
-				Err:  _errs[i].Err,
-			}
-		}
-	}
+	index.Errors.Subrange(
+		func(k btrfsprim.Key) int { return fn(k, 0) },
+		func(v treeIndexError) bool {
+			errs = append(errs, &btrfstree.TreeError{
+				Path: bt.arena.Inflate(v.Path),
+				Err:  v.Err,
+			})
+			return true
+		})
 	if len(errs) == 0 {
 		return err
 	}
@@ -253,9 +254,13 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 		return nil, index.TreeRootErr
 	}
 
-	indexItems := index.Items.SearchRange(func(indexItem treeIndexValue) int {
-		return fn(indexItem.Key, indexItem.ItemSize)
-	})
+	var indexItems []treeIndexValue
+	index.Items.Subrange(
+		func(indexItem treeIndexValue) int { return fn(indexItem.Key, indexItem.ItemSize) },
+		func(node *containers.RBNode[treeIndexValue]) bool {
+			indexItems = append(indexItems, node.Value)
+			return true
+		})
 	if len(indexItems) == 0 {
 		return nil, bt.addErrs(index, fn, iofs.ErrNotExist)
 	}
@@ -290,12 +295,12 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 		return
 	}
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
-	_ = index.Items.Walk(func(indexItem *containers.RBNode[treeIndexValue]) error {
+	index.Items.Range(func(indexItem *containers.RBNode[treeIndexValue]) bool {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return false
 		}
 		if bt.ctx.Err() != nil {
-			return bt.ctx.Err()
+			return false
 		}
 		if cbs.Item != nil {
 			itemPath := bt.arena.Inflate(indexItem.Value.Path)
@@ -304,7 +309,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 				node, err = bt.inner.ReadNode(itemPath.Parent())
 				if err != nil {
 					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-					return nil //nolint:nilerr // We already called errHandle().
+					return true
 				}
 			}
 			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
@@ -312,7 +317,7 @@ func (bt *brokenTrees) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, err
 				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 			}
 		}
-		return nil
+		return true
 	})
 }
 

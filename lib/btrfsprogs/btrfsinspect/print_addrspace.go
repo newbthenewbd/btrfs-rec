@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -46,7 +46,7 @@ func PrintLogicalSpace(out io.Writer, fs *btrfs.FS) {
 func PrintPhysicalSpace(out io.Writer, fs *btrfs.FS) {
 	mappings := fs.LV.Mappings()
 	sort.Slice(mappings, func(i, j int) bool {
-		return mappings[i].PAddr.Cmp(mappings[j].PAddr) < 0
+		return mappings[i].PAddr.Compare(mappings[j].PAddr) < 0
 	})
 
 	var prevDev btrfsvol.DeviceID = 0

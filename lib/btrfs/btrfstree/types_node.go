@@ -507,11 +507,11 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	if nodeRef.Data.Head.NumItems == 0 {
 		errs = append(errs, fmt.Errorf("has no items"))
 	} else {
-		if minItem, _ := nodeRef.Data.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Cmp(minItem) > 0 {
+		if minItem, _ := nodeRef.Data.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
 			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
 				exp.MinItem, minItem))
 		}
-		if maxItem, _ := nodeRef.Data.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Cmp(maxItem) < 0 {
+		if maxItem, _ := nodeRef.Data.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
 			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
 				exp.MaxItem, maxItem))
 		}

@@ -36,11 +36,11 @@ type keyAndTree struct {
 	TreeID btrfsprim.ObjID
 }
 
-func (a keyAndTree) Cmp(b keyAndTree) int {
-	if d := containers.NativeCmp(a.TreeID, b.TreeID); d != 0 {
+func (a keyAndTree) Compare(b keyAndTree) int {
+	if d := containers.NativeCompare(a.TreeID, b.TreeID); d != 0 {
 		return d
 	}
-	return a.Key.Cmp(b.Key)
+	return a.Key.Compare(b.Key)
 }
 
 func (o keyAndTree) String() string {
@@ -155,7 +155,7 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 			itemQueue := maps.Keys(o.itemQueue)
 			o.itemQueue = make(containers.Set[keyAndTree])
 			sort.Slice(itemQueue, func(i, j int) bool {
-				return itemQueue[i].Cmp(itemQueue[j]) < 0
+				return itemQueue[i].Compare(itemQueue[j]) < 0
 			})
 			var progress itemStats
 			progress.D = len(itemQueue)
@@ -596,7 +596,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey s
 	}
 	if key, _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Search(func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 		key.Offset = 0
-		return tgt.Cmp(key)
+		return tgt.Compare(key)
 	}); ok {
 		return key, true
 	}
@@ -608,7 +608,7 @@ func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey s
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
@@ -649,7 +649,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, wantKe
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
 			return true
@@ -674,7 +674,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantK
 	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
 		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
 			key.Offset = 0
-			return tgt.Cmp(key)
+			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, itemPtr keyio.ItemPtr) bool {
 			if fn(itemPtr) {
@@ -693,7 +693,7 @@ func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantK
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Cmp(k) },
+		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
 		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
 			if fn(v) {
 				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
@@ -735,9 +735,9 @@ func (o *rebuilder) _walkRange(
 	items.Subrange(
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr) int {
 			switch {
-			case min.Cmp(runKey) < 0:
+			case min.Compare(runKey) < 0:
 				return 1
-			case max.Cmp(runKey) > 0:
+			case max.Compare(runKey) > 0:
 				return -1
 			default:
 				return 0
@@ -770,6 +770,16 @@ func (o *rebuilder) _walkRange(
 		})
 }
 
+type gap struct {
+	// range is [Beg,End)
+	Beg, End uint64
+}
+
+// Compare implements containers.Ordered.
+func (a gap) Compare(b gap) int {
+	return containers.NativeCompare(a.Beg, b.Beg)
+}
+
 func (o *rebuilder) _wantRange(
 	ctx context.Context,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
@@ -787,15 +797,7 @@ func (o *rebuilder) _wantRange(
 	//
 	// Start with a gap of the whole range, then subtract each run
 	// from it.
-	type gap struct {
-		// range is [Beg,End)
-		Beg, End uint64
-	}
-	gaps := &containers.RBTree[containers.NativeOrdered[uint64], gap]{
-		KeyFn: func(gap gap) containers.NativeOrdered[uint64] {
-			return containers.NativeOrdered[uint64]{Val: gap.Beg}
-		},
-	}
+	gaps := new(containers.RBTree[gap])
 	gaps.Insert(gap{
 		Beg: beg,
 		End: end,
@@ -805,23 +807,29 @@ func (o *rebuilder) _wantRange(
 		o.rebuilt.Tree(ctx, treeID).Items(ctx),
 		treeID, objID, typ, beg, end,
 		func(runKey btrfsprim.Key, _ keyio.ItemPtr, runBeg, runEnd uint64) {
-			overlappingGaps := gaps.SearchRange(func(gap gap) int {
-				switch {
-				case gap.End <= runBeg:
-					return 1
-				case runEnd <= gap.Beg:
-					return -1
-				default:
-					return 0
-				}
-			})
+			var overlappingGaps []*containers.RBNode[gap]
+			gaps.Subrange(
+				func(gap gap) int {
+					switch {
+					case gap.End <= runBeg:
+						return 1
+					case runEnd <= gap.Beg:
+						return -1
+					default:
+						return 0
+					}
+				},
+				func(node *containers.RBNode[gap]) bool {
+					overlappingGaps = append(overlappingGaps, node)
+					return true
+				})
 			if len(overlappingGaps) == 0 {
 				return
 			}
-			gapsBeg := overlappingGaps[0].Beg
-			gapsEnd := overlappingGaps[len(overlappingGaps)-1].End
+			gapsBeg := overlappingGaps[0].Value.Beg
+			gapsEnd := overlappingGaps[len(overlappingGaps)-1].Value.End
 			for _, gap := range overlappingGaps {
-				gaps.Delete(containers.NativeOrdered[uint64]{Val: gap.Beg})
+				gaps.Delete(gap)
 			}
 			if gapsBeg < runBeg {
 				gaps.Insert(gap{
@@ -842,7 +850,7 @@ func (o *rebuilder) _wantRange(
 		return
 	}
 	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
-	_ = gaps.Walk(func(rbNode *containers.RBNode[gap]) error {
+	gaps.Range(func(rbNode *containers.RBNode[gap]) bool {
 		gap := rbNode.Value
 		last := gap.Beg
 		o._walkRange(
@@ -874,7 +882,7 @@ func (o *rebuilder) _wantRange(
 				o.wantAugment(wantCtx, treeID, wantKey, nil)
 			}
 		}
-		return nil
+		return true
 	})
 }
 

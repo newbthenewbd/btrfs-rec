@@ -44,14 +44,14 @@ func (key Key) Mm() Key {
 	return key
 }
 
-func (a Key) Cmp(b Key) int {
-	if d := containers.NativeCmp(a.ObjectID, b.ObjectID); d != 0 {
+func (a Key) Compare(b Key) int {
+	if d := containers.NativeCompare(a.ObjectID, b.ObjectID); d != 0 {
 		return d
 	}
-	if d := containers.NativeCmp(a.ItemType, b.ItemType); d != 0 {
+	if d := containers.NativeCompare(a.ItemType, b.ItemType); d != 0 {
 		return d
 	}
-	return containers.NativeCmp(a.Offset, b.Offset)
+	return containers.NativeCompare(a.Offset, b.Offset)
 }
 
 var _ containers.Ordered[Key] = Key{}

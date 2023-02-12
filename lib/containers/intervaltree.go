@@ -4,72 +4,65 @@
 
 package containers
 
-type intervalKey[K Ordered[K]] struct {
+type interval[K Ordered[K]] struct {
 	Min, Max K
 }
 
-func (ival intervalKey[K]) ContainsFn(fn func(K) int) bool {
+// Compare implements Ordered.
+func (a interval[K]) Compare(b interval[K]) int {
+	if d := a.Min.Compare(b.Min); d != 0 {
+		return d
+	}
+	return a.Max.Compare(b.Max)
+}
+
+// ContainsFn returns whether this interval contains the range matched
+// by the given function.
+func (ival interval[K]) ContainsFn(fn func(K) int) bool {
 	return fn(ival.Min) >= 0 && fn(ival.Max) <= 0
 }
 
-func (a intervalKey[K]) Cmp(b intervalKey[K]) int {
-	if d := a.Min.Cmp(b.Min); d != 0 {
-		return d
-	}
-	return a.Max.Cmp(b.Max)
+type intervalValue[K Ordered[K], V any] struct {
+	Val       V
+	ValSpan   interval[K]
+	ChildSpan interval[K]
 }
 
-type intervalValue[K Ordered[K], V any] struct {
-	Val            V
-	SpanOfChildren intervalKey[K]
+// Compare implements Ordered.
+func (a intervalValue[K, V]) Compare(b intervalValue[K, V]) int {
+	return a.ValSpan.Compare(b.ValSpan)
 }
 
 type IntervalTree[K Ordered[K], V any] struct {
 	MinFn func(V) K
 	MaxFn func(V) K
-	inner RBTree[intervalKey[K], intervalValue[K, V]]
-}
-
-func (t *IntervalTree[K, V]) keyFn(v intervalValue[K, V]) intervalKey[K] {
-	return intervalKey[K]{
-		Min: t.MinFn(v.Val),
-		Max: t.MaxFn(v.Val),
-	}
+	inner RBTree[intervalValue[K, V]]
 }
 
 func (t *IntervalTree[K, V]) attrFn(node *RBNode[intervalValue[K, V]]) {
-	max := t.MaxFn(node.Value.Val)
-	if node.Left != nil && node.Left.Value.SpanOfChildren.Max.Cmp(max) > 0 {
-		max = node.Left.Value.SpanOfChildren.Max
+	max := node.Value.ValSpan.Max
+	if node.Left != nil && node.Left.Value.ChildSpan.Max.Compare(max) > 0 {
+		max = node.Left.Value.ChildSpan.Max
 	}
-	if node.Right != nil && node.Right.Value.SpanOfChildren.Max.Cmp(max) > 0 {
-		max = node.Right.Value.SpanOfChildren.Max
+	if node.Right != nil && node.Right.Value.ChildSpan.Max.Compare(max) > 0 {
+		max = node.Right.Value.ChildSpan.Max
 	}
-	node.Value.SpanOfChildren.Max = max
+	node.Value.ChildSpan.Max = max
 
-	min := t.MinFn(node.Value.Val)
-	if node.Left != nil && node.Left.Value.SpanOfChildren.Min.Cmp(min) < 0 {
-		min = node.Left.Value.SpanOfChildren.Min
+	min := node.Value.ValSpan.Min
+	if node.Left != nil && node.Left.Value.ChildSpan.Min.Compare(min) < 0 {
+		min = node.Left.Value.ChildSpan.Min
 	}
-	if node.Right != nil && node.Right.Value.SpanOfChildren.Min.Cmp(min) < 0 {
-		min = node.Right.Value.SpanOfChildren.Min
+	if node.Right != nil && node.Right.Value.ChildSpan.Min.Compare(min) < 0 {
+		min = node.Right.Value.ChildSpan.Min
 	}
-	node.Value.SpanOfChildren.Min = min
+	node.Value.ChildSpan.Min = min
 }
 
 func (t *IntervalTree[K, V]) init() {
-	if t.inner.KeyFn == nil {
-		t.inner.KeyFn = t.keyFn
+	if t.inner.AttrFn == nil {
 		t.inner.AttrFn = t.attrFn
 	}
-}
-
-func (t *IntervalTree[K, V]) Delete(min, max K) {
-	t.init()
-	t.inner.Delete(intervalKey[K]{
-		Min: min,
-		Max: max,
-	})
 }
 
 func (t *IntervalTree[K, V]) Equal(u *IntervalTree[K, V]) bool {
@@ -78,7 +71,13 @@ func (t *IntervalTree[K, V]) Equal(u *IntervalTree[K, V]) bool {
 
 func (t *IntervalTree[K, V]) Insert(val V) {
 	t.init()
-	t.inner.Insert(intervalValue[K, V]{Val: val})
+	t.inner.Insert(intervalValue[K, V]{
+		Val: val,
+		ValSpan: interval[K]{
+			Min: t.MinFn(val),
+			Max: t.MaxFn(val),
+		},
+	})
 }
 
 func (t *IntervalTree[K, V]) Min() (K, bool) {
@@ -86,7 +85,7 @@ func (t *IntervalTree[K, V]) Min() (K, bool) {
 		var zero K
 		return zero, false
 	}
-	return t.inner.root.Value.SpanOfChildren.Min, true
+	return t.inner.root.Value.ChildSpan.Min, true
 }
 
 func (t *IntervalTree[K, V]) Max() (K, bool) {
@@ -94,22 +93,18 @@ func (t *IntervalTree[K, V]) Max() (K, bool) {
 		var zero K
 		return zero, false
 	}
-	return t.inner.root.Value.SpanOfChildren.Max, true
-}
-
-func (t *IntervalTree[K, V]) Lookup(k K) (V, bool) {
-	return t.Search(k.Cmp)
+	return t.inner.root.Value.ChildSpan.Max, true
 }
 
 func (t *IntervalTree[K, V]) Search(fn func(K) int) (V, bool) {
 	node := t.inner.root
 	for node != nil {
 		switch {
-		case t.keyFn(node.Value).ContainsFn(fn):
+		case node.Value.ValSpan.ContainsFn(fn):
 			return node.Value.Val, true
-		case node.Left != nil && node.Left.Value.SpanOfChildren.ContainsFn(fn):
+		case node.Left != nil && node.Left.Value.ChildSpan.ContainsFn(fn):
 			node = node.Left
-		case node.Right != nil && node.Right.Value.SpanOfChildren.ContainsFn(fn):
+		case node.Right != nil && node.Right.Value.ChildSpan.ContainsFn(fn):
 			node = node.Right
 		default:
 			node = nil
@@ -119,24 +114,33 @@ func (t *IntervalTree[K, V]) Search(fn func(K) int) (V, bool) {
 	return zero, false
 }
 
-func (t *IntervalTree[K, V]) searchAll(fn func(K) int, node *RBNode[intervalValue[K, V]], ret *[]V) {
+func (t *IntervalTree[K, V]) Range(fn func(V) bool) {
+	t.inner.Range(func(node *RBNode[intervalValue[K, V]]) bool {
+		return fn(node.Value.Val)
+	})
+}
+
+func (t *IntervalTree[K, V]) Subrange(rangeFn func(K) int, handleFn func(V) bool) {
+	t.subrange(t.inner.root, rangeFn, handleFn)
+}
+
+func (t *IntervalTree[K, V]) subrange(node *RBNode[intervalValue[K, V]], rangeFn func(K) int, handleFn func(V) bool) bool {
 	if node == nil {
-		return
+		return true
 	}
-	if !node.Value.SpanOfChildren.ContainsFn(fn) {
-		return
+	if !node.Value.ChildSpan.ContainsFn(rangeFn) {
+		return true
 	}
-	t.searchAll(fn, node.Left, ret)
-	if t.keyFn(node.Value).ContainsFn(fn) {
-		*ret = append(*ret, node.Value.Val)
+	if !t.subrange(node.Left, rangeFn, handleFn) {
+		return false
 	}
-	t.searchAll(fn, node.Right, ret)
+	if node.Value.ValSpan.ContainsFn(rangeFn) {
+		if !handleFn(node.Value.Val) {
+			return false
+		}
+	}
+	if !t.subrange(node.Right, rangeFn, handleFn) {
+		return false
+	}
+	return true
 }
-
-func (t *IntervalTree[K, V]) SearchAll(fn func(K) int) []V {
-	var ret []V
-	t.searchAll(fn, t.inner.root, &ret)
-	return ret
-}
-
-// TODO: func (t *IntervalTree[K, V]) Walk(fn func(*RBNode[V]) error) error

@@ -26,7 +26,7 @@ type fuzzyRecord struct {
 	N     int
 }
 
-func (a fuzzyRecord) Cmp(b fuzzyRecord) int {
+func (a fuzzyRecord) Compare(b fuzzyRecord) int {
 	switch {
 	case a.N < b.N:
 		return -1
@@ -148,12 +148,12 @@ func (l *lowestN[T]) Insert(v T) {
 	switch {
 	case len(l.Dat) < l.N:
 		l.Dat = append(l.Dat, v)
-	case v.Cmp(l.Dat[0]) < 0:
+	case v.Compare(l.Dat[0]) < 0:
 		l.Dat[0] = v
 	default:
 		return
 	}
 	sort.Slice(l.Dat, func(i, j int) bool {
-		return l.Dat[i].Cmp(l.Dat[j]) < 0
+		return l.Dat[i].Compare(l.Dat[j]) < 0
 	})
 }

@@ -481,7 +481,7 @@ func KeySearch(fn func(btrfsprim.Key) int) func(btrfsprim.Key, uint32) int {
 
 // TreeLookup implements the 'Trees' interface.
 func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
-	item, err := fs.TreeSearch(treeID, KeySearch(key.Cmp))
+	item, err := fs.TreeSearch(treeID, KeySearch(key.Compare))
 	if err != nil {
 		err = fmt.Errorf("item with key=%v: %w", key, err)
 	}

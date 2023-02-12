@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -22,12 +22,15 @@ type chunkMapping struct {
 	Flags      containers.Optional[BlockGroupFlags]
 }
 
-type ChunkMapping = chunkMapping
+// Compare implements containers.Ordered.
+func (a chunkMapping) Compare(b chunkMapping) int {
+	return containers.NativeCompare(a.LAddr, b.LAddr)
+}
 
 // return -1 if 'a' is wholly to the left of 'b'
 // return 0 if there is some overlap between 'a' and 'b'
 // return 1 if 'a is wholly to the right of 'b'
-func (a chunkMapping) cmpRange(b chunkMapping) int {
+func (a chunkMapping) compareRange(b chunkMapping) int {
 	switch {
 	case a.LAddr.Add(a.Size) <= b.LAddr:
 		// 'a' is wholly to the left of 'b'.
@@ -44,7 +47,7 @@ func (a chunkMapping) cmpRange(b chunkMapping) int {
 func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	// sanity check
 	for _, chunk := range rest {
-		if a.cmpRange(chunk) != 0 {
+		if a.compareRange(chunk) != 0 {
 			return chunkMapping{}, fmt.Errorf("chunks don't overlap")
 		}
 	}
@@ -79,7 +82,7 @@ func (a chunkMapping) union(rest ...chunkMapping) (chunkMapping, error) {
 	}
 	ret.PAddrs = maps.Keys(paddrs)
 	sort.Slice(ret.PAddrs, func(i, j int) bool {
-		return ret.PAddrs[i].Cmp(ret.PAddrs[j]) < 0
+		return ret.PAddrs[i].Compare(ret.PAddrs[j]) < 0
 	})
 	// figure out the flags (.Flags)
 	for _, chunk := range chunks {

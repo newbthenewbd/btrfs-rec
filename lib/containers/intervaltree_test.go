@@ -18,8 +18,8 @@ func (t *IntervalTree[K, V]) ASCIIArt() string {
 func (v intervalValue[K, V]) String() string {
 	return fmt.Sprintf("%v) ([%v,%v]",
 		v.Val,
-		v.SpanOfChildren.Min,
-		v.SpanOfChildren.Max)
+		v.ChildSpan.Min,
+		v.ChildSpan.Max)
 }
 
 func (v NativeOrdered[T]) String() string {
@@ -60,15 +60,21 @@ func TestIntervalTree(t *testing.T) {
 	t.Log("\n" + tree.ASCIIArt())
 
 	// find intervals that touch [9,20]
-	intervals := tree.SearchAll(func(k NativeOrdered[int]) int {
-		if k.Val < 9 {
-			return 1
-		}
-		if k.Val > 20 {
-			return -1
-		}
-		return 0
-	})
+	var intervals []SimpleInterval
+	tree.Subrange(
+		func(k NativeOrdered[int]) int {
+			if k.Val < 9 {
+				return 1
+			}
+			if k.Val > 20 {
+				return -1
+			}
+			return 0
+		},
+		func(v SimpleInterval) bool {
+			intervals = append(intervals, v)
+			return true
+		})
 	assert.Equal(t,
 		[]SimpleInterval{
 			{6, 10},

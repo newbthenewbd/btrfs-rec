@@ -7,8 +7,6 @@ package containers
 import (
 	"fmt"
 	"reflect"
-
-	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 type Color bool
@@ -18,50 +16,49 @@ const (
 	Red   = Color(true)
 )
 
-type RBNode[V any] struct {
-	Parent, Left, Right *RBNode[V]
+type RBNode[T Ordered[T]] struct {
+	Parent, Left, Right *RBNode[T]
 
 	Color Color
 
-	Value V
+	Value T
 }
 
-func (node *RBNode[V]) getColor() Color {
+func (node *RBNode[T]) getColor() Color {
 	if node == nil {
 		return Black
 	}
 	return node.Color
 }
 
-type RBTree[K Ordered[K], V any] struct {
-	KeyFn  func(V) K
-	AttrFn func(*RBNode[V])
-	root   *RBNode[V]
+type RBTree[T Ordered[T]] struct {
+	AttrFn func(*RBNode[T])
+	root   *RBNode[T]
 	len    int
 }
 
-func (t *RBTree[K, V]) Len() int {
+func (t *RBTree[T]) Len() int {
 	return t.len
 }
 
-func (t *RBTree[K, V]) Walk(fn func(*RBNode[V]) error) error {
-	return t.root.walk(fn)
+func (t *RBTree[T]) Range(fn func(*RBNode[T]) bool) {
+	t.root._range(fn)
 }
 
-func (node *RBNode[V]) walk(fn func(*RBNode[V]) error) error {
+func (node *RBNode[T]) _range(fn func(*RBNode[T]) bool) bool {
 	if node == nil {
-		return nil
+		return true
 	}
-	if err := node.Left.walk(fn); err != nil {
-		return err
+	if !node.Left._range(fn) {
+		return false
 	}
-	if err := fn(node); err != nil {
-		return err
+	if !fn(node) {
+		return false
 	}
-	if err := node.Right.walk(fn); err != nil {
-		return err
+	if !node.Right._range(fn) {
+		return false
 	}
-	return nil
+	return true
 }
 
 // Search the tree for a value that satisfied the given callbackk
@@ -81,16 +78,13 @@ func (node *RBNode[V]) walk(fn func(*RBNode[V]) error) error {
 //	 +---+          +---+
 //
 // Returns nil if no such value is found.
-//
-// Search is good for advanced lookup, like when a range of values is
-// acceptable.  For simple exact-value lookup, use Lookup.
-func (t *RBTree[K, V]) Search(fn func(V) int) *RBNode[V] {
+func (t *RBTree[T]) Search(fn func(T) int) *RBNode[T] {
 	ret, _ := t.root.search(fn)
 	return ret
 }
 
-func (node *RBNode[V]) search(fn func(V) int) (exact, nearest *RBNode[V]) {
-	var prev *RBNode[V]
+func (node *RBNode[T]) search(fn func(T) int) (exact, nearest *RBNode[T]) {
+	var prev *RBNode[T]
 	for {
 		if node == nil {
 			return nil, prev
@@ -108,26 +102,13 @@ func (node *RBNode[V]) search(fn func(V) int) (exact, nearest *RBNode[V]) {
 	}
 }
 
-func (t *RBTree[K, V]) exactKey(key K) func(V) int {
-	return func(val V) int {
-		valKey := t.KeyFn(val)
-		return key.Cmp(valKey)
-	}
-}
-
-// Lookup looks up the value for an exact key.  If no such value
-// exists, nil is returned.
-func (t *RBTree[K, V]) Lookup(key K) *RBNode[V] {
-	return t.Search(t.exactKey(key))
-}
-
 // Min returns the minimum value stored in the tree, or nil if the
 // tree is empty.
-func (t *RBTree[K, V]) Min() *RBNode[V] {
+func (t *RBTree[T]) Min() *RBNode[T] {
 	return t.root.min()
 }
 
-func (node *RBNode[V]) min() *RBNode[V] {
+func (node *RBNode[T]) min() *RBNode[T] {
 	if node == nil {
 		return nil
 	}
@@ -141,11 +122,11 @@ func (node *RBNode[V]) min() *RBNode[V] {
 
 // Max returns the maximum value stored in the tree, or nil if the
 // tree is empty.
-func (t *RBTree[K, V]) Max() *RBNode[V] {
+func (t *RBTree[T]) Max() *RBNode[T] {
 	return t.root.max()
 }
 
-func (node *RBNode[V]) max() *RBNode[V] {
+func (node *RBNode[T]) max() *RBNode[T] {
 	if node == nil {
 		return nil
 	}
@@ -157,11 +138,7 @@ func (node *RBNode[V]) max() *RBNode[V] {
 	}
 }
 
-func (t *RBTree[K, V]) Next(cur *RBNode[V]) *RBNode[V] {
-	return cur.next()
-}
-
-func (cur *RBNode[V]) next() *RBNode[V] {
+func (cur *RBNode[T]) Next() *RBNode[T] {
 	if cur.Right != nil {
 		return cur.Right.min()
 	}
@@ -172,11 +149,7 @@ func (cur *RBNode[V]) next() *RBNode[V] {
 	return parent
 }
 
-func (t *RBTree[K, V]) Prev(cur *RBNode[V]) *RBNode[V] {
-	return cur.prev()
-}
-
-func (cur *RBNode[V]) prev() *RBNode[V] {
+func (cur *RBNode[T]) Prev() *RBNode[T] {
 	if cur.Left != nil {
 		return cur.Left.max()
 	}
@@ -187,48 +160,56 @@ func (cur *RBNode[V]) prev() *RBNode[V] {
 	return parent
 }
 
-// SearchRange is like Search, but returns all nodes that match the
-// function; assuming that they are contiguous.
-func (t *RBTree[K, V]) SearchRange(fn func(V) int) []V {
-	middle := t.Search(fn)
-	if middle == nil {
-		return nil
+// Subrange is like Search, but for when there may be more than one
+// result.
+func (t *RBTree[T]) Subrange(rangeFn func(T) int, handleFn func(*RBNode[T]) bool) {
+	// Find the left-most acceptable node.
+	_, node := t.root.search(func(v T) int {
+		if rangeFn(v) <= 0 {
+			return -1
+		} else {
+			return 1
+		}
+	})
+	for node != nil && rangeFn(node.Value) > 0 {
+		node = node.Next()
 	}
-	ret := []V{middle.Value}
-	for node := t.Prev(middle); node != nil && fn(node.Value) == 0; node = t.Prev(node) {
-		ret = append(ret, node.Value)
+	// Now walk forward until we hit the end.
+	for node != nil && rangeFn(node.Value) == 0 {
+		if keepGoing := handleFn(node); !keepGoing {
+			return
+		}
+		node = node.Next()
 	}
-	slices.Reverse(ret)
-	for node := t.Next(middle); node != nil && fn(node.Value) == 0; node = t.Next(node) {
-		ret = append(ret, node.Value)
-	}
-	return ret
 }
 
-func (t *RBTree[K, V]) Equal(u *RBTree[K, V]) bool {
+func (t *RBTree[T]) Equal(u *RBTree[T]) bool {
 	if (t == nil) != (u == nil) {
 		return false
 	}
 	if t == nil {
 		return true
 	}
+	if t.len != u.len {
+		return false
+	}
 
-	var tSlice []V
-	_ = t.Walk(func(node *RBNode[V]) error {
+	tSlice := make([]T, 0, t.len)
+	t.Range(func(node *RBNode[T]) bool {
 		tSlice = append(tSlice, node.Value)
-		return nil
+		return true
 	})
 
-	var uSlice []V
-	_ = u.Walk(func(node *RBNode[V]) error {
+	uSlice := make([]T, 0, u.len)
+	u.Range(func(node *RBNode[T]) bool {
 		uSlice = append(uSlice, node.Value)
-		return nil
+		return true
 	})
 
 	return reflect.DeepEqual(tSlice, uSlice)
 }
 
-func (t *RBTree[K, V]) parentChild(node *RBNode[V]) **RBNode[V] {
+func (t *RBTree[T]) parentChild(node *RBNode[T]) **RBNode[T] {
 	switch {
 	case node.Parent == nil:
 		return &t.root
@@ -241,7 +222,7 @@ func (t *RBTree[K, V]) parentChild(node *RBNode[V]) **RBNode[V] {
 	}
 }
 
-func (t *RBTree[K, V]) updateAttr(node *RBNode[V]) {
+func (t *RBTree[T]) updateAttr(node *RBNode[T]) {
 	if t.AttrFn == nil {
 		return
 	}
@@ -251,7 +232,7 @@ func (t *RBTree[K, V]) updateAttr(node *RBNode[V]) {
 	}
 }
 
-func (t *RBTree[K, V]) leftRotate(x *RBNode[V]) {
+func (t *RBTree[T]) leftRotate(x *RBNode[T]) {
 	//        p                        p
 	//        |                        |
 	//      +---+                    +---+
@@ -286,7 +267,7 @@ func (t *RBTree[K, V]) leftRotate(x *RBNode[V]) {
 	t.updateAttr(x)
 }
 
-func (t *RBTree[K, V]) rightRotate(y *RBNode[V]) {
+func (t *RBTree[T]) rightRotate(y *RBNode[T]) {
 	//nolint:dupword
 	//
 	//           |                |
@@ -322,18 +303,17 @@ func (t *RBTree[K, V]) rightRotate(y *RBNode[V]) {
 	t.updateAttr(y)
 }
 
-func (t *RBTree[K, V]) Insert(val V) {
+func (t *RBTree[T]) Insert(val T) {
 	// Naive-insert
 
-	key := t.KeyFn(val)
-	exact, parent := t.root.search(t.exactKey(key))
+	exact, parent := t.root.search(val.Compare)
 	if exact != nil {
 		exact.Value = val
 		return
 	}
 	t.len++
 
-	node := &RBNode[V]{
+	node := &RBNode[T]{
 		Color:  Red,
 		Parent: parent,
 		Value:  val,
@@ -341,7 +321,7 @@ func (t *RBTree[K, V]) Insert(val V) {
 	switch {
 	case parent == nil:
 		t.root = node
-	case key.Cmp(t.KeyFn(parent.Value)) < 0:
+	case val.Compare(parent.Value) < 0:
 		parent.Left = node
 	default:
 		parent.Right = node
@@ -391,15 +371,14 @@ func (t *RBTree[K, V]) Insert(val V) {
 	t.root.Color = Black
 }
 
-func (t *RBTree[K, V]) transplant(oldNode, newNode *RBNode[V]) {
+func (t *RBTree[T]) transplant(oldNode, newNode *RBNode[T]) {
 	*t.parentChild(oldNode) = newNode
 	if newNode != nil {
 		newNode.Parent = oldNode.Parent
 	}
 }
 
-func (t *RBTree[K, V]) Delete(key K) {
-	nodeToDelete := t.Lookup(key)
+func (t *RBTree[T]) Delete(nodeToDelete *RBNode[T]) {
 	if nodeToDelete == nil {
 		return
 	}
@@ -410,8 +389,8 @@ func (t *RBTree[K, V]) Delete(key K) {
 
 	// phase 1
 
-	var nodeToRebalance *RBNode[V]
-	var nodeToRebalanceParent *RBNode[V] // in case 'nodeToRebalance' is nil, which it can be
+	var nodeToRebalance *RBNode[T]
+	var nodeToRebalanceParent *RBNode[T] // in case 'nodeToRebalance' is nil, which it can be
 	needsRebalance := nodeToDelete.Color == Black
 
 	switch {
@@ -427,7 +406,7 @@ func (t *RBTree[K, V]) Delete(key K) {
 		// The node being deleted has a child on both sides,
 		// so we've go to reshuffle the parents a bit to make
 		// room for those children.
-		next := nodeToDelete.next()
+		next := nodeToDelete.Next()
 		if next.Parent == nodeToDelete {
 			//         p                  p
 			//         |                  |

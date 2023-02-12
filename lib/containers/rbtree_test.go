@@ -7,21 +7,22 @@ package containers
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func (t *RBTree[K, V]) ASCIIArt() string {
+func (t *RBTree[T]) ASCIIArt() string {
 	var out strings.Builder
 	t.root.asciiArt(&out, "", "", "")
 	return out.String()
 }
 
-func (node *RBNode[V]) String() string {
+func (node *RBNode[T]) String() string {
 	switch {
 	case node == nil:
 		return "nil"
@@ -32,7 +33,7 @@ func (node *RBNode[V]) String() string {
 	}
 }
 
-func (node *RBNode[V]) asciiArt(w io.Writer, u, m, l string) {
+func (node *RBNode[T]) asciiArt(w io.Writer, u, m, l string) {
 	if node == nil {
 		fmt.Fprintf(w, "%snil\n", m)
 		return
@@ -43,7 +44,7 @@ func (node *RBNode[V]) asciiArt(w io.Writer, u, m, l string) {
 	node.Left.asciiArt(w, l+"  |  ", l+"  `--", l+"     ")
 }
 
-func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K], tree *RBTree[NativeOrdered[K], V]) {
+func checkRBTree[T constraints.Ordered](t *testing.T, expectedSet Set[T], tree *RBTree[NativeOrdered[T]]) {
 	// 1. Every node is either red or black
 
 	// 2. The root is black.
@@ -52,19 +53,19 @@ func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K],
 	// 3. Every nil is black.
 
 	// 4. If a node is red, then both its children are black.
-	require.NoError(t, tree.Walk(func(node *RBNode[V]) error {
+	tree.Range(func(node *RBNode[NativeOrdered[T]]) bool {
 		if node.getColor() == Red {
 			require.Equal(t, Black, node.Left.getColor())
 			require.Equal(t, Black, node.Right.getColor())
 		}
-		return nil
-	}))
+		return true
+	})
 
 	// 5. For each node, all simple paths from the node to
 	//    descendent leaves contain the same number of black
 	//    nodes.
-	var walkCnt func(node *RBNode[V], cnt int, leafFn func(int))
-	walkCnt = func(node *RBNode[V], cnt int, leafFn func(int)) {
+	var walkCnt func(node *RBNode[NativeOrdered[T]], cnt int, leafFn func(int))
+	walkCnt = func(node *RBNode[NativeOrdered[T]], cnt int, leafFn func(int)) {
 		if node.getColor() == Black {
 			cnt++
 		}
@@ -75,7 +76,7 @@ func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K],
 		walkCnt(node.Left, cnt, leafFn)
 		walkCnt(node.Right, cnt, leafFn)
 	}
-	require.NoError(t, tree.Walk(func(node *RBNode[V]) error {
+	tree.Range(func(node *RBNode[NativeOrdered[T]]) bool {
 		var cnts []int
 		walkCnt(node, 0, func(cnt int) {
 			cnts = append(cnts, cnt)
@@ -86,27 +87,24 @@ func checkRBTree[K constraints.Ordered, V any](t *testing.T, expectedSet Set[K],
 				break
 			}
 		}
-		return nil
-	}))
+		return true
+	})
 
 	// expected contents
-	expectedOrder := make([]K, 0, len(expectedSet))
-	for k := range expectedSet {
-		expectedOrder = append(expectedOrder, k)
-		node := tree.Lookup(NativeOrdered[K]{Val: k})
+	expectedOrder := make([]T, 0, len(expectedSet))
+	for v := range expectedSet {
+		expectedOrder = append(expectedOrder, v)
+		node := tree.Search(NativeOrdered[T]{Val: v}.Compare)
 		require.NotNil(t, tree, node)
-		require.Equal(t, k, tree.KeyFn(node.Value).Val)
 	}
-	sort.Slice(expectedOrder, func(i, j int) bool {
-		return expectedOrder[i] < expectedOrder[j]
+	slices.Sort(expectedOrder)
+	actOrder := make([]T, 0, len(expectedSet))
+	tree.Range(func(node *RBNode[NativeOrdered[T]]) bool {
+		actOrder = append(actOrder, node.Value.Val)
+		return true
 	})
-	actOrder := make([]K, 0, len(expectedSet))
-	require.NoError(t, tree.Walk(func(node *RBNode[V]) error {
-		actOrder = append(actOrder, tree.KeyFn(node.Value).Val)
-		return nil
-	}))
 	require.Equal(t, expectedOrder, actOrder)
-	require.Equal(t, tree.Len(), len(expectedSet))
+	require.Equal(t, len(expectedSet), tree.Len())
 }
 
 func FuzzRBTree(f *testing.F) {
@@ -132,11 +130,7 @@ func FuzzRBTree(f *testing.F) {
 	})
 
 	f.Fuzz(func(t *testing.T, dat []uint8) {
-		tree := &RBTree[NativeOrdered[uint8], uint8]{
-			KeyFn: func(x uint8) NativeOrdered[uint8] {
-				return NativeOrdered[uint8]{Val: x}
-			},
-		}
+		tree := new(RBTree[NativeOrdered[uint8]])
 		set := make(Set[uint8])
 		checkRBTree(t, set, tree)
 		t.Logf("\n%s\n", tree.ASCIIArt())
@@ -145,18 +139,18 @@ func FuzzRBTree(f *testing.F) {
 			val := (b & 0b0011_1111)
 			if ins {
 				t.Logf("Insert(%v)", val)
-				tree.Insert(val)
+				tree.Insert(NativeOrdered[uint8]{Val: val})
 				set.Insert(val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				node := tree.Lookup(NativeOrdered[uint8]{Val: val})
+				node := tree.Search(NativeOrdered[uint8]{Val: val}.Compare)
 				require.NotNil(t, node)
-				require.Equal(t, val, node.Value)
+				require.Equal(t, val, node.Value.Val)
 			} else {
 				t.Logf("Delete(%v)", val)
-				tree.Delete(NativeOrdered[uint8]{Val: val})
+				tree.Delete(tree.Search(NativeOrdered[uint8]{Val: val}.Compare))
 				delete(set, val)
 				t.Logf("\n%s\n", tree.ASCIIArt())
-				require.Nil(t, tree.Lookup(NativeOrdered[uint8]{Val: val}))
+				require.Nil(t, tree.Search(NativeOrdered[uint8]{Val: val}.Compare))
 			}
 			checkRBTree(t, set, tree)
 		}

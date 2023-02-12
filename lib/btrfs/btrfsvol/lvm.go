@@ -22,8 +22,8 @@ type LogicalVolume[PhysicalVolume diskio.File[PhysicalAddr]] struct {
 
 	id2pv map[DeviceID]PhysicalVolume
 
-	logical2physical *containers.RBTree[containers.NativeOrdered[LogicalAddr], chunkMapping]
-	physical2logical map[DeviceID]*containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping]
+	logical2physical *containers.RBTree[chunkMapping]
+	physical2logical map[DeviceID]*containers.RBTree[devextMapping]
 }
 
 var _ diskio.File[LogicalAddr] = (*LogicalVolume[diskio.File[PhysicalAddr]])(nil)
@@ -33,22 +33,14 @@ func (lv *LogicalVolume[PhysicalVolume]) init() {
 		lv.id2pv = make(map[DeviceID]PhysicalVolume)
 	}
 	if lv.logical2physical == nil {
-		lv.logical2physical = &containers.RBTree[containers.NativeOrdered[LogicalAddr], chunkMapping]{
-			KeyFn: func(chunk chunkMapping) containers.NativeOrdered[LogicalAddr] {
-				return containers.NativeOrdered[LogicalAddr]{Val: chunk.LAddr}
-			},
-		}
+		lv.logical2physical = new(containers.RBTree[chunkMapping])
 	}
 	if lv.physical2logical == nil {
-		lv.physical2logical = make(map[DeviceID]*containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping], len(lv.id2pv))
+		lv.physical2logical = make(map[DeviceID]*containers.RBTree[devextMapping], len(lv.id2pv))
 	}
 	for devid := range lv.id2pv {
 		if _, ok := lv.physical2logical[devid]; !ok {
-			lv.physical2logical[devid] = &containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping]{
-				KeyFn: func(ext devextMapping) containers.NativeOrdered[PhysicalAddr] {
-					return containers.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
-				},
-			}
+			lv.physical2logical[devid] = new(containers.RBTree[devextMapping])
 		}
 	}
 }
@@ -90,11 +82,7 @@ func (lv *LogicalVolume[PhysicalVolume]) AddPhysicalVolume(id DeviceID, dev Phys
 			lv, dev.Name(), other.Name(), id)
 	}
 	lv.id2pv[id] = dev
-	lv.physical2logical[id] = &containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping]{
-		KeyFn: func(ext devextMapping) containers.NativeOrdered[PhysicalAddr] {
-			return containers.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
-		},
-	}
+	lv.physical2logical[id] = new(containers.RBTree[devextMapping])
 	return nil
 }
 
@@ -143,7 +131,13 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 		SizeLocked: m.SizeLocked,
 		Flags:      m.Flags,
 	}
-	logicalOverlaps := lv.logical2physical.SearchRange(newChunk.cmpRange)
+	var logicalOverlaps []chunkMapping
+	numOverlappingStripes := 0
+	lv.logical2physical.Subrange(newChunk.compareRange, func(node *containers.RBNode[chunkMapping]) bool {
+		logicalOverlaps = append(logicalOverlaps, node.Value)
+		numOverlappingStripes += len(node.Value.PAddrs)
+		return true
+	})
 	var err error
 	newChunk, err = newChunk.union(logicalOverlaps...)
 	if err != nil {
@@ -158,10 +152,36 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 		SizeLocked: m.SizeLocked,
 		Flags:      m.Flags,
 	}
-	physicalOverlaps := lv.physical2logical[m.PAddr.Dev].SearchRange(newExt.cmpRange)
+	var physicalOverlaps []devextMapping
+	lv.physical2logical[m.PAddr.Dev].Subrange(newExt.compareRange, func(node *containers.RBNode[devextMapping]) bool {
+		physicalOverlaps = append(physicalOverlaps, node.Value)
+		return true
+	})
 	newExt, err = newExt.union(physicalOverlaps...)
 	if err != nil {
 		return fmt.Errorf("(%p).AddMapping: %w", lv, err)
+	}
+
+	if newChunk.Flags != newExt.Flags {
+		// If these don't match up, it's a bug in this code.
+		panic(fmt.Errorf("should not happen: newChunk.Flags:%+v != newExt.Flags:%+v",
+			newChunk.Flags, newExt.Flags))
+	}
+	switch {
+	case len(physicalOverlaps) == numOverlappingStripes:
+		// normal case
+	case len(physicalOverlaps) < numOverlappingStripes:
+		// .Flags = DUP or RAID{X}
+		if newChunk.Flags.OK && newChunk.Flags.Val&BLOCK_GROUP_RAID_MASK == 0 {
+			return fmt.Errorf("multiple stripes but flags=%v does not allow multiple stripes",
+				newChunk.Flags.Val)
+		}
+	case len(physicalOverlaps) > numOverlappingStripes:
+		// This should not happen because calling .AddMapping
+		// should update the two in lockstep; if these don't
+		// match up, it's a bug in this code.
+		panic(fmt.Errorf("should not happen: len(physicalOverlaps):%d != numOverlappingStripes:%d",
+			len(physicalOverlaps), numOverlappingStripes))
 	}
 
 	if dryRun {
@@ -176,13 +196,13 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 
 	// logical2physical
 	for _, chunk := range logicalOverlaps {
-		lv.logical2physical.Delete(containers.NativeOrdered[LogicalAddr]{Val: chunk.LAddr})
+		lv.logical2physical.Delete(lv.logical2physical.Search(chunk.Compare))
 	}
 	lv.logical2physical.Insert(newChunk)
 
 	// physical2logical
 	for _, ext := range physicalOverlaps {
-		lv.physical2logical[m.PAddr.Dev].Delete(containers.NativeOrdered[PhysicalAddr]{Val: ext.PAddr})
+		lv.physical2logical[m.PAddr.Dev].Delete(lv.physical2logical[m.PAddr.Dev].Search(ext.Compare))
 	}
 	lv.physical2logical[m.PAddr.Dev].Insert(newExt)
 
@@ -201,20 +221,18 @@ func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) erro
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
-	physical2logical := make(map[DeviceID]*containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping])
-	if err := lv.logical2physical.Walk(func(node *containers.RBNode[chunkMapping]) error {
+	physical2logical := make(map[DeviceID]*containers.RBTree[devextMapping])
+	var err error
+	lv.logical2physical.Range(func(node *containers.RBNode[chunkMapping]) bool {
 		chunk := node.Value
 		for _, stripe := range chunk.PAddrs {
 			if _, devOK := lv.id2pv[stripe.Dev]; !devOK {
-				return fmt.Errorf("(%p).fsck: chunk references physical volume %v which does not exist",
+				err = fmt.Errorf("(%p).fsck: chunk references physical volume %v which does not exist",
 					lv, stripe.Dev)
+				return false
 			}
 			if _, exists := physical2logical[stripe.Dev]; !exists {
-				physical2logical[stripe.Dev] = &containers.RBTree[containers.NativeOrdered[PhysicalAddr], devextMapping]{
-					KeyFn: func(ext devextMapping) containers.NativeOrdered[PhysicalAddr] {
-						return containers.NativeOrdered[PhysicalAddr]{Val: ext.PAddr}
-					},
-				}
+				physical2logical[stripe.Dev] = new(containers.RBTree[devextMapping])
 			}
 			physical2logical[stripe.Dev].Insert(devextMapping{
 				PAddr: stripe.Addr,
@@ -223,8 +241,9 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 				Flags: chunk.Flags,
 			})
 		}
-		return nil
-	}); err != nil {
+		return true
+	})
+	if err != nil {
 		return err
 	}
 
@@ -244,7 +263,7 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 
 func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 	var ret []Mapping
-	_ = lv.logical2physical.Walk(func(node *containers.RBNode[chunkMapping]) error {
+	lv.logical2physical.Range(func(node *containers.RBNode[chunkMapping]) bool {
 		chunk := node.Value
 		for _, slice := range chunk.PAddrs {
 			ret = append(ret, Mapping{
@@ -254,14 +273,14 @@ func (lv *LogicalVolume[PhysicalVolume]) Mappings() []Mapping {
 				Flags: chunk.Flags,
 			})
 		}
-		return nil
+		return true
 	})
 	return ret
 }
 
 func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs containers.Set[QualifiedPhysicalAddr], maxlen AddrDelta) {
 	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
-		return chunkMapping{LAddr: laddr, Size: 1}.cmpRange(chunk)
+		return chunkMapping{LAddr: laddr, Size: 1}.compareRange(chunk)
 	})
 	if node == nil {
 		return nil, 0
@@ -281,7 +300,7 @@ func (lv *LogicalVolume[PhysicalVolume]) Resolve(laddr LogicalAddr) (paddrs cont
 
 func (lv *LogicalVolume[PhysicalVolume]) ResolveAny(laddr LogicalAddr, size AddrDelta) (LogicalAddr, QualifiedPhysicalAddr) {
 	node := lv.logical2physical.Search(func(chunk chunkMapping) int {
-		return chunkMapping{LAddr: laddr, Size: size}.cmpRange(chunk)
+		return chunkMapping{LAddr: laddr, Size: size}.compareRange(chunk)
 	})
 	if node == nil {
 		return -1, QualifiedPhysicalAddr{0, -1}
@@ -291,7 +310,7 @@ func (lv *LogicalVolume[PhysicalVolume]) ResolveAny(laddr LogicalAddr, size Addr
 
 func (lv *LogicalVolume[PhysicalVolume]) UnResolve(paddr QualifiedPhysicalAddr) LogicalAddr {
 	node := lv.physical2logical[paddr.Dev].Search(func(ext devextMapping) int {
-		return devextMapping{PAddr: paddr.Addr, Size: 1}.cmpRange(ext)
+		return devextMapping{PAddr: paddr.Addr, Size: 1}.compareRange(ext)
 	})
 	if node == nil {
 		return -1

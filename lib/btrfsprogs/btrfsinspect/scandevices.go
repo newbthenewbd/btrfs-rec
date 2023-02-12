@@ -22,6 +22,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -77,6 +78,11 @@ type SysDevExtent struct {
 type SysExtentCSum struct {
 	Generation btrfsprim.Generation
 	Sums       btrfsitem.ExtentCSum
+}
+
+// Compare implements containers.Ordered.
+func (a SysExtentCSum) Compare(b SysExtentCSum) int {
+	return containers.NativeCompare(a.Sums.Addr, b.Sums.Addr)
 }
 
 type scanStats struct {
