@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -15,7 +15,7 @@ import (
 //
 // key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID
 // key.offset = logical_addr
-type Chunk struct { // CHUNK_ITEM=228
+type Chunk struct { // complex CHUNK_ITEM=228
 	Head    ChunkHeader
 	Stripes []ChunkStripe
 }
@@ -60,20 +60,36 @@ func (chunk Chunk) Mappings(key btrfsprim.Key) []btrfsvol.Mapping {
 	return ret
 }
 
+var chunkStripePool containers.SlicePool[ChunkStripe]
+
+func (chunk *Chunk) Free() {
+	for i := range chunk.Stripes {
+		chunk.Stripes[i] = ChunkStripe{}
+	}
+	chunkStripePool.Put(chunk.Stripes)
+	*chunk = Chunk{}
+	chunkPool.Put(chunk)
+}
+
+func (chunk Chunk) Clone() Chunk {
+	ret := chunk
+	ret.Stripes = chunkStripePool.Get(len(chunk.Stripes))
+	copy(ret.Stripes, chunk.Stripes)
+	return ret
+}
+
 func (chunk *Chunk) UnmarshalBinary(dat []byte) (int, error) {
 	n, err := binstruct.Unmarshal(dat, &chunk.Head)
 	if err != nil {
 		return n, err
 	}
-	chunk.Stripes = nil
-	for i := 0; i < int(chunk.Head.NumStripes); i++ {
-		var stripe ChunkStripe
-		_n, err := binstruct.Unmarshal(dat[n:], &stripe)
+	chunk.Stripes = chunkStripePool.Get(int(chunk.Head.NumStripes))
+	for i := range chunk.Stripes {
+		_n, err := binstruct.Unmarshal(dat[n:], &chunk.Stripes[i])
 		n += _n
 		if err != nil {
 			return n, err
 		}
-		chunk.Stripes = append(chunk.Stripes, stripe)
 	}
 	return n, nil
 }

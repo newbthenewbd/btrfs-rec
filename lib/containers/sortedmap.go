@@ -17,6 +17,8 @@ type SortedMap[K Ordered[K], V any] struct {
 	inner RBTree[orderedKV[K, V]]
 }
 
+var _ SubrangeMap[NativeOrdered[int], string] = (*SortedMap[NativeOrdered[int], string])(nil)
+
 func (m *SortedMap[K, V]) Delete(key K) {
 	m.inner.Delete(m.inner.Search(func(kv orderedKV[K, V]) int {
 		return key.Compare(kv.K)
@@ -32,6 +34,13 @@ func (m *SortedMap[K, V]) Load(key K) (value V, ok bool) {
 		return zero, false
 	}
 	return node.Value.V, true
+}
+
+func (m *SortedMap[K, V]) Has(key K) bool {
+	node := m.inner.Search(func(kv orderedKV[K, V]) int {
+		return key.Compare(kv.K)
+	})
+	return node != nil
 }
 
 func (m *SortedMap[K, V]) Store(key K, value V) {

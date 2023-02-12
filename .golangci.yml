@@ -80,6 +80,7 @@ linters-settings:
     excludes:
       - G104 # duplicates errcheck
       - G304 # this program opens arbitrary files
+      - G306 # users should set umask if they want that
   nolintlint:
     require-explanation: true
     require-specific: true

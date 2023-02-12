@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -12,7 +12,7 @@ import (
 
 // key.objectid = BTRFS_DEV_ITEMS_OBJECTID
 // key.offset = device_id (starting at 1)
-type Dev struct { // DEV_ITEM=216
+type Dev struct { // trivial DEV_ITEM=216
 	DevID btrfsvol.DeviceID `bin:"off=0x0,    siz=0x8"`
 
 	NumBytes     uint64 `bin:"off=0x8,    siz=0x8"`

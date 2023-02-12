@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -6,6 +6,8 @@ package diskio
 
 import (
 	"sync"
+
+	"git.lukeshu.com/go/typedsync"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
@@ -19,16 +21,40 @@ type bufferedFile[A ~int64] struct {
 	inner      File[A]
 	mu         sync.RWMutex
 	blockSize  A
-	blockCache *containers.LRUCache[A, bufferedBlock]
+	blockCache containers.ARCache[A, bufferedBlock]
+	blockPool  typedsync.Pool[[]byte]
 }
 
 var _ File[assertAddr] = (*bufferedFile[assertAddr])(nil)
 
 func NewBufferedFile[A ~int64](file File[A], blockSize A, cacheSize int) *bufferedFile[A] {
-	return &bufferedFile[A]{
-		inner:      file,
-		blockSize:  blockSize,
-		blockCache: containers.NewLRUCache[A, bufferedBlock](cacheSize),
+	ret := &bufferedFile[A]{
+		inner:     file,
+		blockSize: blockSize,
+		blockCache: containers.ARCache[A, bufferedBlock]{
+			MaxLen: cacheSize,
+		},
+	}
+	ret.blockPool.New = ret.malloc
+	ret.blockCache.OnRemove = ret.free
+	ret.blockCache.New = ret.readBlock
+	return ret
+}
+
+func (bf *bufferedFile[A]) malloc() []byte {
+	return make([]byte, bf.blockSize)
+}
+
+func (bf *bufferedFile[A]) free(_ A, buf bufferedBlock) {
+	bf.blockPool.Put(buf.Dat)
+}
+
+func (bf *bufferedFile[A]) readBlock(blockOffset A) bufferedBlock {
+	dat, _ := bf.blockPool.Get()
+	n, err := bf.inner.ReadAt(dat, blockOffset)
+	return bufferedBlock{
+		Dat: dat[:n],
+		Err: err,
 	}
 }
 
@@ -53,14 +79,7 @@ func (bf *bufferedFile[A]) maybeShortReadAt(dat []byte, off A) (n int, err error
 	defer bf.mu.RUnlock()
 	offsetWithinBlock := off % bf.blockSize
 	blockOffset := off - offsetWithinBlock
-	cachedBlock, ok := bf.blockCache.Get(blockOffset)
-	if !ok {
-		cachedBlock.Dat = make([]byte, bf.blockSize)
-		n, err := bf.inner.ReadAt(cachedBlock.Dat, blockOffset)
-		cachedBlock.Dat = cachedBlock.Dat[:n]
-		cachedBlock.Err = err
-		bf.blockCache.Add(blockOffset, cachedBlock)
-	}
+	cachedBlock, _ := bf.blockCache.Load(blockOffset)
 	n = copy(dat, cachedBlock.Dat[offsetWithinBlock:])
 	if n < len(dat) {
 		return n, cachedBlock.Err
@@ -77,7 +96,7 @@ func (bf *bufferedFile[A]) WriteAt(dat []byte, off A) (n int, err error) {
 
 	// Cache invalidation
 	for blockOffset := off - (off % bf.blockSize); blockOffset < off+A(n); blockOffset += bf.blockSize {
-		bf.blockCache.Remove(blockOffset)
+		bf.blockCache.Delete(blockOffset)
 	}
 
 	return

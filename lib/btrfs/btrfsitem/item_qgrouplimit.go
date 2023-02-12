@@ -36,7 +36,7 @@ func (f QGroupLimitFlags) String() string {
 
 // key.objectid = 0
 // key.offset = ID of the qgroup
-type QGroupLimit struct { // QGROUP_LIMIT=244
+type QGroupLimit struct { // trivial QGROUP_LIMIT=244
 	Flags         QGroupLimitFlags `bin:"off=0, siz=8"`
 	MaxReferenced uint64           `bin:"off=8, siz=8"`
 	MaxExclusive  uint64           `bin:"off=16, siz=8"`

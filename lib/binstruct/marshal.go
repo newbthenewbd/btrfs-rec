@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -6,6 +6,7 @@ package binstruct
 
 import (
 	"encoding"
+	"encoding/binary"
 	"fmt"
 	"reflect"
 )
@@ -30,17 +31,38 @@ func Marshal(obj any) ([]byte, error) {
 func MarshalWithoutInterface(obj any) ([]byte, error) {
 	val := reflect.ValueOf(obj)
 	switch val.Kind() {
-	case reflect.Uint8, reflect.Int8, reflect.Uint16, reflect.Int16, reflect.Uint32, reflect.Int32, reflect.Uint64, reflect.Int64:
-		typ := intKind2Type[val.Kind()]
-		dat, err := val.Convert(typ).Interface().(Marshaler).MarshalBinary()
-		if err != nil {
-			err = &UnmarshalError{
-				Type:   typ,
-				Method: "MarshalBinary",
-				Err:    err,
-			}
-		}
-		return dat, err
+	case reflect.Uint8:
+		var buf [sizeof8]byte
+		buf[0] = byte(val.Uint())
+		return buf[:], nil
+	case reflect.Int8:
+		var buf [sizeof8]byte
+		buf[0] = byte(val.Int())
+		return buf[:], nil
+	case reflect.Uint16:
+		var buf [sizeof16]byte
+		binary.LittleEndian.PutUint16(buf[:], uint16(val.Uint()))
+		return buf[:], nil
+	case reflect.Int16:
+		var buf [sizeof16]byte
+		binary.LittleEndian.PutUint16(buf[:], uint16(val.Int()))
+		return buf[:], nil
+	case reflect.Uint32:
+		var buf [sizeof32]byte
+		binary.LittleEndian.PutUint32(buf[:], uint32(val.Uint()))
+		return buf[:], nil
+	case reflect.Int32:
+		var buf [sizeof32]byte
+		binary.LittleEndian.PutUint32(buf[:], uint32(val.Int()))
+		return buf[:], nil
+	case reflect.Uint64:
+		var buf [sizeof64]byte
+		binary.LittleEndian.PutUint64(buf[:], val.Uint())
+		return buf[:], nil
+	case reflect.Int64:
+		var buf [sizeof64]byte
+		binary.LittleEndian.PutUint64(buf[:], uint64(val.Int()))
+		return buf[:], nil
 	case reflect.Ptr:
 		return Marshal(val.Elem().Interface())
 	case reflect.Array:

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -12,7 +12,7 @@ import (
 
 // key.objectid = logical_addr
 // key.offset = size of chunk
-type BlockGroup struct { // BLOCK_GROUP_ITEM=192
+type BlockGroup struct { // trivial BLOCK_GROUP_ITEM=192
 	Used          int64                    `bin:"off=0, siz=8"`
 	ChunkObjectID btrfsprim.ObjID          `bin:"off=8, siz=8"` // always FIRST_CHUNK_TREE_OBJECTID
 	Flags         btrfsvol.BlockGroupFlags `bin:"off=16, siz=8"`

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -15,7 +15,7 @@ import (
 // key.offset = either
 //   - 0 if objectid is one of the BTRFS_*_TREE_OBJECTID defines or a non-snapshot volume; or
 //   - transaction_id of when this snapshot was created
-type Root struct { // ROOT_ITEM=132
+type Root struct { // trivial ROOT_ITEM=132
 	Inode         Inode                `bin:"off=0x000, siz=0xa0"` // ???
 	Generation    btrfsprim.Generation `bin:"off=0x0a0, siz=0x08"`
 	RootDirID     btrfsprim.ObjID      `bin:"off=0x0a8, siz=0x08"` // inode number of the root inode

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -12,7 +12,7 @@ import (
 
 // key.objectid = inode number
 // key.offset = 0
-type Inode struct { // INODE_ITEM=1
+type Inode struct { // trivial INODE_ITEM=1
 	Generation    btrfsprim.Generation `bin:"off=0x00, siz=0x08"`
 	TransID       int64                `bin:"off=0x08, siz=0x08"`
 	Size          int64                `bin:"off=0x10, siz=0x08"` // stat

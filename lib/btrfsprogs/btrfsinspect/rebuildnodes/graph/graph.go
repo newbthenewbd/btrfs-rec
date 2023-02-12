@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -151,7 +151,7 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 	if nodeRef.Data.Head.Level == 0 {
 		cnt := 0
 		for _, item := range nodeRef.Data.BodyLeaf {
-			if _, ok := item.Body.(btrfsitem.Root); ok {
+			if _, ok := item.Body.(*btrfsitem.Root); ok {
 				cnt++
 			}
 		}
@@ -161,7 +161,7 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 		g.Nodes[nodeRef.Addr] = nodeData
 		for i, item := range nodeRef.Data.BodyLeaf {
 			keys[i] = item.Key
-			if itemBody, ok := item.Body.(btrfsitem.Root); ok {
+			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
 				kps = append(kps, Edge{
 					FromRoot:     nodeRef.Addr,
 					FromItem:     i,

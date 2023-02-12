@@ -8,9 +8,9 @@
 
 btrfsitem/items.txt: btrfsitem $(wildcard btrfsitem/item_*.go) $(MAKEFILE_LIST)
 	{ \
-	  sed -En 's,^type (\S+) .* // (.*=.*),\1 \2,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ keys; do \
+	  sed -En 's,^type (\S+) .* // (trivial|complex) (.*=.*),\1 \2 \3,p' $(filter btrfsitem/item_%.go,$^) | while read -r typ class keys; do \
 	    for key in $$keys; do \
-	      echo "$$key" "$$typ"; \
+	      echo "$$key" "$$class" "$$typ"; \
 	    done; \
 	  done; \
 	} | LC_COLLATE=C sort >$@
@@ -24,19 +24,49 @@ btrfsitem/items_gen.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'import ('; \
 	  echo   '"reflect"'; \
 	  echo; \
+	  echo   '"git.lukeshu.com/go/typedsync"'; \
+	  echo; \
 	  echo   '"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"'; \
 	  echo ')'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=(.*) (.*),\1_KEY=btrfsprim.\1_KEY,' $<; \
+	  sed -E 's/(.*)=(.*) (trivial|complex) (.*)/\1_KEY=btrfsprim.\1_KEY/' $<; \
 	  echo ')'; \
+	  echo 'var ('; \
+	  sed -E 's/(.*)=(.*) (trivial|complex) (.*)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/\l&Type = reflect.TypeOf(&{})/'; \
+	  echo ')'; \
+	  echo '// keytype2gotype is used by UnmarshalItem.'; \
 	  echo 'var keytype2gotype = map[Type]reflect.Type{'; \
-	  sed -En 's|(.*)=([^:]*) (.*)|\1_KEY: reflect.TypeOf(\3{}),|p' $<; \
+	  sed -En 's/(.*)=([^:]*) (trivial|complex) (.*)/\1_KEY: \l\4Type,/p' $<; \
 	  echo '}'; \
+	  echo '// untypedObjID2gotype is used by UnmarshalItem.'; \
 	  echo 'var untypedObjID2gotype = map[btrfsprim.ObjID]reflect.Type{'; \
-	  sed -En 's|UNTYPED=0:(.*) (.*)|btrfsprim.\1: reflect.TypeOf(\2{}),|p' $<; \
+	  sed -En 's/UNTYPED=0:(.*) (trivial|complex) (.*)/btrfsprim.\1: \l\3Type,/p' $<; \
 	  echo '}'; \
-	  sed -En 's,(.*)=(.*) (.+),\3,p' $< | LC_COLLATE=C sort -u | sed 's,.*,func (&) isItem() {},'; \
-	} | gofmt >$@
+	  echo '// Pools.'; \
+	  echo 'var ('; \
+	  sed -E 's/(.*)=(.*) (trivial|complex) (.*)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/\l&Pool = typedsync.Pool[Item]{New: func() Item { return new(&) }}/'; \
+	  echo ')'; \
+	  echo '// gotype2pool is used by UnmarshalItem.'; \
+	  echo 'var gotype2pool = map[reflect.Type]*typedsync.Pool[Item]{'; \
+	  sed -E 's/(.*)=(.*) (trivial|complex) (.*)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/\l&Type: \&\l&Pool,/'; \
+	  echo '}'; \
+	  echo '// isItem implements Item.'; \
+	  sed -En 's/(.*)=(.*) (trivial|complex) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/func (*&) isItem() {}/'; \
+	  echo '// Free implements Item.'; \
+	  sed -En 's/(.*)=(.*) (trivial) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/func (o *&) Free() {*o = &{}; \l&Pool.Put(o)}/'; \
+	  echo '// Clone is a handy method.'; \
+	  sed -En 's/(.*)=(.*) (trivial) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/func (o &) Clone() & { return o }/'; \
+	  echo '// CloneItem implements Item.'; \
+	  sed -En 's/(.*)=(.*) (trivial|complex) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/func (o *&) CloneItem() Item { ret, _ := \l&Pool.Get(); *(ret.(*&)) = o.Clone(); return ret }/'; \
+	  echo '// Item type assertions.'; \
+	  echo 'var ('; \
+	  sed -En 's/(.*)=(.*) (trivial|complex) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/_ Item = (*&)(nil)/'; \
+	  echo ')'; \
+	  echo '// Clone type assertions.'; \
+	  echo 'var ('; \
+	  sed -En 's/(.*)=(.*) (trivial|complex) (.+)/\4/p' $< | LC_COLLATE=C sort -u | sed 's/.*/_ interface{ Clone() & } = &{}/'; \
+	  echo ')'; \
+	} | sed 's/uUID/uuid/g' | gofmt >$@
 files += btrfsitem/items_gen.go
 
 btrfsprim/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
@@ -47,11 +77,11 @@ btrfsprim/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'import "fmt"'; \
 	  echo 'type ItemType uint8'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=([^:]*)(:.*)? (.*),\1_KEY=ItemType(\2),' $< | uniq; \
+	  sed -E 's,(.*)=([^:]*)(:.*)? (trivial|complex) (.*),\1_KEY=ItemType(\2),' $< | uniq; \
 	  echo ')'; \
 	  echo 'func (t ItemType) String() string {'; \
 	  echo '  names := map[ItemType]string{'; \
-	  sed -E 's@(.*)=(.*) (.*)@\1_KEY: "\1",@' $< | sed 's/"UUID_/&KEY_/'; \
+	  sed -E 's@(.*)=(.*) (trivial|complex) (.*)@\1_KEY: "\1",@' $< | sed 's/"UUID_/&KEY_/'; \
 	  echo '  }'; \
 	  echo '  if name, ok := names[t]; ok {'; \
 	  echo '    return name'; \

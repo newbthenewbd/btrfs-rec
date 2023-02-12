@@ -8,16 +8,21 @@ import (
 	"fmt"
 	"reflect"
 
+	"git.lukeshu.com/go/typedsync"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 type Type = btrfsprim.ItemType
 
 type Item interface {
 	isItem()
+	Free()
+	CloneItem() Item
 }
 
 type Error struct {
@@ -25,7 +30,22 @@ type Error struct {
 	Err error
 }
 
-func (Error) isItem() {}
+var errorPool = &typedsync.Pool[*Error]{New: func() *Error { return new(Error) }}
+
+func (*Error) isItem() {}
+
+func (o *Error) Free() {
+	*o = Error{}
+	errorPool.Put(o)
+}
+
+func (o Error) Clone() Error { return o }
+
+func (o *Error) CloneItem() Item {
+	ret, _ := errorPool.Get()
+	*ret = *o
+	return ret
+}
 
 func (o Error) MarshalBinary() ([]byte, error) {
 	return o.Dat, nil
@@ -43,41 +63,58 @@ func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) It
 		var ok bool
 		gotyp, ok = untypedObjID2gotype[key.ObjectID]
 		if !ok {
-			return Error{
+			ret, _ := errorPool.Get()
+			*ret = Error{
 				Dat: dat,
 				Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v, ObjectID:%v}, dat): unknown object ID for untyped item",
 					key.ItemType, key.ObjectID),
 			}
+			return ret
 		}
 	} else {
 		var ok bool
 		gotyp, ok = keytype2gotype[key.ItemType]
 		if !ok {
-			return Error{
+			ret, _ := errorPool.Get()
+			*ret = Error{
 				Dat: dat,
 				Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): unknown item type", key.ItemType),
 			}
+			return ret
 		}
 	}
-	retPtr := reflect.New(gotyp)
-	if csums, ok := retPtr.Interface().(*ExtentCSum); ok {
+	ptr, _ := gotype2pool[gotyp].Get()
+	if csums, ok := ptr.(*ExtentCSum); ok {
 		csums.ChecksumSize = csumType.Size()
 		csums.Addr = btrfsvol.LogicalAddr(key.Offset)
 	}
-	n, err := binstruct.Unmarshal(dat, retPtr.Interface())
+	n, err := binstruct.Unmarshal(dat, ptr)
 	if err != nil {
-		return Error{
+		ptr.Free()
+		ret, _ := errorPool.Get()
+		*ret = Error{
 			Dat: dat,
 			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): %w", key.ItemType, err),
 		}
+		return ret
 	}
 	if n < len(dat) {
-		return Error{
+		ptr.Free()
+		ret, _ := errorPool.Get()
+		*ret = Error{
 			Dat: dat,
 			Err: fmt.Errorf("btrfsitem.UnmarshalItem({ItemType:%v}, dat): left over data: got %v bytes but only consumed %v",
 				key.ItemType, len(dat), n),
 		}
+		return ret
 	}
-	//nolint:forcetypeassert // items_gen.go has all types in keytype2gotype implement the Item interface.
-	return retPtr.Elem().Interface().(Item)
+	return ptr
+}
+
+var bytePool containers.SlicePool[byte]
+
+func cloneBytes(in []byte) []byte {
+	out := bytePool.Get(len(in))
+	copy(out, in)
+	return out
 }

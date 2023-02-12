@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -9,6 +9,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct/binutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 // key.objectid = inode number of the file
@@ -16,10 +17,37 @@ import (
 //
 // Might have multiple entries if the same file has multiple hardlinks
 // in the same directory.
-type InodeRefs []InodeRef // INODE_REF=12
+type InodeRefs struct { // complex INODE_REF=12
+	Refs []InodeRef
+}
+
+var inodeRefPool containers.SlicePool[InodeRef]
+
+func (o *InodeRefs) Free() {
+	for i := range o.Refs {
+		bytePool.Put(o.Refs[i].Name)
+		o.Refs[i] = InodeRef{}
+	}
+	inodeRefPool.Put(o.Refs)
+	*o = InodeRefs{}
+	inodeRefsPool.Put(o)
+}
+
+func (o InodeRefs) Clone() InodeRefs {
+	var ret InodeRefs
+	ret.Refs = inodeRefPool.Get(len(o.Refs))
+	copy(ret.Refs, o.Refs)
+	for i := range ret.Refs {
+		ret.Refs[i].Name = cloneBytes(o.Refs[i].Name)
+	}
+	return ret
+}
 
 func (o *InodeRefs) UnmarshalBinary(dat []byte) (int, error) {
-	*o = nil
+	o.Refs = nil
+	if len(dat) > 0 {
+		o.Refs = inodeRefPool.Get(1)[:0]
+	}
 	n := 0
 	for n < len(dat) {
 		var ref InodeRef
@@ -28,14 +56,14 @@ func (o *InodeRefs) UnmarshalBinary(dat []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		*o = append(*o, ref)
+		o.Refs = append(o.Refs, ref)
 	}
 	return n, nil
 }
 
 func (o InodeRefs) MarshalBinary() ([]byte, error) {
 	var dat []byte
-	for _, ref := range o {
+	for _, ref := range o.Refs {
 		_dat, err := binstruct.Marshal(ref)
 		dat = append(dat, _dat...)
 		if err != nil {
@@ -68,7 +96,7 @@ func (o *InodeRef) UnmarshalBinary(dat []byte) (int, error) {
 		return 0, err
 	}
 	dat = dat[n:]
-	o.Name = dat[:o.NameLen]
+	o.Name = cloneBytes(dat[:o.NameLen])
 	n += int(o.NameLen)
 	return n, nil
 }

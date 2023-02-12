@@ -34,7 +34,7 @@ const QGroupStatusVersion uint64 = 1
 
 // key.objectid = 0
 // key.offset = 0
-type QGroupStatus struct { // QGROUP_STATUS=240
+type QGroupStatus struct { // trivial QGROUP_STATUS=240
 	Version        uint64               `bin:"off=0, siz=8"`
 	Generation     btrfsprim.Generation `bin:"off=8, siz=8"`
 	Flags          QGroupStatusFlags    `bin:"off=16, siz=8"`

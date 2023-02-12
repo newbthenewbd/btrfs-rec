@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -19,12 +19,23 @@ import (
 //	               ROOT_REF                   | ROOT_BACKREF
 //	key.objectid = ID of the parent subvolume | ID of the child subvolume
 //	key.offset   = ID of the child subvolume  | ID of the parent subvolume
-type RootRef struct { // ROOT_REF=156 ROOT_BACKREF=144
+type RootRef struct { // complex ROOT_REF=156 ROOT_BACKREF=144
 	DirID         btrfsprim.ObjID `bin:"off=0x00, siz=0x8"` // inode of the parent directory of the dir entry
 	Sequence      int64           `bin:"off=0x08, siz=0x8"` // index of that dir entry within the parent
 	NameLen       uint16          `bin:"off=0x10, siz=0x2"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0x12"`
 	Name          []byte `bin:"-"`
+}
+
+func (o *RootRef) Free() {
+	bytePool.Put(o.Name)
+	*o = RootRef{}
+	rootRefPool.Put(o)
+}
+
+func (o RootRef) Clone() RootRef {
+	o.Name = cloneBytes(o.Name)
+	return o
 }
 
 func (o *RootRef) UnmarshalBinary(dat []byte) (int, error) {
@@ -42,7 +53,7 @@ func (o *RootRef) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 0x12+int(o.NameLen)); err != nil {
 		return 0, err
 	}
-	o.Name = dat[n : n+int(o.NameLen)]
+	o.Name = cloneBytes(dat[n : n+int(o.NameLen)])
 	n += int(o.NameLen)
 	return n, nil
 }

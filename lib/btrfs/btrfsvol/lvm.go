@@ -345,21 +345,23 @@ func (lv *LogicalVolume[PhysicalVolume]) maybeShortReadAt(dat []byte, laddr Logi
 		dat = dat[:maxlen]
 	}
 
-	buf := make([]byte, len(dat))
+	buf := dat
 	first := true
 	for paddr := range paddrs {
 		dev, ok := lv.id2pv[paddr.Dev]
 		if !ok {
 			return 0, fmt.Errorf("device=%v does not exist", paddr.Dev)
 		}
+		if !first {
+			buf = make([]byte, len(buf))
+		}
 		if _, err := dev.ReadAt(buf, paddr.Addr); err != nil {
 			return 0, fmt.Errorf("read device=%v paddr=%v: %w", paddr.Dev, paddr.Addr, err)
 		}
-		if first {
-			copy(dat, buf)
-		} else if !bytes.Equal(dat, buf) {
+		if !first && !bytes.Equal(dat, buf) {
 			return 0, fmt.Errorf("inconsistent stripes at laddr=%v len=%v", laddr, len(dat))
 		}
+		first = false
 	}
 	return len(dat), nil
 }

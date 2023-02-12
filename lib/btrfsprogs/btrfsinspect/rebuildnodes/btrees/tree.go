@@ -49,7 +49,7 @@ type RebuiltTree struct {
 // leafToRoots returns all leafs (lvl=0) in the filesystem that pass
 // .isOwnerOK, whether or not they're in the tree.
 func (tree *RebuiltTree) leafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
-	return tree.forrest.leafs.GetOrElse(tree.ID, func() map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+	return containers.LoadOrElse[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](&tree.forrest.leafs, tree.ID, func(btrfsprim.ObjID) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
 		ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
 
 		nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
@@ -139,7 +139,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.incItems, tree.Roots.HasAny)
+	return tree.items(ctx, &tree.forrest.incItems, tree.Roots.HasAny)
 }
 
 // PotentialItems returns a map of items that could be added to this
@@ -149,7 +149,7 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.forrest.excItems,
+	return tree.items(ctx, &tree.forrest.excItems,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
 			return !tree.Roots.HasAny(roots)
 		})
@@ -168,13 +168,13 @@ func (s itemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, cache *containers.LRUCache[btrfsprim.ObjID, *itemIndex],
+func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfsprim.ObjID, *itemIndex],
 	leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool,
 ) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
-	return cache.GetOrElse(tree.ID, func() *itemIndex {
+	return containers.LoadOrElse(cache, tree.ID, func(btrfsprim.ObjID) *itemIndex {
 		var leafs []btrfsvol.LogicalAddr
 		for leaf, roots := range tree.leafToRoots(ctx) {
 			if leafFn(roots) {
@@ -298,8 +298,8 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	progressWriter.Done()
 
 	tree.Roots.Insert(rootNode)
-	tree.forrest.incItems.Remove(tree.ID) // force re-gen
-	tree.forrest.excItems.Remove(tree.ID) // force re-gen
+	tree.forrest.incItems.Delete(tree.ID) // force re-gen
+	tree.forrest.excItems.Delete(tree.ID) // force re-gen
 
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
 		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {

@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -81,7 +81,7 @@ func (sb Superblock) CalculateChecksum() (btrfssum.CSum, error) {
 	if err != nil {
 		return btrfssum.CSum{}, err
 	}
-	return sb.ChecksumType.Sum(data[binstruct.StaticSize(btrfssum.CSum{}):])
+	return sb.ChecksumType.Sum(data[csumSize:])
 }
 
 func (sb Superblock) ValidateChecksum() error {

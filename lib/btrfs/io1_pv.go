@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -28,11 +28,13 @@ var SuperblockAddrs = []btrfsvol.PhysicalAddr{
 	0x40_0000_0000, // 256GiB
 }
 
+var superblockSize = binstruct.StaticSize(btrfstree.Superblock{})
+
 func (dev *Device) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock], error) {
 	if dev.cacheSuperblocks != nil {
 		return dev.cacheSuperblocks, nil
 	}
-	superblockSize := btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfstree.Superblock{}))
+	superblockSize := btrfsvol.PhysicalAddr(superblockSize)
 
 	sz := dev.Size()
 

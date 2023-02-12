@@ -21,6 +21,7 @@ lint: tools/bin/golangci-lint
 generate/files  = LICENSE.gpl-2.0.txt
 generate/files += LICENSE.gpl-3.0.txt
 generate/files += LICENSE.apache-2.0.txt
+generate/files += LICENSE.mpl-2.0.txt
 
 generate: generate-clean
 	$(MAKE) -C lib/btrfs
@@ -38,6 +39,8 @@ LICENSE.gpl-3.0.txt:
 	curl https://www.gnu.org/licenses/gpl-3.0.txt > $@
 LICENSE.apache-2.0.txt:
 	curl https://apache.org/licenses/LICENSE-2.0.txt > $@
+LICENSE.mpl-2.0.txt:
+	curl https://www.mozilla.org/media/MPL/2.0/index.48a3fe23ed13.txt > $@
 
 # tools
 
@@ -54,7 +57,7 @@ go-mod-tidy:
 go-mod-tidy: go-mod-tidy/main
 go-mod-tidy/main:
 	rm -f go.sum
-	go mod tidy -go $(goversion) -compat $(goversion)
+	go mod tidy -go 1.20 -compat $(goversion)
 .PHONY: go-mod-tidy/main
 
 go-mod-tidy: $(patsubst tools/src/%/go.mod,go-mod-tidy/tools/%,$(wildcard tools/src/*/go.mod))
