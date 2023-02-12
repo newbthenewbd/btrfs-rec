@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
@@ -104,7 +103,7 @@ func (path TreePath) String() string {
 		return "(empty-path)"
 	} else {
 		var ret strings.Builder
-		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsitem.ROOT_ITEM_KEY))
+		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
 		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemIdx: -1}) {
 			ret.WriteString("(empty-path)")
 		} else {

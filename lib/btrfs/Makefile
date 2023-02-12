@@ -77,16 +77,13 @@ btrfsprim/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'import "fmt"'; \
 	  echo 'type ItemType uint8'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=([^:]*)(:.*)? (trivial|complex) (.*),\1_KEY=ItemType(\2),' $< | uniq; \
+	  sed -E 's,(.*)=([^:]*)(:.*)? (trivial|complex) (.*),\1_KEY ItemType=\2,' $< | uniq; \
 	  echo ')'; \
 	  echo 'func (t ItemType) String() string {'; \
-	  echo '  names := map[ItemType]string{'; \
-	  sed -E 's@(.*)=(.*) (trivial|complex) (.*)@\1_KEY: "\1",@' $< | sed 's/"UUID_/&KEY_/'; \
+	  echo '  switch t {'; \
+	  sed -E 's@(.*)=(.*) (trivial|complex) (.*)@case \1_KEY: return "\1"@' $< | sed 's/"UUID_/&KEY_/'; \
+	  echo '  default: return fmt.Sprintf("%d", t)'; \
 	  echo '  }'; \
-	  echo '  if name, ok := names[t]; ok {'; \
-	  echo '    return name'; \
-	  echo '  }'; \
-	  echo '  return fmt.Sprintf("%d", t)'; \
 	  echo '}'; \
 	} | gofmt >$@
 files += btrfsprim/itemtype.go

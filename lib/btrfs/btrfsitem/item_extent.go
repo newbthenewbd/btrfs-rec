@@ -111,7 +111,7 @@ type TreeBlockInfo struct {
 type ExtentFlags uint64
 
 const (
-	EXTENT_FLAG_DATA = ExtentFlags(1 << iota)
+	EXTENT_FLAG_DATA ExtentFlags = 1 << iota
 	EXTENT_FLAG_TREE_BLOCK
 )
 

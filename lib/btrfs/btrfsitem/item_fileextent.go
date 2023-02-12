@@ -101,10 +101,16 @@ func (o FileExtent) MarshalBinary() ([]byte, error) {
 type FileExtentType uint8
 
 const (
-	FILE_EXTENT_INLINE = FileExtentType(iota)
+	FILE_EXTENT_INLINE FileExtentType = iota
 	FILE_EXTENT_REG
 	FILE_EXTENT_PREALLOC
 )
+
+var fileExtentTypeNames = []string{
+	"inline",
+	"regular",
+	"prealloc",
+}
 
 func (o FileExtent) Size() (int64, error) {
 	switch o.Type {
@@ -118,14 +124,9 @@ func (o FileExtent) Size() (int64, error) {
 }
 
 func (fet FileExtentType) String() string {
-	names := map[FileExtentType]string{
-		FILE_EXTENT_INLINE:   "inline",
-		FILE_EXTENT_REG:      "regular",
-		FILE_EXTENT_PREALLOC: "prealloc",
-	}
-	name, ok := names[fet]
-	if !ok {
-		name = "unknown"
+	name := "unknown"
+	if int(fet) < len(fileExtentTypeNames) {
+		name = fileExtentTypeNames[fet]
 	}
 	return fmt.Sprintf("%d (%s)", fet, name)
 }
@@ -133,22 +134,23 @@ func (fet FileExtentType) String() string {
 type CompressionType uint8
 
 const (
-	COMPRESS_NONE = CompressionType(iota)
+	COMPRESS_NONE CompressionType = iota
 	COMPRESS_ZLIB
 	COMPRESS_LZO
 	COMPRESS_ZSTD
 )
 
+var compressionTypeNames = []string{
+	"none",
+	"zlib",
+	"lzo",
+	"zstd",
+}
+
 func (ct CompressionType) String() string {
-	names := map[CompressionType]string{
-		COMPRESS_NONE: "none",
-		COMPRESS_ZLIB: "zlib",
-		COMPRESS_LZO:  "lzo",
-		COMPRESS_ZSTD: "zstd",
-	}
-	name, ok := names[ct]
-	if !ok {
-		name = "unknown"
+	name := "unknown"
+	if int(ct) < len(compressionTypeNames) {
+		name = compressionTypeNames[ct]
 	}
 	return fmt.Sprintf("%d (%s)", ct, name)
 }

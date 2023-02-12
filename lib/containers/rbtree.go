@@ -12,8 +12,8 @@ import (
 type Color bool
 
 const (
-	Black = Color(false)
-	Red   = Color(true)
+	Black Color = false
+	Red   Color = true
 )
 
 type RBNode[T Ordered[T]] struct {

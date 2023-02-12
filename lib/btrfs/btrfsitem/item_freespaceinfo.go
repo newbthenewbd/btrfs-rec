@@ -20,7 +20,7 @@ type FreeSpaceInfo struct { // trivial FREE_SPACE_INFO=198
 type FreeSpaceFlags uint32
 
 const (
-	FREE_SPACE_USING_BITMAPS = FreeSpaceFlags(1 << iota)
+	FREE_SPACE_USING_BITMAPS FreeSpaceFlags = 1 << iota
 )
 
 var freeSpaceFlagNames = []string{
