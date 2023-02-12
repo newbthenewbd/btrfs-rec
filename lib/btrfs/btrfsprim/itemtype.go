@@ -25,7 +25,10 @@ const (
 	METADATA_ITEM_KEY        = ItemType(169)
 	ORPHAN_ITEM_KEY          = ItemType(48)
 	PERSISTENT_ITEM_KEY      = ItemType(249)
+	QGROUP_INFO_KEY          = ItemType(242)
+	QGROUP_LIMIT_KEY         = ItemType(244)
 	QGROUP_RELATION_KEY      = ItemType(246)
+	QGROUP_STATUS_KEY        = ItemType(240)
 	ROOT_BACKREF_KEY         = ItemType(144)
 	ROOT_ITEM_KEY            = ItemType(132)
 	ROOT_REF_KEY             = ItemType(156)
@@ -58,7 +61,10 @@ func (t ItemType) String() string {
 		METADATA_ITEM_KEY:        "METADATA_ITEM",
 		ORPHAN_ITEM_KEY:          "ORPHAN_ITEM",
 		PERSISTENT_ITEM_KEY:      "PERSISTENT_ITEM",
+		QGROUP_INFO_KEY:          "QGROUP_INFO",
+		QGROUP_LIMIT_KEY:         "QGROUP_LIMIT",
 		QGROUP_RELATION_KEY:      "QGROUP_RELATION",
+		QGROUP_STATUS_KEY:        "QGROUP_STATUS",
 		ROOT_BACKREF_KEY:         "ROOT_BACKREF",
 		ROOT_ITEM_KEY:            "ROOT_ITEM",
 		ROOT_REF_KEY:             "ROOT_REF",

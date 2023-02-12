@@ -27,7 +27,10 @@ const (
 	METADATA_ITEM_KEY        = btrfsprim.METADATA_ITEM_KEY
 	ORPHAN_ITEM_KEY          = btrfsprim.ORPHAN_ITEM_KEY
 	PERSISTENT_ITEM_KEY      = btrfsprim.PERSISTENT_ITEM_KEY
+	QGROUP_INFO_KEY          = btrfsprim.QGROUP_INFO_KEY
+	QGROUP_LIMIT_KEY         = btrfsprim.QGROUP_LIMIT_KEY
 	QGROUP_RELATION_KEY      = btrfsprim.QGROUP_RELATION_KEY
+	QGROUP_STATUS_KEY        = btrfsprim.QGROUP_STATUS_KEY
 	ROOT_BACKREF_KEY         = btrfsprim.ROOT_BACKREF_KEY
 	ROOT_ITEM_KEY            = btrfsprim.ROOT_ITEM_KEY
 	ROOT_REF_KEY             = btrfsprim.ROOT_REF_KEY
@@ -59,7 +62,10 @@ var keytype2gotype = map[Type]reflect.Type{
 	METADATA_ITEM_KEY:        reflect.TypeOf(Metadata{}),
 	ORPHAN_ITEM_KEY:          reflect.TypeOf(Empty{}),
 	PERSISTENT_ITEM_KEY:      reflect.TypeOf(DevStats{}),
+	QGROUP_INFO_KEY:          reflect.TypeOf(QGroupInfo{}),
+	QGROUP_LIMIT_KEY:         reflect.TypeOf(QGroupLimit{}),
 	QGROUP_RELATION_KEY:      reflect.TypeOf(Empty{}),
+	QGROUP_STATUS_KEY:        reflect.TypeOf(QGroupStatus{}),
 	ROOT_BACKREF_KEY:         reflect.TypeOf(RootRef{}),
 	ROOT_ITEM_KEY:            reflect.TypeOf(Root{}),
 	ROOT_REF_KEY:             reflect.TypeOf(RootRef{}),
@@ -91,6 +97,9 @@ func (FreeSpaceInfo) isItem()   {}
 func (Inode) isItem()           {}
 func (InodeRefs) isItem()       {}
 func (Metadata) isItem()        {}
+func (QGroupInfo) isItem()      {}
+func (QGroupLimit) isItem()     {}
+func (QGroupStatus) isItem()    {}
 func (Root) isItem()            {}
 func (RootRef) isItem()         {}
 func (SharedDataRef) isItem()   {}
