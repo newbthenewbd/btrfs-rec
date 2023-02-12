@@ -49,10 +49,10 @@ func (o *DirEntry) UnmarshalBinary(dat []byte) (int, error) {
 	if err := binutil.NeedNBytes(dat, 0x1e+int(o.DataLen)+int(o.NameLen)); err != nil {
 		return 0, err
 	}
-	o.Data = dat[n : n+int(o.DataLen)]
-	n += int(o.DataLen)
 	o.Name = dat[n : n+int(o.NameLen)]
 	n += int(o.NameLen)
+	o.Data = dat[n : n+int(o.DataLen)]
+	n += int(o.DataLen)
 	return n, nil
 }
 
@@ -63,8 +63,8 @@ func (o DirEntry) MarshalBinary() ([]byte, error) {
 	if err != nil {
 		return dat, err
 	}
-	dat = append(dat, o.Data...)
 	dat = append(dat, o.Name...)
+	dat = append(dat, o.Data...)
 	return dat, nil
 }
 
