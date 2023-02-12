@@ -22,8 +22,35 @@ type Key struct {
 	binstruct.End `bin:"off=0x11"`
 }
 
+// mimics print-tree.c:btrfs_print_key()
+func (key Key) Format(tree ObjID) string {
+	switch tree {
+	case UUID_TREE_OBJECTID:
+		return fmt.Sprintf("(%v %v %#08x)",
+			key.ObjectID.Format(tree),
+			key.ItemType,
+			key.Offset)
+	case ROOT_TREE_OBJECTID, QUOTA_TREE_OBJECTID:
+		return fmt.Sprintf("(%v %v %v)",
+			key.ObjectID.Format(tree),
+			key.ItemType,
+			ObjID(key.Offset).Format(tree))
+	default:
+		if key.Offset == math.MaxUint64 {
+			return fmt.Sprintf("(%v %v -1)",
+				key.ObjectID.Format(tree),
+				key.ItemType)
+		} else {
+			return fmt.Sprintf("(%v %v %v)",
+				key.ObjectID.Format(tree),
+				key.ItemType,
+				key.Offset)
+		}
+	}
+}
+
 func (key Key) String() string {
-	return fmt.Sprintf("{%v %v %v}", key.ObjectID, key.ItemType, key.Offset)
+	return key.Format(0)
 }
 
 var MaxKey = Key{

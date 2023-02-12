@@ -46,18 +46,17 @@ const (
 	FIRST_FREE_OBJECTID ObjID = 256
 	LAST_FREE_OBJECTID  ObjID = maxUint64pp - 256
 
-	FIRST_CHUNK_TREE_OBJECTID ObjID = 256
-
 	// Objects in the CHUNK_TREE
-	DEV_ITEMS_OBJECTID ObjID = 1
+	DEV_ITEMS_OBJECTID        ObjID = 1
+	FIRST_CHUNK_TREE_OBJECTID ObjID = 256
 
 	// ???
 	EMPTY_SUBVOL_DIR_OBJECTID ObjID = 2
 )
 
-func (id ObjID) Format(typ ItemType) string {
-	switch typ {
-	case PERSISTENT_ITEM_KEY:
+func (id ObjID) Format(tree ObjID) string {
+	switch tree {
+	case DEV_TREE_OBJECTID:
 		names := map[ObjID]string{
 			DEV_STATS_OBJECTID: "DEV_STATS",
 		}
@@ -65,16 +64,17 @@ func (id ObjID) Format(typ ItemType) string {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
-	case DEV_EXTENT_KEY:
-		return fmt.Sprintf("%d", int64(id))
-	case QGROUP_RELATION_KEY:
+	case QUOTA_TREE_OBJECTID:
+		if id == 0 {
+			return "0"
+		}
 		//nolint:gomnd // The left 48 bits are the "qgroup level", and the right 16 bits are the subvolume ID.
 		return fmt.Sprintf("%d/%d",
 			uint64(id)>>48,
 			uint64(id)&((1<<48)-1))
-	case UUID_SUBVOL_KEY, UUID_RECEIVED_SUBVOL_KEY:
+	case UUID_TREE_OBJECTID:
 		return fmt.Sprintf("%#016x", uint64(id))
-	case DEV_ITEM_KEY:
+	case CHUNK_TREE_OBJECTID:
 		names := map[ObjID]string{
 			BALANCE_OBJECTID:         "BALANCE",
 			ORPHAN_OBJECTID:          "ORPHAN",
@@ -87,25 +87,7 @@ func (id ObjID) Format(typ ItemType) string {
 			FREE_INO_OBJECTID:        "FREE_INO",
 			MULTIPLE_OBJECTIDS:       "MULTIPLE",
 
-			DEV_ITEMS_OBJECTID: "DEV_ITEMS",
-		}
-		if name, ok := names[id]; ok {
-			return name
-		}
-		return fmt.Sprintf("%d", int64(id))
-	case CHUNK_ITEM_KEY:
-		names := map[ObjID]string{
-			BALANCE_OBJECTID:         "BALANCE",
-			ORPHAN_OBJECTID:          "ORPHAN",
-			TREE_LOG_OBJECTID:        "TREE_LOG",
-			TREE_LOG_FIXUP_OBJECTID:  "TREE_LOG_FIXUP",
-			TREE_RELOC_OBJECTID:      "TREE_RELOC",
-			DATA_RELOC_TREE_OBJECTID: "DATA_RELOC_TREE",
-			EXTENT_CSUM_OBJECTID:     "EXTENT_CSUM",
-			FREE_SPACE_OBJECTID:      "FREE_SPACE",
-			FREE_INO_OBJECTID:        "FREE_INO",
-			MULTIPLE_OBJECTIDS:       "MULTIPLE",
-
+			DEV_ITEMS_OBJECTID:        "DEV_ITEMS",
 			FIRST_CHUNK_TREE_OBJECTID: "FIRST_CHUNK_TREE",
 		}
 		if name, ok := names[id]; ok {
@@ -145,5 +127,5 @@ func (id ObjID) Format(typ ItemType) string {
 }
 
 func (id ObjID) String() string {
-	return id.Format(UNTYPED_KEY)
+	return id.Format(0)
 }

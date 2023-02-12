@@ -7,8 +7,6 @@ package btrfsinspect
 import (
 	"context"
 	"io"
-	"math"
-	"strings"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -81,7 +79,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 				if !ok {
 					treeName = "file"
 				}
-				textui.Fprintf(out, "%v tree %v \n", treeName, fmtKey(item.Key))
+				textui.Fprintf(out, "%v tree key %v \n", treeName, item.Key.Format(btrfsprim.ROOT_TREE_OBJECTID))
 				printTree(ctx, out, fs, item.Key.ObjectID)
 				return nil
 			},
@@ -105,26 +103,28 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			itemOffset = nodeRef.Data.Size - uint32(nodeHeaderSize)
 			return nil
 		},
-		PreKeyPointer: func(_ btrfstree.TreePath, item btrfstree.KeyPointer) error {
-			textui.Fprintf(out, "\t%v block %v gen %v\n",
-				fmtKey(item.Key),
+		PreKeyPointer: func(path btrfstree.TreePath, item btrfstree.KeyPointer) error {
+			treeID := path[0].FromTree
+			textui.Fprintf(out, "\tkey %v block %v gen %v\n",
+				item.Key.Format(treeID),
 				item.BlockPtr,
 				item.Generation)
 			return nil
 		},
 		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+			treeID := path[0].FromTree
 			i := path.Node(-1).FromItemIdx
 			bs, _ := binstruct.Marshal(item.Body)
 			itemSize := uint32(len(bs))
 			itemOffset -= itemSize
-			textui.Fprintf(out, "\titem %v %v itemoff %v itemsize %v\n",
+			textui.Fprintf(out, "\titem %v key %v itemoff %v itemsize %v\n",
 				i,
-				fmtKey(item.Key),
+				item.Key.Format(treeID),
 				itemOffset,
 				itemSize)
 			switch body := item.Body.(type) {
 			case *btrfsitem.FreeSpaceHeader:
-				textui.Fprintf(out, "\t\tlocation %v\n", fmtKey(body.Location))
+				textui.Fprintf(out, "\t\tlocation key %v\n", body.Location.Format(treeID))
 				textui.Fprintf(out, "\t\tcache generation %v entries %v bitmaps %v\n",
 					body.Generation, body.NumEntries, body.NumBitmaps)
 			case *btrfsitem.Inode:
@@ -147,8 +147,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			// case btrfsitem.INODE_EXTREF_KEY:
 			// 	// TODO
 			case *btrfsitem.DirEntry:
-				textui.Fprintf(out, "\t\tlocation %v type %v\n",
-					fmtKey(body.Location), body.Type)
+				textui.Fprintf(out, "\t\tlocation key %v type %v\n",
+					body.Location.Format(treeID), body.Type)
 				textui.Fprintf(out, "\t\ttransid %v data_len %v name_len %v\n",
 					body.TransID, body.DataLen, body.NameLen)
 				textui.Fprintf(out, "\t\tname: %s\n", body.Name)
@@ -162,8 +162,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 					body.Generation, body.RootDirID, body.ByteNr, body.ByteLimit, body.BytesUsed)
 				textui.Fprintf(out, "\t\tlast_snapshot %v flags %v refs %v\n",
 					body.LastSnapshot, body.Flags, body.Refs)
-				textui.Fprintf(out, "\t\tdrop_progress %v drop_level %v\n",
-					fmtKey(body.DropProgress), body.DropLevel)
+				textui.Fprintf(out, "\t\tdrop_progress key %v drop_level %v\n",
+					body.DropProgress.Format(treeID), body.DropLevel)
 				textui.Fprintf(out, "\t\tlevel %v generation_v2 %v\n",
 					body.Level, body.GenerationV2)
 				if body.Generation == body.GenerationV2 {
@@ -193,8 +193,8 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				textui.Fprintf(out, "\t\trefs %v gen %v flags %v\n",
 					body.Head.Refs, body.Head.Generation, body.Head.Flags)
 				if body.Head.Flags.Has(btrfsitem.EXTENT_FLAG_TREE_BLOCK) {
-					textui.Fprintf(out, "\t\ttree block %v level %v\n",
-						fmtKey(body.Info.Key), body.Info.Level)
+					textui.Fprintf(out, "\t\ttree block key %v level %v\n",
+						body.Info.Key.Format(treeID), body.Info.Level)
 				}
 				printExtentInlineRefs(out, body.Refs)
 			case *btrfsitem.Metadata:
@@ -319,7 +319,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			// 	// TODO
 			case *btrfsitem.DevStats:
 				textui.Fprintf(out, "\t\tpersistent item objectid %v offset %v\n",
-					item.Key.ObjectID.Format(item.Key.ItemType), item.Key.Offset)
+					item.Key.ObjectID.Format(treeID), item.Key.Offset)
 				switch item.Key.ObjectID {
 				case btrfsprim.DEV_STATS_OBJECTID:
 					textui.Fprintf(out, "\t\tdevice stats\n")
@@ -435,27 +435,6 @@ func printExtentInlineRefs(out io.Writer, refs []btrfsitem.ExtentInlineRef) {
 			textui.Fprintf(out, "\t\t(error) unexpected sub-item type: %T\n", subitem)
 		}
 	}
-}
-
-// mimics print-tree.c:btrfs_print_key()
-func fmtKey(key btrfsprim.Key) string {
-	var out strings.Builder
-	textui.Fprintf(&out, "key (%v %v", key.ObjectID.Format(key.ItemType), key.ItemType)
-	switch key.ItemType {
-	case btrfsitem.QGROUP_RELATION_KEY, btrfsitem.QGROUP_INFO_KEY, btrfsitem.QGROUP_LIMIT_KEY:
-		textui.Fprintf(&out, " %v)", btrfsprim.ObjID(key.Offset).Format(btrfsprim.QGROUP_RELATION_KEY))
-	case btrfsitem.UUID_SUBVOL_KEY, btrfsitem.UUID_RECEIVED_SUBVOL_KEY:
-		textui.Fprintf(&out, " %#08x)", key.Offset)
-	case btrfsitem.ROOT_ITEM_KEY:
-		textui.Fprintf(&out, " %v)", btrfsprim.ObjID(key.Offset))
-	default:
-		if key.Offset == math.MaxUint64 {
-			textui.Fprintf(&out, " -1)")
-		} else {
-			textui.Fprintf(&out, " %v)", key.Offset)
-		}
-	}
-	return out.String()
 }
 
 func fmtTime(t btrfsprim.Time) string {
