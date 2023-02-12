@@ -52,7 +52,7 @@ func (csum CSum) Format(f fmt.State, verb rune) {
 type CSumType uint16
 
 const (
-	TYPE_CRC32 = CSumType(iota)
+	TYPE_CRC32 CSumType = iota
 	TYPE_XXHASH
 	TYPE_SHA256
 	TYPE_BLAKE2

@@ -12,7 +12,7 @@ import (
 type BitfieldFormat uint8
 
 const (
-	HexNone = BitfieldFormat(iota)
+	HexNone BitfieldFormat = iota
 	HexLower
 	HexUpper
 )

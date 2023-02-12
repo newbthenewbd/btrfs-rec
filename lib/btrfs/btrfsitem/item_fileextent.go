@@ -101,7 +101,7 @@ func (o FileExtent) MarshalBinary() ([]byte, error) {
 type FileExtentType uint8
 
 const (
-	FILE_EXTENT_INLINE = FileExtentType(iota)
+	FILE_EXTENT_INLINE FileExtentType = iota
 	FILE_EXTENT_REG
 	FILE_EXTENT_PREALLOC
 )
@@ -133,7 +133,7 @@ func (fet FileExtentType) String() string {
 type CompressionType uint8
 
 const (
-	COMPRESS_NONE = CompressionType(iota)
+	COMPRESS_NONE CompressionType = iota
 	COMPRESS_ZLIB
 	COMPRESS_LZO
 	COMPRESS_ZSTD

@@ -77,7 +77,7 @@ btrfsprim/itemtype.go: btrfsitem/items.txt $(MAKEFILE_LIST)
 	  echo 'import "fmt"'; \
 	  echo 'type ItemType uint8'; \
 	  echo 'const ('; \
-	  sed -E 's,(.*)=([^:]*)(:.*)? (trivial|complex) (.*),\1_KEY=ItemType(\2),' $< | uniq; \
+	  sed -E 's,(.*)=([^:]*)(:.*)? (trivial|complex) (.*),\1_KEY ItemType=\2,' $< | uniq; \
 	  echo ')'; \
 	  echo 'func (t ItemType) String() string {'; \
 	  echo '  names := map[ItemType]string{'; \

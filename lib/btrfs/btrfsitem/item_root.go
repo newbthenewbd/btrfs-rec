@@ -48,7 +48,7 @@ type Root struct { // trivial ROOT_ITEM=132
 type RootFlags uint64
 
 const (
-	ROOT_SUBVOL_RDONLY = RootFlags(1 << iota)
+	ROOT_SUBVOL_RDONLY RootFlags = 1 << iota
 )
 
 var rootFlagNames = []string{

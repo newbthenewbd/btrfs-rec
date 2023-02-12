@@ -58,7 +58,7 @@ var (
 )
 
 const (
-	NodeWritten = NodeFlags(1 << iota)
+	NodeWritten NodeFlags = 1 << iota
 	NodeReloc
 )
 
@@ -73,8 +73,8 @@ func (f NodeFlags) String() string         { return fmtutil.BitfieldString(f, no
 type BackrefRev uint8
 
 const (
-	OldBackrefRev   = BackrefRev(iota)
-	MixedBackrefRev = BackrefRev(iota)
+	OldBackrefRev BackrefRev = iota
+	MixedBackrefRev
 )
 
 // Node: main //////////////////////////////////////////////////////////////////////////////////////

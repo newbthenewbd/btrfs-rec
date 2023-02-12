@@ -7,38 +7,38 @@ import "fmt"
 type ItemType uint8
 
 const (
-	BLOCK_GROUP_ITEM_KEY     = ItemType(192)
-	CHUNK_ITEM_KEY           = ItemType(228)
-	DEV_EXTENT_KEY           = ItemType(204)
-	DEV_ITEM_KEY             = ItemType(216)
-	DIR_INDEX_KEY            = ItemType(96)
-	DIR_ITEM_KEY             = ItemType(84)
-	EXTENT_CSUM_KEY          = ItemType(128)
-	EXTENT_DATA_KEY          = ItemType(108)
-	EXTENT_DATA_REF_KEY      = ItemType(178)
-	EXTENT_ITEM_KEY          = ItemType(168)
-	FREE_SPACE_BITMAP_KEY    = ItemType(200)
-	FREE_SPACE_EXTENT_KEY    = ItemType(199)
-	FREE_SPACE_INFO_KEY      = ItemType(198)
-	INODE_ITEM_KEY           = ItemType(1)
-	INODE_REF_KEY            = ItemType(12)
-	METADATA_ITEM_KEY        = ItemType(169)
-	ORPHAN_ITEM_KEY          = ItemType(48)
-	PERSISTENT_ITEM_KEY      = ItemType(249)
-	QGROUP_INFO_KEY          = ItemType(242)
-	QGROUP_LIMIT_KEY         = ItemType(244)
-	QGROUP_RELATION_KEY      = ItemType(246)
-	QGROUP_STATUS_KEY        = ItemType(240)
-	ROOT_BACKREF_KEY         = ItemType(144)
-	ROOT_ITEM_KEY            = ItemType(132)
-	ROOT_REF_KEY             = ItemType(156)
-	SHARED_BLOCK_REF_KEY     = ItemType(182)
-	SHARED_DATA_REF_KEY      = ItemType(184)
-	TREE_BLOCK_REF_KEY       = ItemType(176)
-	UNTYPED_KEY              = ItemType(0)
-	UUID_RECEIVED_SUBVOL_KEY = ItemType(252)
-	UUID_SUBVOL_KEY          = ItemType(251)
-	XATTR_ITEM_KEY           = ItemType(24)
+	BLOCK_GROUP_ITEM_KEY     ItemType = 192
+	CHUNK_ITEM_KEY           ItemType = 228
+	DEV_EXTENT_KEY           ItemType = 204
+	DEV_ITEM_KEY             ItemType = 216
+	DIR_INDEX_KEY            ItemType = 96
+	DIR_ITEM_KEY             ItemType = 84
+	EXTENT_CSUM_KEY          ItemType = 128
+	EXTENT_DATA_KEY          ItemType = 108
+	EXTENT_DATA_REF_KEY      ItemType = 178
+	EXTENT_ITEM_KEY          ItemType = 168
+	FREE_SPACE_BITMAP_KEY    ItemType = 200
+	FREE_SPACE_EXTENT_KEY    ItemType = 199
+	FREE_SPACE_INFO_KEY      ItemType = 198
+	INODE_ITEM_KEY           ItemType = 1
+	INODE_REF_KEY            ItemType = 12
+	METADATA_ITEM_KEY        ItemType = 169
+	ORPHAN_ITEM_KEY          ItemType = 48
+	PERSISTENT_ITEM_KEY      ItemType = 249
+	QGROUP_INFO_KEY          ItemType = 242
+	QGROUP_LIMIT_KEY         ItemType = 244
+	QGROUP_RELATION_KEY      ItemType = 246
+	QGROUP_STATUS_KEY        ItemType = 240
+	ROOT_BACKREF_KEY         ItemType = 144
+	ROOT_ITEM_KEY            ItemType = 132
+	ROOT_REF_KEY             ItemType = 156
+	SHARED_BLOCK_REF_KEY     ItemType = 182
+	SHARED_DATA_REF_KEY      ItemType = 184
+	TREE_BLOCK_REF_KEY       ItemType = 176
+	UNTYPED_KEY              ItemType = 0
+	UUID_RECEIVED_SUBVOL_KEY ItemType = 252
+	UUID_SUBVOL_KEY          ItemType = 251
+	XATTR_ITEM_KEY           ItemType = 24
 )
 
 func (t ItemType) String() string {

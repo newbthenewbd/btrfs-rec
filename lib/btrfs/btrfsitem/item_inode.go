@@ -36,7 +36,7 @@ type Inode struct { // trivial INODE_ITEM=1
 type InodeFlags uint64
 
 const (
-	INODE_NODATASUM = InodeFlags(1 << iota)
+	INODE_NODATASUM InodeFlags = 1 << iota
 	INODE_NODATACOW
 	INODE_READONLY
 	INODE_NOCOMPRESS

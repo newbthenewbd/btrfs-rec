@@ -11,7 +11,7 @@ import (
 type BlockGroupFlags uint64
 
 const (
-	BLOCK_GROUP_DATA = BlockGroupFlags(1 << iota)
+	BLOCK_GROUP_DATA BlockGroupFlags = 1 << iota
 	BLOCK_GROUP_SYSTEM
 	BLOCK_GROUP_METADATA
 	BLOCK_GROUP_RAID0

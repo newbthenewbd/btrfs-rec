@@ -199,7 +199,7 @@ type RootBackup struct {
 type IncompatFlags uint64
 
 const (
-	FeatureIncompatMixedBackref = IncompatFlags(1 << iota)
+	FeatureIncompatMixedBackref IncompatFlags = 1 << iota
 	FeatureIncompatDefaultSubvol
 	FeatureIncompatMixedGroups
 	FeatureIncompatCompressLZO

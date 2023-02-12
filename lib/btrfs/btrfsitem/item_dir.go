@@ -84,17 +84,17 @@ func (o DirEntry) MarshalBinary() ([]byte, error) {
 type FileType uint8
 
 const (
-	FT_UNKNOWN  = FileType(0)
-	FT_REG_FILE = FileType(1)
-	FT_DIR      = FileType(2)
-	FT_CHRDEV   = FileType(3)
-	FT_BLKDEV   = FileType(4)
-	FT_FIFO     = FileType(5)
-	FT_SOCK     = FileType(6)
-	FT_SYMLINK  = FileType(7)
-	FT_XATTR    = FileType(8)
+	FT_UNKNOWN  FileType = 0
+	FT_REG_FILE FileType = 1
+	FT_DIR      FileType = 2
+	FT_CHRDEV   FileType = 3
+	FT_BLKDEV   FileType = 4
+	FT_FIFO     FileType = 5
+	FT_SOCK     FileType = 6
+	FT_SYMLINK  FileType = 7
+	FT_XATTR    FileType = 8
 
-	FT_MAX = FileType(9)
+	FT_MAX FileType = 9
 )
 
 func (ft FileType) String() string {
