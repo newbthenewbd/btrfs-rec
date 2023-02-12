@@ -106,6 +106,12 @@ const (
 	FILE_EXTENT_PREALLOC
 )
 
+var fileExtentTypeNames = []string{
+	"inline",
+	"regular",
+	"prealloc",
+}
+
 func (o FileExtent) Size() (int64, error) {
 	switch o.Type {
 	case FILE_EXTENT_INLINE:
@@ -118,14 +124,9 @@ func (o FileExtent) Size() (int64, error) {
 }
 
 func (fet FileExtentType) String() string {
-	names := map[FileExtentType]string{
-		FILE_EXTENT_INLINE:   "inline",
-		FILE_EXTENT_REG:      "regular",
-		FILE_EXTENT_PREALLOC: "prealloc",
-	}
-	name, ok := names[fet]
-	if !ok {
-		name = "unknown"
+	name := "unknown"
+	if int(fet) < len(fileExtentTypeNames) {
+		name = fileExtentTypeNames[fet]
 	}
 	return fmt.Sprintf("%d (%s)", fet, name)
 }
@@ -139,16 +140,17 @@ const (
 	COMPRESS_ZSTD
 )
 
+var compressionTypeNames = []string{
+	"none",
+	"zlib",
+	"lzo",
+	"zstd",
+}
+
 func (ct CompressionType) String() string {
-	names := map[CompressionType]string{
-		COMPRESS_NONE: "none",
-		COMPRESS_ZLIB: "zlib",
-		COMPRESS_LZO:  "lzo",
-		COMPRESS_ZSTD: "zstd",
-	}
-	name, ok := names[ct]
-	if !ok {
-		name = "unknown"
+	name := "unknown"
+	if int(ct) < len(compressionTypeNames) {
+		name = compressionTypeNames[ct]
 	}
 	return fmt.Sprintf("%d (%s)", ct, name)
 }

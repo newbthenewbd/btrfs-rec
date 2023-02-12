@@ -42,42 +42,72 @@ const (
 )
 
 func (t ItemType) String() string {
-	names := map[ItemType]string{
-		BLOCK_GROUP_ITEM_KEY:     "BLOCK_GROUP_ITEM",
-		CHUNK_ITEM_KEY:           "CHUNK_ITEM",
-		DEV_EXTENT_KEY:           "DEV_EXTENT",
-		DEV_ITEM_KEY:             "DEV_ITEM",
-		DIR_INDEX_KEY:            "DIR_INDEX",
-		DIR_ITEM_KEY:             "DIR_ITEM",
-		EXTENT_CSUM_KEY:          "EXTENT_CSUM",
-		EXTENT_DATA_KEY:          "EXTENT_DATA",
-		EXTENT_DATA_REF_KEY:      "EXTENT_DATA_REF",
-		EXTENT_ITEM_KEY:          "EXTENT_ITEM",
-		FREE_SPACE_BITMAP_KEY:    "FREE_SPACE_BITMAP",
-		FREE_SPACE_EXTENT_KEY:    "FREE_SPACE_EXTENT",
-		FREE_SPACE_INFO_KEY:      "FREE_SPACE_INFO",
-		INODE_ITEM_KEY:           "INODE_ITEM",
-		INODE_REF_KEY:            "INODE_REF",
-		METADATA_ITEM_KEY:        "METADATA_ITEM",
-		ORPHAN_ITEM_KEY:          "ORPHAN_ITEM",
-		PERSISTENT_ITEM_KEY:      "PERSISTENT_ITEM",
-		QGROUP_INFO_KEY:          "QGROUP_INFO",
-		QGROUP_LIMIT_KEY:         "QGROUP_LIMIT",
-		QGROUP_RELATION_KEY:      "QGROUP_RELATION",
-		QGROUP_STATUS_KEY:        "QGROUP_STATUS",
-		ROOT_BACKREF_KEY:         "ROOT_BACKREF",
-		ROOT_ITEM_KEY:            "ROOT_ITEM",
-		ROOT_REF_KEY:             "ROOT_REF",
-		SHARED_BLOCK_REF_KEY:     "SHARED_BLOCK_REF",
-		SHARED_DATA_REF_KEY:      "SHARED_DATA_REF",
-		TREE_BLOCK_REF_KEY:       "TREE_BLOCK_REF",
-		UNTYPED_KEY:              "UNTYPED",
-		UUID_RECEIVED_SUBVOL_KEY: "UUID_KEY_RECEIVED_SUBVOL",
-		UUID_SUBVOL_KEY:          "UUID_KEY_SUBVOL",
-		XATTR_ITEM_KEY:           "XATTR_ITEM",
+	switch t {
+	case BLOCK_GROUP_ITEM_KEY:
+		return "BLOCK_GROUP_ITEM"
+	case CHUNK_ITEM_KEY:
+		return "CHUNK_ITEM"
+	case DEV_EXTENT_KEY:
+		return "DEV_EXTENT"
+	case DEV_ITEM_KEY:
+		return "DEV_ITEM"
+	case DIR_INDEX_KEY:
+		return "DIR_INDEX"
+	case DIR_ITEM_KEY:
+		return "DIR_ITEM"
+	case EXTENT_CSUM_KEY:
+		return "EXTENT_CSUM"
+	case EXTENT_DATA_KEY:
+		return "EXTENT_DATA"
+	case EXTENT_DATA_REF_KEY:
+		return "EXTENT_DATA_REF"
+	case EXTENT_ITEM_KEY:
+		return "EXTENT_ITEM"
+	case FREE_SPACE_BITMAP_KEY:
+		return "FREE_SPACE_BITMAP"
+	case FREE_SPACE_EXTENT_KEY:
+		return "FREE_SPACE_EXTENT"
+	case FREE_SPACE_INFO_KEY:
+		return "FREE_SPACE_INFO"
+	case INODE_ITEM_KEY:
+		return "INODE_ITEM"
+	case INODE_REF_KEY:
+		return "INODE_REF"
+	case METADATA_ITEM_KEY:
+		return "METADATA_ITEM"
+	case ORPHAN_ITEM_KEY:
+		return "ORPHAN_ITEM"
+	case PERSISTENT_ITEM_KEY:
+		return "PERSISTENT_ITEM"
+	case QGROUP_INFO_KEY:
+		return "QGROUP_INFO"
+	case QGROUP_LIMIT_KEY:
+		return "QGROUP_LIMIT"
+	case QGROUP_RELATION_KEY:
+		return "QGROUP_RELATION"
+	case QGROUP_STATUS_KEY:
+		return "QGROUP_STATUS"
+	case ROOT_BACKREF_KEY:
+		return "ROOT_BACKREF"
+	case ROOT_ITEM_KEY:
+		return "ROOT_ITEM"
+	case ROOT_REF_KEY:
+		return "ROOT_REF"
+	case SHARED_BLOCK_REF_KEY:
+		return "SHARED_BLOCK_REF"
+	case SHARED_DATA_REF_KEY:
+		return "SHARED_DATA_REF"
+	case TREE_BLOCK_REF_KEY:
+		return "TREE_BLOCK_REF"
+	case UNTYPED_KEY:
+		return "UNTYPED"
+	case UUID_RECEIVED_SUBVOL_KEY:
+		return "UUID_KEY_RECEIVED_SUBVOL"
+	case UUID_SUBVOL_KEY:
+		return "UUID_KEY_SUBVOL"
+	case XATTR_ITEM_KEY:
+		return "XATTR_ITEM"
+	default:
+		return fmt.Sprintf("%d", t)
 	}
-	if name, ok := names[t]; ok {
-		return name
-	}
-	return fmt.Sprintf("%d", t)
 }

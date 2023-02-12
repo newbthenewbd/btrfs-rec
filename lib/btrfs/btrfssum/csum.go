@@ -58,29 +58,30 @@ const (
 	TYPE_BLAKE2
 )
 
+var csumTypeNames = []string{
+	"crc32c",
+	"xxhash64",
+	"sha256",
+	"blake2",
+}
+
+var csumTypeSizes = []int{
+	4,
+	8,
+	32,
+	32,
+}
+
 func (typ CSumType) String() string {
-	names := map[CSumType]string{
-		TYPE_CRC32:  "crc32c",
-		TYPE_XXHASH: "xxhash64",
-		TYPE_SHA256: "sha256",
-		TYPE_BLAKE2: "blake2",
-	}
-	if name, ok := names[typ]; ok {
-		return name
+	if int(typ) < len(csumTypeNames) {
+		return csumTypeNames[typ]
 	}
 	return fmt.Sprintf("%d", typ)
 }
 
 func (typ CSumType) Size() int {
-	//nolint:gomnd // This is where we define the magic numbers.
-	sizes := map[CSumType]int{
-		TYPE_CRC32:  4,
-		TYPE_XXHASH: 8,
-		TYPE_SHA256: 32,
-		TYPE_BLAKE2: 32,
-	}
-	if size, ok := sizes[typ]; ok {
-		return size
+	if int(typ) < len(csumTypeSizes) {
+		return csumTypeSizes[typ]
 	}
 	return len(CSum{})
 }

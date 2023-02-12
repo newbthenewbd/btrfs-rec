@@ -84,33 +84,34 @@ func (o DirEntry) MarshalBinary() ([]byte, error) {
 type FileType uint8
 
 const (
-	FT_UNKNOWN  FileType = 0
-	FT_REG_FILE FileType = 1
-	FT_DIR      FileType = 2
-	FT_CHRDEV   FileType = 3
-	FT_BLKDEV   FileType = 4
-	FT_FIFO     FileType = 5
-	FT_SOCK     FileType = 6
-	FT_SYMLINK  FileType = 7
-	FT_XATTR    FileType = 8
+	FT_UNKNOWN FileType = iota
+	FT_REG_FILE
+	FT_DIR
+	FT_CHRDEV
+	FT_BLKDEV
+	FT_FIFO
+	FT_SOCK
+	FT_SYMLINK
+	FT_XATTR
 
-	FT_MAX FileType = 9
+	FT_MAX
 )
 
+var fileTypeNames = []string{
+	"UNKNOWN",
+	"FILE", // NB: Just "FILE", despite corresponding to "REG_FILE"
+	"DIR",
+	"CHRDEV",
+	"BLKDEV",
+	"FIFO",
+	"SOCK",
+	"SYMLINK",
+	"XATTR",
+}
+
 func (ft FileType) String() string {
-	names := map[FileType]string{
-		FT_UNKNOWN:  "UNKNOWN",
-		FT_REG_FILE: "FILE", // XXX
-		FT_DIR:      "DIR",
-		FT_CHRDEV:   "CHRDEV",
-		FT_BLKDEV:   "BLKDEV",
-		FT_FIFO:     "FIFO",
-		FT_SOCK:     "SOCK",
-		FT_SYMLINK:  "SYMLINK",
-		FT_XATTR:    "XATTR",
-	}
-	if name, ok := names[ft]; ok {
-		return name
+	if ft < FT_MAX {
+		return fileTypeNames[ft]
 	}
 	return fmt.Sprintf("DIR_ITEM.%d", uint8(ft))
 }

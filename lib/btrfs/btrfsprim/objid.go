@@ -54,13 +54,45 @@ const (
 	EMPTY_SUBVOL_DIR_OBJECTID ObjID = 2
 )
 
+var (
+	objidCommonNames = map[ObjID]string{
+		BALANCE_OBJECTID:         "BALANCE",
+		ORPHAN_OBJECTID:          "ORPHAN",
+		TREE_LOG_OBJECTID:        "TREE_LOG",
+		TREE_LOG_FIXUP_OBJECTID:  "TREE_LOG_FIXUP",
+		TREE_RELOC_OBJECTID:      "TREE_RELOC",
+		DATA_RELOC_TREE_OBJECTID: "DATA_RELOC_TREE",
+		EXTENT_CSUM_OBJECTID:     "EXTENT_CSUM",
+		FREE_SPACE_OBJECTID:      "FREE_SPACE",
+		FREE_INO_OBJECTID:        "FREE_INO",
+		MULTIPLE_OBJECTIDS:       "MULTIPLE",
+	}
+	objidDevTreeNames = map[ObjID]string{
+		DEV_STATS_OBJECTID: "DEV_STATS",
+	}
+	objidChunkTreeNames = map[ObjID]string{
+		DEV_ITEMS_OBJECTID:        "DEV_ITEMS",
+		FIRST_CHUNK_TREE_OBJECTID: "FIRST_CHUNK_TREE",
+	}
+	objidRootTreeNames = map[ObjID]string{
+		ROOT_TREE_OBJECTID:        "ROOT_TREE",
+		EXTENT_TREE_OBJECTID:      "EXTENT_TREE",
+		CHUNK_TREE_OBJECTID:       "CHUNK_TREE",
+		DEV_TREE_OBJECTID:         "DEV_TREE",
+		FS_TREE_OBJECTID:          "FS_TREE",
+		ROOT_TREE_DIR_OBJECTID:    "ROOT_TREE_DIR",
+		CSUM_TREE_OBJECTID:        "CSUM_TREE",
+		QUOTA_TREE_OBJECTID:       "QUOTA_TREE",
+		UUID_TREE_OBJECTID:        "UUID_TREE",
+		FREE_SPACE_TREE_OBJECTID:  "FREE_SPACE_TREE",
+		BLOCK_GROUP_TREE_OBJECTID: "BLOCK_GROUP_TREE",
+	}
+)
+
 func (id ObjID) Format(tree ObjID) string {
 	switch tree {
 	case DEV_TREE_OBJECTID:
-		names := map[ObjID]string{
-			DEV_STATS_OBJECTID: "DEV_STATS",
-		}
-		if name, ok := names[id]; ok {
+		if name, ok := objidDevTreeNames[id]; ok {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
@@ -75,51 +107,18 @@ func (id ObjID) Format(tree ObjID) string {
 	case UUID_TREE_OBJECTID:
 		return fmt.Sprintf("%#016x", uint64(id))
 	case CHUNK_TREE_OBJECTID:
-		names := map[ObjID]string{
-			BALANCE_OBJECTID:         "BALANCE",
-			ORPHAN_OBJECTID:          "ORPHAN",
-			TREE_LOG_OBJECTID:        "TREE_LOG",
-			TREE_LOG_FIXUP_OBJECTID:  "TREE_LOG_FIXUP",
-			TREE_RELOC_OBJECTID:      "TREE_RELOC",
-			DATA_RELOC_TREE_OBJECTID: "DATA_RELOC_TREE",
-			EXTENT_CSUM_OBJECTID:     "EXTENT_CSUM",
-			FREE_SPACE_OBJECTID:      "FREE_SPACE",
-			FREE_INO_OBJECTID:        "FREE_INO",
-			MULTIPLE_OBJECTIDS:       "MULTIPLE",
-
-			DEV_ITEMS_OBJECTID:        "DEV_ITEMS",
-			FIRST_CHUNK_TREE_OBJECTID: "FIRST_CHUNK_TREE",
+		if name, ok := objidCommonNames[id]; ok {
+			return name
 		}
-		if name, ok := names[id]; ok {
+		if name, ok := objidChunkTreeNames[id]; ok {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
 	default:
-		names := map[ObjID]string{
-			BALANCE_OBJECTID:         "BALANCE",
-			ORPHAN_OBJECTID:          "ORPHAN",
-			TREE_LOG_OBJECTID:        "TREE_LOG",
-			TREE_LOG_FIXUP_OBJECTID:  "TREE_LOG_FIXUP",
-			TREE_RELOC_OBJECTID:      "TREE_RELOC",
-			DATA_RELOC_TREE_OBJECTID: "DATA_RELOC_TREE",
-			EXTENT_CSUM_OBJECTID:     "EXTENT_CSUM",
-			FREE_SPACE_OBJECTID:      "FREE_SPACE",
-			FREE_INO_OBJECTID:        "FREE_INO",
-			MULTIPLE_OBJECTIDS:       "MULTIPLE",
-
-			ROOT_TREE_OBJECTID:        "ROOT_TREE",
-			EXTENT_TREE_OBJECTID:      "EXTENT_TREE",
-			CHUNK_TREE_OBJECTID:       "CHUNK_TREE",
-			DEV_TREE_OBJECTID:         "DEV_TREE",
-			FS_TREE_OBJECTID:          "FS_TREE",
-			ROOT_TREE_DIR_OBJECTID:    "ROOT_TREE_DIR",
-			CSUM_TREE_OBJECTID:        "CSUM_TREE",
-			QUOTA_TREE_OBJECTID:       "QUOTA_TREE",
-			UUID_TREE_OBJECTID:        "UUID_TREE",
-			FREE_SPACE_TREE_OBJECTID:  "FREE_SPACE_TREE",
-			BLOCK_GROUP_TREE_OBJECTID: "BLOCK_GROUP_TREE",
+		if name, ok := objidCommonNames[id]; ok {
+			return name
 		}
-		if name, ok := names[id]; ok {
+		if name, ok := objidRootTreeNames[id]; ok {
 			return name
 		}
 		return fmt.Sprintf("%d", int64(id))
