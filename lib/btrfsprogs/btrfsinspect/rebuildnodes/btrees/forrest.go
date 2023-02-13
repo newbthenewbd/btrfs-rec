@@ -7,7 +7,6 @@ package btrees
 import (
 	"context"
 
-	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -20,6 +19,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
+
+type Callbacks interface {
+	AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
+	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
+	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+}
 
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
@@ -56,14 +61,11 @@ type RebuiltForrest struct {
 	sb    btrfstree.Superblock
 	graph pkggraph.Graph
 	keyIO *keyio.Handle
-
-	// static callbacks
-	cbAddedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
-	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+	cb    Callbacks
 
 	// mutable
-	trees    typedsync.Map[btrfsprim.ObjID, *RebuiltTree]
+	treesMu  nestedMutex
+	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
 	leafs    containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
 	excItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
@@ -71,21 +73,14 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
 // the callbacks must be non-nil.
-func NewRebuiltForrest(
-	sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle,
-	cbAddedItem func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key),
-	cbLookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool),
-	cbLookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool),
-) *RebuiltForrest {
+func NewRebuiltForrest(sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle, cb Callbacks) *RebuiltForrest {
 	return &RebuiltForrest{
 		sb:    sb,
 		graph: graph,
 		keyIO: keyIO,
+		cb:    cb,
 
-		cbAddedItem:  cbAddedItem,
-		cbLookupRoot: cbLookupRoot,
-		cbLookupUUID: cbLookupUUID,
-
+		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
 		leafs: containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]{
 			MaxLen: textui.Tunable(8),
 		},
@@ -104,22 +99,23 @@ func NewRebuiltForrest(
 //
 // The tree is initialized with the normal root node of the tree.
 func (ts *RebuiltForrest) Tree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
+	ctx = ts.treesMu.Lock(ctx)
+	defer ts.treesMu.Unlock()
 	if !ts.addTree(ctx, treeID, nil) {
 		return nil
 	}
-	tree, _ := ts.trees.Load(treeID)
-	return tree
+	return ts.trees[treeID]
 }
 
 func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, stack []btrfsprim.ObjID) (ok bool) {
-	if tree, ok := ts.trees.Load(treeID); ok {
+	if tree, ok := ts.trees[treeID]; ok {
 		return tree != nil
 	}
 	defer func() {
 		if !ok {
 			// Store a negative cache of this.  tree.AddRoot() for the ROOT or UUID
-			// trees will invalidate the negative cache.
-			ts.trees.Store(treeID, nil)
+			// trees will call .flushNegativeCache().
+			ts.trees[treeID] = nil
 		}
 	}()
 	stack = append(stack, treeID)
@@ -150,7 +146,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")
 			return false
 		}
-		rootOff, rootItem, ok := ts.cbLookupRoot(ctx, treeID)
+		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
 		if !ok {
 			dlog.Error(ctx, "failed to add tree: lookup ROOT_ITEM")
 			return false
@@ -162,7 +158,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			if !ts.addTree(ctx, btrfsprim.UUID_TREE_OBJECTID, stack) {
 				return false
 			}
-			parentID, ok := ts.cbLookupUUID(ctx, rootItem.ParentUUID)
+			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
 				dlog.Error(ctx, "failed to add tree: lookup UUID")
 				return false
@@ -171,11 +167,11 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 				dlog.Error(ctx, "failed to add tree: add parent tree")
 				return false
 			}
-			tree.Parent, _ = ts.trees.Load(parentID)
+			tree.Parent = ts.trees[parentID]
 		}
 	}
 
-	ts.trees.Store(treeID, tree)
+	ts.trees[treeID] = tree
 	if root != 0 {
 		tree.AddRoot(ctx, root)
 	}
@@ -183,18 +179,29 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	return true
 }
 
+func (ts *RebuiltForrest) flushNegativeCache(ctx context.Context) {
+	_ = ts.treesMu.Lock(ctx)
+	defer ts.treesMu.Unlock()
+	for treeID, tree := range ts.trees {
+		if tree == nil {
+			delete(ts.trees, treeID)
+		}
+	}
+}
+
 // ListRoots returns a listing of all initialized trees and their root
 // nodes.
 //
 // Do not mutate the set of roots for a tree; it is a pointer to the
 // RebuiltForrest's internal set!
-func (ts *RebuiltForrest) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+func (ts *RebuiltForrest) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+	_ = ts.treesMu.Lock(ctx)
+	defer ts.treesMu.Unlock()
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
-	ts.trees.Range(func(treeID btrfsprim.ObjID, tree *RebuiltTree) bool {
+	for treeID, tree := range ts.trees {
 		if tree != nil {
 			ret[treeID] = tree.Roots
 		}
-		return true
-	})
+	}
 	return ret
 }

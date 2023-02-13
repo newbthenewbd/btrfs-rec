@@ -152,13 +152,17 @@ func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *disk
 	return ref
 }
 
-func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) (item btrfsitem.Item, ok bool) {
-	if o.graph.Nodes[ptr.Node].Level != 0 || ptr.Idx < 0 {
-		return nil, false
+func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
+	if o.graph.Nodes[ptr.Node].Level != 0 {
+		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for non-leaf node@%v", ptr.Node))
+	}
+	if ptr.Idx < 0 {
+		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for negative item index: %v", ptr.Idx))
 	}
 	items := o.readNode(ctx, ptr.Node).Data.BodyLeaf
 	if ptr.Idx >= len(items) {
-		return nil, false
+		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for out-of-bounds item index: index=%v len=%v",
+			ptr.Idx, len(items)))
 	}
-	return items[ptr.Idx].Body, true
+	return items[ptr.Idx].Body
 }

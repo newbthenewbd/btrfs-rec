@@ -311,7 +311,10 @@ func fieldOrd(key string) int {
 	case "btrfsinspect.rebuild-nodes.rebuild.substep.progress":
 		return -47
 	// step=rebuild, substep=collect-items (1/3)
-	// step=rebuild, substep=process-items (2/3)
+	// step=rebuild, substep=settle-items (2a/3)
+	case "btrfsinspect.rebuild-nodes.rebuild.settle.item":
+		return -25
+	// step=rebuild, substep=process-items (2b/3)
 	case "btrfsinspect.rebuild-nodes.rebuild.process.item":
 		return -25
 	// step=rebuild, substep=apply-augments (3/3)

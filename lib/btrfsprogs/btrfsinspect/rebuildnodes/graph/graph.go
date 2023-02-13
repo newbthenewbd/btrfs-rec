@@ -44,7 +44,7 @@ func (n Node) String() string {
 }
 
 type Edge struct {
-	// It is invalid both 'FromRoot' and 'FromNode' to be
+	// It is invalid for both 'FromRoot' and 'FromNode' to be
 	// non-zero.  If both are zero, then the Edge is from the
 	// superblock.
 	FromRoot btrfsvol.LogicalAddr

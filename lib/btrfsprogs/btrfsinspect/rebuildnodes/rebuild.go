@@ -5,12 +5,10 @@
 package rebuildnodes
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/datawire/dlib/dgroup"
@@ -19,7 +17,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
@@ -54,24 +51,27 @@ type rebuilder struct {
 
 	rebuilt *btrees.RebuiltForrest
 
-	curKey             keyAndTree
+	curKey struct {
+		TreeID btrfsprim.ObjID
+		Key    containers.Optional[btrfsprim.Key]
+	}
 	treeQueue          containers.Set[btrfsprim.ObjID]
-	itemQueue          containers.Set[keyAndTree]
+	addedItemQueue     containers.Set[keyAndTree]
+	settledItemQueue   containers.Set[keyAndTree]
 	augmentQueue       map[btrfsprim.ObjID]*treeAugmentQueue
 	numAugments        int
 	numAugmentFailures int
 }
 
 type treeAugmentQueue struct {
-	keyBuf strings.Builder
-	zero   map[string]struct{}
-	single map[string]btrfsvol.LogicalAddr
-	multi  map[string]containers.Set[btrfsvol.LogicalAddr]
+	zero   map[Want]struct{}
+	single map[Want]btrfsvol.LogicalAddr
+	multi  map[Want]containers.Set[btrfsvol.LogicalAddr]
 }
 
 type Rebuilder interface {
 	Rebuild(context.Context) error
-	ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
+	ListRoots(context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
 }
 
 func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (Rebuilder, error) {
@@ -86,39 +86,20 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		graph: nodeGraph,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO,
-		o.cbAddedItem, o.cbLookupRoot, o.cbLookupUUID)
+	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
 	return o, nil
 }
 
-func (o *rebuilder) ioErr(ctx context.Context, err error) {
-	err = fmt.Errorf("should not happen: i/o error: %w", err)
-	dlog.Error(ctx, err)
-	panic(err)
+func (o *rebuilder) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+	return o.rebuilt.ListRoots(ctx)
 }
 
-func (o *rebuilder) ListRoots() map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
-	return o.rebuilt.ListRoots()
-}
-
-type itemStats struct {
-	textui.Portion[int]
-	NumAugments     int
-	NumFailures     int
-	NumAugmentTrees int
-}
-
-func (s itemStats) String() string {
-	// return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
-	return textui.Sprintf("%v (aug:%v fail:%v trees:%v)",
-		s.Portion, s.NumAugments, s.NumFailures, s.NumAugmentTrees)
-}
-
-func (o *rebuilder) Rebuild(_ctx context.Context) error {
-	_ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
+func (o *rebuilder) Rebuild(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
 
 	// Initialize
-	o.itemQueue = make(containers.Set[keyAndTree])
+	o.addedItemQueue = make(containers.Set[keyAndTree])
+	o.settledItemQueue = make(containers.Set[keyAndTree])
 	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
 
 	// Seed the queue
@@ -129,201 +110,246 @@ func (o *rebuilder) Rebuild(_ctx context.Context) error {
 		btrfsprim.BLOCK_GROUP_TREE_OBJECTID,
 	)
 
-	for passNum := 0; len(o.treeQueue) > 0 || len(o.itemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
-		passCtx := dlog.WithField(_ctx, "btrfsinspect.rebuild-nodes.rebuild.pass", passNum)
+	// Run
+	for passNum := 0; len(o.treeQueue) > 0 || len(o.addedItemQueue) > 0 || len(o.settledItemQueue) > 0 || len(o.augmentQueue) > 0; passNum++ {
+		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.pass", passNum)
 
-		// Add items to the queue (drain o.treeQueue, fill o.itemQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
-			treeQueue := o.treeQueue
-			o.treeQueue = make(containers.Set[btrfsprim.ObjID])
-			// Because trees can be wildly different sizes, it's impossible to have a meaningful
-			// progress percentage here.
-			for _, treeID := range maps.SortedKeys(treeQueue) {
-				if err := _ctx.Err(); err != nil {
-					return err
-				}
-				o.curKey = keyAndTree{TreeID: treeID}
-				o.rebuilt.Tree(stepCtx, treeID)
-			}
+		// Crawl trees (Drain o.treeQueue, fill o.addedItemQueue).
+		if err := o.processTreeQueue(ctx); err != nil {
+			return err
 		}
 		runtime.GC()
 
-		// Handle items in the queue (drain o.itemQueue, fill o.augmentQueue and o.treeQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
-			itemQueue := maps.Keys(o.itemQueue)
-			o.itemQueue = make(containers.Set[keyAndTree])
-			sort.Slice(itemQueue, func(i, j int) bool {
-				return itemQueue[i].Compare(itemQueue[j]) < 0
-			})
-			var progress itemStats
-			progress.D = len(itemQueue)
-			progressWriter := textui.NewProgress[itemStats](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
-			type keyAndBody struct {
-				keyAndTree
-				Body btrfsitem.Item
+		if len(o.addedItemQueue) > 0 {
+			// Settle items (drain o.addedItemQueue, fill o.augmentQueue and o.settledItemQueue).
+			if err := o.processAddedItemQueue(ctx); err != nil {
+				return err
 			}
-			itemChan := make(chan keyAndBody, textui.Tunable(300)) // average items-per-node≈100; let's have a buffer of ~3 nodes
-			grp := dgroup.NewGroup(stepCtx, dgroup.GroupConfig{})
-			grp.Go("io", func(stepCtx context.Context) error {
-				defer close(itemChan)
-				for _, key := range itemQueue {
-					if err := stepCtx.Err(); err != nil {
-						return err
-					}
-					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
-					itemBody, ok := o.rebuilt.Tree(itemCtx, key.TreeID).ReadItem(itemCtx, key.Key)
-					if !ok {
-						o.ioErr(itemCtx, fmt.Errorf("could not read previously read item: %v", key))
-					}
-					itemChan <- keyAndBody{
-						keyAndTree: key,
-						Body:       itemBody,
-					}
-				}
-				return nil
-			})
-			grp.Go("cpu", func(stepCtx context.Context) error {
-				defer progressWriter.Done()
-				for item := range itemChan {
-					itemCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
-					o.curKey = item.keyAndTree
-					handleItem(o, itemCtx, item.TreeID, btrfstree.Item{
-						Key:  item.Key,
-						Body: item.Body,
-					})
-					if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
-						o.treeQueue.Insert(item.ObjectID)
-					}
-					progress.N++
-					progress.NumAugments = o.numAugments
-					progress.NumFailures = o.numAugmentFailures
-					progress.NumAugmentTrees = len(o.augmentQueue)
-					progressWriter.Set(progress)
-				}
-				return nil
-			})
-			if err := grp.Wait(); err != nil {
+		} else {
+			// Process items (drain o.settledItemQueue, fill o.augmentQueue and o.treeQueue).
+			if err := o.processSettledItemQueue(ctx); err != nil {
 				return err
 			}
 		}
 		runtime.GC()
 
-		// Apply augments (drain o.augmentQueue, fill o.itemQueue)
-		if true {
-			stepCtx := dlog.WithField(passCtx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
-			resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.augmentQueue))
-			var progress textui.Portion[int]
-			for _, treeID := range maps.SortedKeys(o.augmentQueue) {
-				if err := _ctx.Err(); err != nil {
-					return err
-				}
-				treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
-				resolvedAugments[treeID] = o.resolveTreeAugments(treeCtx, treeID)
-				progress.D += len(resolvedAugments[treeID])
-			}
-			o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
-			o.numAugments = 0
-			o.numAugmentFailures = 0
-			runtime.GC()
-			progressWriter := textui.NewProgress[textui.Portion[int]](stepCtx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-			stepCtx = dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
-			for _, treeID := range maps.SortedKeys(resolvedAugments) {
-				treeCtx := dlog.WithField(stepCtx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
-				for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
-					if err := _ctx.Err(); err != nil {
-						progressWriter.Set(progress)
-						progressWriter.Done()
-						return err
-					}
-					progressWriter.Set(progress)
-					o.rebuilt.Tree(treeCtx, treeID).AddRoot(treeCtx, nodeAddr)
-					progress.N++
-				}
-			}
-			progressWriter.Set(progress)
-			progressWriter.Done()
+		// Apply augments (drain o.augmentQueue, fill o.addedItemQueue).
+		if err := o.processAugmentQueue(ctx); err != nil {
+			return err
 		}
 		runtime.GC()
 	}
+
+	return nil
+}
+
+// processTreeQueue drains o.treeQueue, filling o.addedItemQueue.
+func (o *rebuilder) processTreeQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "collect-items")
+
+	queue := maps.SortedKeys(o.treeQueue)
+	o.treeQueue = make(containers.Set[btrfsprim.ObjID])
+
+	// Because trees can be wildly different sizes, it's impossible to have a meaningful
+	// progress percentage here.
+	o.curKey.Key.OK = false
+	for _, o.curKey.TreeID = range queue {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// This will call o.AddedItem as nescessary, which
+		// inserts to o.addedItemQueue.
+		_ = o.rebuilt.Tree(ctx, o.curKey.TreeID)
+	}
+
+	return nil
+}
+
+type settleItemStats struct {
+	textui.Portion[int]
+	NumAugments     int
+	NumAugmentTrees int
+}
+
+func (s settleItemStats) String() string {
+	// return textui.Sprintf("%v (queued %v augments across %v trees)",
+	return textui.Sprintf("%v (aug:%v trees:%v)",
+		s.Portion, s.NumAugments, s.NumAugmentTrees)
+}
+
+// processAddedItemQueue drains o.addedItemQueue, filling o.augmentQueue and o.settledItemQueue.
+func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "settle-items")
+
+	queue := maps.Keys(o.addedItemQueue)
+	o.addedItemQueue = make(containers.Set[keyAndTree])
+	sort.Slice(queue, func(i, j int) bool {
+		return queue[i].Compare(queue[j]) < 0
+	})
+
+	var progress settleItemStats
+	progress.D = len(queue)
+	progressWriter := textui.NewProgress[settleItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+
+	for i, key := range queue {
+		progress.N = i
+		progressWriter.Set(progress)
+
+		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.settle.item", key)
+		tree := o.rebuilt.Tree(ctx, key.TreeID)
+		incPtr, ok := tree.Items(ctx).Load(key.Key)
+		if !ok {
+			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
+		}
+		excPtr, ok := tree.PotentialItems(ctx).Load(key.Key)
+		if ok && tree.ShouldReplace(incPtr.Node, excPtr.Node) {
+			wantKey := WantWithTree{
+				TreeID: key.TreeID,
+				Key:    wantFromKey(key.Key),
+			}
+			o.wantAugment(ctx, wantKey, tree.LeafToRoots(ctx, excPtr.Node))
+			progress.NumAugments = o.numAugments
+			progress.NumAugmentTrees = len(o.augmentQueue)
+			progressWriter.Set(progress)
+		} else if !handleWouldBeNoOp(key.ItemType) {
+			o.settledItemQueue.Insert(key)
+		}
+	}
+
+	progress.N = len(queue)
+	progressWriter.Set(progress)
+	progressWriter.Done()
+	return nil
+}
+
+type processItemStats struct {
+	textui.Portion[int]
+	NumAugments     int
+	NumFailures     int
+	NumAugmentTrees int
+}
+
+func (s processItemStats) String() string {
+	// return textui.Sprintf("%v (queued %v augments and %v failures across %v trees)",
+	return textui.Sprintf("%v (aug:%v fail:%v trees:%v)",
+		s.Portion, s.NumAugments, s.NumFailures, s.NumAugmentTrees)
+}
+
+// processSettledItemQueue drains o.settledItemQueue, filling o.augmentQueue and o.treeQueue.
+func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "process-items")
+
+	queue := maps.Keys(o.settledItemQueue)
+	o.settledItemQueue = make(containers.Set[keyAndTree])
+	sort.Slice(queue, func(i, j int) bool {
+		return queue[i].Compare(queue[j]) < 0
+	})
+
+	var progress processItemStats
+	progress.D = len(queue)
+	progressWriter := textui.NewProgress[processItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+
+	type keyAndBody struct {
+		keyAndTree
+		Body btrfsitem.Item
+	}
+	itemChan := make(chan keyAndBody, textui.Tunable(300)) // average items-per-node≈100; let's have a buffer of ~3 nodes
+	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
+	grp.Go("io", func(ctx context.Context) error {
+		defer close(itemChan)
+		for _, key := range queue {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", key)
+			item := keyAndBody{
+				keyAndTree: key,
+				Body:       o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+			}
+			select {
+			case itemChan <- item:
+			case <-ctx.Done():
+			}
+		}
+		return nil
+	})
+	grp.Go("cpu", func(ctx context.Context) error {
+		defer progressWriter.Done()
+		o.curKey.Key.OK = true
+		for item := range itemChan {
+			ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
+			o.curKey.TreeID = item.TreeID
+			o.curKey.Key.Val = item.Key
+			handleItem(o, ctx, item.TreeID, btrfstree.Item{
+				Key:  item.Key,
+				Body: item.Body,
+			})
+			if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
+				o.treeQueue.Insert(item.ObjectID)
+			}
+			progress.N++
+			progress.NumAugments = o.numAugments
+			progress.NumFailures = o.numAugmentFailures
+			progress.NumAugmentTrees = len(o.augmentQueue)
+			progressWriter.Set(progress)
+		}
+		return nil
+	})
+	return grp.Wait()
+}
+
+// processAugmentQueue drains o.augmentQueue, filling o.addedItemQueue.
+func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
+
+	resolvedAugments := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr], len(o.augmentQueue))
+	var progress textui.Portion[int]
+	for _, treeID := range maps.SortedKeys(o.augmentQueue) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
+		resolvedAugments[treeID] = o.resolveTreeAugments(ctx, treeID)
+		progress.D += len(resolvedAugments[treeID])
+	}
+	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
+	o.numAugments = 0
+	o.numAugmentFailures = 0
+	runtime.GC()
+
+	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep.progress", &progress)
+	for _, treeID := range maps.SortedKeys(resolvedAugments) {
+		ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.augment.tree", treeID)
+		for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
+			if err := ctx.Err(); err != nil {
+				progressWriter.Set(progress)
+				progressWriter.Done()
+				return err
+			}
+			progressWriter.Set(progress)
+			// This will call o.AddedItem as nescessary, which
+			// inserts to o.addedItemQueue.
+			o.rebuilt.Tree(ctx, treeID).AddRoot(ctx, nodeAddr)
+			progress.N++
+		}
+	}
+	progressWriter.Set(progress)
+	progressWriter.Done()
+
 	return nil
 }
 
 func (o *rebuilder) enqueueRetry() {
-	if o.curKey.Key == (btrfsprim.Key{}) {
-		o.treeQueue.Insert(o.curKey.TreeID)
+	if o.curKey.Key.OK {
+		o.settledItemQueue.Insert(keyAndTree{
+			TreeID: o.curKey.TreeID,
+			Key:    o.curKey.Key.Val,
+		})
 	} else {
-		o.itemQueue.Insert(o.curKey)
-	}
-}
-
-func (o *rebuilder) cbAddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
-	if handleWouldBeNoOp(key.ItemType) {
-		return
-	}
-	o.itemQueue.Insert(keyAndTree{
-		TreeID: tree,
-		Key:    key,
-	})
-}
-
-func (o *rebuilder) cbLookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "tree Root")
-	key := keyAndTree{
-		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
-		Key: btrfsprim.Key{
-			ObjectID: tree,
-			ItemType: btrfsitem.ROOT_ITEM_KEY,
-		},
-	}
-	wantKey := fmt.Sprintf("tree=%v key={%v %v ?}", key.TreeID, key.ObjectID, key.ItemType)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", wantKey)
-	key.Key, ok = o._want(ctx, key.TreeID, wantKey, key.ObjectID, key.ItemType)
-	if !ok {
-		o.enqueueRetry()
-		return 0, btrfsitem.Root{}, false
-	}
-	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
-	if !ok {
-		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
-	}
-	switch itemBody := itemBody.(type) {
-	case *btrfsitem.Root:
-		return btrfsprim.Generation(key.Offset), *itemBody, true
-	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
-		return 0, btrfsitem.Root{}, false
-	default:
-		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
-		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
-		panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
-	}
-}
-
-func (o *rebuilder) cbLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason", "resolve parent UUID")
-	key := keyAndTree{TreeID: btrfsprim.UUID_TREE_OBJECTID, Key: btrfsitem.UUIDToKey(uuid)}
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key", key.String())
-	if !o._wantOff(ctx, key.TreeID, key.String(), key.Key) {
-		o.enqueueRetry()
-		return 0, false
-	}
-	itemBody, ok := o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key)
-	if !ok {
-		o.ioErr(ctx, fmt.Errorf("could not read previously read item: %v", key))
-	}
-	switch itemBody := itemBody.(type) {
-	case *btrfsitem.UUIDMap:
-		return itemBody.ObjID, true
-	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", key, itemBody.Err))
-		return 0, false
-	default:
-		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
-		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
-		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
+		o.treeQueue.Insert(o.curKey.TreeID)
 	}
 }
 
@@ -458,7 +484,9 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	wantKeys := append(
 		maps.Keys(o.augmentQueue[treeID].single),
 		maps.Keys(o.augmentQueue[treeID].multi)...)
-	sort.Strings(wantKeys)
+	sort.Slice(wantKeys, func(i, j int) bool {
+		return wantKeys[i].Compare(wantKeys[j]) < 0
+	})
 	for _, wantKey := range wantKeys {
 		list, ok := o.augmentQueue[treeID].multi[wantKey]
 		if !ok {
@@ -475,39 +503,26 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	// Free some memory
 	o.augmentQueue[treeID].single = nil
 	o.augmentQueue[treeID].multi = nil
-	o.augmentQueue[treeID].keyBuf.Reset()
 
 	return ret
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func shortenWantKey(wantKey string) string {
-	if !strings.HasPrefix(wantKey, "tree=") {
-		panic("should not happen")
-	}
-	sp := strings.IndexByte(wantKey, ' ')
-	if sp < 0 {
-		panic("should not happen")
-	}
-	return wantKey[sp+1:]
-}
-
-func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
-	if treeQueue != nil {
-		wantKey = shortenWantKey(wantKey)
-		if treeQueue.zero != nil {
-			if _, ok := treeQueue.zero[wantKey]; ok {
+func (queue *treeAugmentQueue) has(wantKey Want) bool {
+	if queue != nil {
+		if queue.zero != nil {
+			if _, ok := queue.zero[wantKey]; ok {
 				return true
 			}
 		}
-		if treeQueue.single != nil {
-			if _, ok := treeQueue.single[wantKey]; ok {
+		if queue.single != nil {
+			if _, ok := queue.single[wantKey]; ok {
 				return true
 			}
 		}
-		if treeQueue.multi != nil {
-			if _, ok := treeQueue.multi[wantKey]; ok {
+		if queue.multi != nil {
+			if _, ok := queue.multi[wantKey]; ok {
 				return true
 			}
 		}
@@ -515,49 +530,40 @@ func (treeQueue *treeAugmentQueue) has(wantKey string) bool {
 	return false
 }
 
-func (treeQueue *treeAugmentQueue) store(wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
-	if len(choices) == 0 && (strings.Contains(wantKey, " name=") || strings.Contains(wantKey, "-")) {
-		// This wantKey is unlikely to come up again, so it's not worth storing a negative result.
+func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsvol.LogicalAddr]) {
+	if len(choices) == 0 && wantKey.OffsetType > offsetExact {
+		// This wantKey is unlikely to come up again, so it's
+		// not worth the RAM of storing a negative result.
 		return
 	}
-	wantKey = shortenWantKey(wantKey)
-	beg := treeQueue.keyBuf.Len()
-	if treeQueue.keyBuf.Cap()-beg < len(wantKey) {
-		treeQueue.keyBuf.Reset()
-		treeQueue.keyBuf.Grow(textui.Tunable(4096))
-		beg = 0
-	}
-	treeQueue.keyBuf.WriteString(wantKey)
-	wantKey = treeQueue.keyBuf.String()[beg:]
-
 	switch len(choices) {
 	case 0:
-		if treeQueue.zero == nil {
-			treeQueue.zero = make(map[string]struct{})
+		if queue.zero == nil {
+			queue.zero = make(map[Want]struct{})
 		}
-		treeQueue.zero[wantKey] = struct{}{}
+		queue.zero[wantKey] = struct{}{}
 	case 1:
-		if treeQueue.single == nil {
-			treeQueue.single = make(map[string]btrfsvol.LogicalAddr)
+		if queue.single == nil {
+			queue.single = make(map[Want]btrfsvol.LogicalAddr)
 		}
-		treeQueue.single[wantKey] = choices.TakeOne()
+		queue.single[wantKey] = choices.TakeOne()
 	default:
-		if treeQueue.multi == nil {
-			treeQueue.multi = make(map[string]containers.Set[btrfsvol.LogicalAddr])
+		if queue.multi == nil {
+			queue.multi = make(map[Want]containers.Set[btrfsvol.LogicalAddr])
 		}
-		treeQueue.multi[wantKey] = choices
+		queue.multi[wantKey] = choices
 	}
 }
 
-func (o *rebuilder) hasAugment(treeID btrfsprim.ObjID, wantKey string) bool {
-	return o.augmentQueue[treeID].has(wantKey)
+func (o *rebuilder) hasAugment(wantKey WantWithTree) bool {
+	return o.augmentQueue[wantKey.TreeID].has(wantKey.Key)
 }
 
-func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, choices containers.Set[btrfsvol.LogicalAddr]) {
-	if o.augmentQueue[treeID] == nil {
-		o.augmentQueue[treeID] = new(treeAugmentQueue)
+func (o *rebuilder) wantAugment(ctx context.Context, wantKey WantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
+	if o.augmentQueue[wantKey.TreeID] == nil {
+		o.augmentQueue[wantKey.TreeID] = new(treeAugmentQueue)
 	}
-	o.augmentQueue[treeID].store(wantKey, choices)
+	o.augmentQueue[wantKey.TreeID].store(wantKey.Key, choices)
 	if len(choices) == 0 {
 		dlog.Error(ctx, "could not find wanted item")
 		o.numAugmentFailures++
@@ -565,373 +571,4 @@ func (o *rebuilder) wantAugment(ctx context.Context, treeID btrfsprim.ObjID, wan
 		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
 		o.numAugments++
 	}
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// fsErr implements rebuildCallbacks.
-func (o *rebuilder) fsErr(ctx context.Context, e error) {
-	dlog.Errorf(ctx, "filesystem error: %v", e)
-}
-
-// want implements rebuildCallbacks.
-func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	wantKey := fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-	o._want(ctx, treeID, wantKey, objID, typ)
-}
-
-func (o *rebuilder) _want(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, objID btrfsprim.ObjID, typ btrfsprim.ItemType) (key btrfsprim.Key, ok bool) {
-	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
-		return btrfsprim.Key{}, false
-	}
-
-	// check if we already have it
-
-	tgt := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-	}
-	if key, _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Search(func(key btrfsprim.Key, _ keyio.ItemPtr) int {
-		key.Offset = 0
-		return tgt.Compare(key)
-	}); ok {
-		return key, true
-	}
-
-	// OK, we need to insert it
-
-	if o.hasAugment(treeID, wantKey) {
-		return btrfsprim.Key{}, false
-	}
-	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
-		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
-			return true
-		})
-	o.wantAugment(ctx, treeID, wantKey, wants)
-	return btrfsprim.Key{}, false
-}
-
-// wantOff implements rebuildCallbacks.
-func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
-	key := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-		Offset:   off,
-	}
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	wantKey := keyAndTree{TreeID: treeID, Key: key}.String()
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-	o._wantOff(ctx, treeID, wantKey, key)
-}
-
-func (o *rebuilder) _wantOff(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, tgt btrfsprim.Key) (ok bool) {
-	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
-		return false
-	}
-
-	// check if we already have it
-
-	if _, ok := o.rebuilt.Tree(ctx, treeID).Items(ctx).Load(tgt); ok {
-		return true
-	}
-
-	// OK, we need to insert it
-
-	if o.hasAugment(treeID, wantKey) {
-		return false
-	}
-	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Compare(k) },
-		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
-			return true
-		})
-	o.wantAugment(ctx, treeID, wantKey, wants)
-	return false
-}
-
-func (o *rebuilder) _wantFunc(ctx context.Context, treeID btrfsprim.ObjID, wantKey string, objID btrfsprim.ObjID, typ btrfsprim.ItemType, fn func(keyio.ItemPtr) bool) {
-	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
-		return
-	}
-
-	// check if we already have it
-
-	tgt := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-	}
-	found := false
-	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
-		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
-			key.Offset = 0
-			return tgt.Compare(key)
-		},
-		func(_ btrfsprim.Key, itemPtr keyio.ItemPtr) bool {
-			if fn(itemPtr) {
-				found = true
-			}
-			return !found
-		})
-	if found {
-		return
-	}
-
-	// OK, we need to insert it
-
-	if o.hasAugment(treeID, wantKey) {
-		return
-	}
-	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { k.Offset = 0; return tgt.Compare(k) },
-		func(k btrfsprim.Key, v keyio.ItemPtr) bool {
-			if fn(v) {
-				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, v.Node))
-			}
-			return true
-		})
-	o.wantAugment(ctx, treeID, wantKey, wants)
-}
-
-// wantDirIndex implements rebuildCallbacks.
-func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
-	typ := btrfsitem.DIR_INDEX_KEY
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	wantKey := fmt.Sprintf("tree=%v key={%v %v ?} name=%q", treeID, objID, typ, name)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-	o._wantFunc(ctx, treeID, wantKey, objID, typ, func(ptr keyio.ItemPtr) bool {
-		itemName, ok := o.keyIO.Names[ptr]
-		return ok && bytes.Equal(itemName, name)
-	})
-}
-
-func (o *rebuilder) _walkRange(
-	ctx context.Context,
-	items *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr],
-	treeID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
-	beg, end uint64,
-	fn func(key btrfsprim.Key, ptr keyio.ItemPtr, beg, end uint64),
-) {
-	min := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-		Offset:   0, // *NOT* `beg`
-	}
-	max := btrfsprim.Key{
-		ObjectID: objID,
-		ItemType: typ,
-		Offset:   end - 1,
-	}
-	items.Subrange(
-		func(runKey btrfsprim.Key, _ keyio.ItemPtr) int {
-			switch {
-			case min.Compare(runKey) < 0:
-				return 1
-			case max.Compare(runKey) > 0:
-				return -1
-			default:
-				return 0
-			}
-		},
-		func(runKey btrfsprim.Key, runPtr keyio.ItemPtr) bool {
-			runSizeAndErr, ok := o.keyIO.Sizes[runPtr]
-			if !ok {
-				panic(fmt.Errorf("should not happen: %v (%v) did not have a size recorded",
-					runPtr, keyAndTree{TreeID: treeID, Key: runKey}))
-			}
-			if runSizeAndErr.Err != nil {
-				o.fsErr(ctx, fmt.Errorf("get size: %v (%v): %w",
-					runPtr, keyAndTree{TreeID: treeID, Key: runKey},
-					runSizeAndErr.Err))
-				return true
-			}
-			runSize := runSizeAndErr.Size
-			if runSize == 0 {
-				return true
-			}
-			runBeg := runKey.Offset
-			runEnd := runBeg + runSize
-			if runEnd <= beg {
-				return true
-			}
-
-			fn(runKey, runPtr, runBeg, runEnd)
-			return true
-		})
-}
-
-type gap struct {
-	// range is [Beg,End)
-	Beg, End uint64
-}
-
-// Compare implements containers.Ordered.
-func (a gap) Compare(b gap) int {
-	return containers.NativeCompare(a.Beg, b.Beg)
-}
-
-func (o *rebuilder) _wantRange(
-	ctx context.Context,
-	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
-	beg, end uint64,
-) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key",
-		fmt.Sprintf("tree=%v key={%v %v ?}", treeID, objID, typ))
-
-	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
-		return
-	}
-
-	// Step 1: Build a listing of the gaps.
-	//
-	// Start with a gap of the whole range, then subtract each run
-	// from it.
-	gaps := new(containers.RBTree[gap])
-	gaps.Insert(gap{
-		Beg: beg,
-		End: end,
-	})
-	o._walkRange(
-		ctx,
-		o.rebuilt.Tree(ctx, treeID).Items(ctx),
-		treeID, objID, typ, beg, end,
-		func(runKey btrfsprim.Key, _ keyio.ItemPtr, runBeg, runEnd uint64) {
-			var overlappingGaps []*containers.RBNode[gap]
-			gaps.Subrange(
-				func(gap gap) int {
-					switch {
-					case gap.End <= runBeg:
-						return 1
-					case runEnd <= gap.Beg:
-						return -1
-					default:
-						return 0
-					}
-				},
-				func(node *containers.RBNode[gap]) bool {
-					overlappingGaps = append(overlappingGaps, node)
-					return true
-				})
-			if len(overlappingGaps) == 0 {
-				return
-			}
-			gapsBeg := overlappingGaps[0].Value.Beg
-			gapsEnd := overlappingGaps[len(overlappingGaps)-1].Value.End
-			for _, gap := range overlappingGaps {
-				gaps.Delete(gap)
-			}
-			if gapsBeg < runBeg {
-				gaps.Insert(gap{
-					Beg: gapsBeg,
-					End: runBeg,
-				})
-			}
-			if gapsEnd > runEnd {
-				gaps.Insert(gap{
-					Beg: runEnd,
-					End: gapsEnd,
-				})
-			}
-		})
-
-	// Step 2: Fill each gap.
-	if gaps.Len() == 0 {
-		return
-	}
-	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
-	gaps.Range(func(rbNode *containers.RBNode[gap]) bool {
-		gap := rbNode.Value
-		last := gap.Beg
-		o._walkRange(
-			ctx,
-			potentialItems,
-			treeID, objID, typ, gap.Beg, gap.End,
-			func(k btrfsprim.Key, v keyio.ItemPtr, runBeg, runEnd uint64) {
-				// TODO: This is dumb and greedy.
-				if last < runBeg {
-					// log an error
-					wantKey := fmt.Sprintf("tree=%v key={%v %v %v-%v}", treeID, objID, typ, last, runBeg)
-					if !o.hasAugment(treeID, wantKey) {
-						wantCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-						o.wantAugment(wantCtx, treeID, wantKey, nil)
-					}
-				}
-				wantKey := fmt.Sprintf("tree=%v key={%v %v %v-%v}", treeID, objID, typ, gap.Beg, gap.End)
-				if !o.hasAugment(treeID, wantKey) {
-					wantCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-					o.wantAugment(wantCtx, treeID, wantKey, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(wantCtx, v.Node))
-				}
-				last = runEnd
-			})
-		if last < gap.End {
-			// log an error
-			wantKey := fmt.Sprintf("tree=%v key={%v, %v, %v-%v}", treeID, objID, typ, last, gap.End)
-			if !o.hasAugment(treeID, wantKey) {
-				wantCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", wantKey)
-				o.wantAugment(wantCtx, treeID, wantKey, nil)
-			}
-		}
-		return true
-	})
-}
-
-// func implements rebuildCallbacks.
-//
-// interval is [beg, end)
-func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-
-	inodeKey := keyAndTree{
-		TreeID: inodeTree,
-		Key: btrfsprim.Key{
-			ObjectID: inode,
-			ItemType: btrfsitem.INODE_ITEM_KEY,
-			Offset:   0,
-		},
-	}
-	inodeCtx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.key", inodeKey.String())
-	if !o._wantOff(inodeCtx, inodeKey.TreeID, inodeKey.String(), inodeKey.Key) {
-		o.enqueueRetry()
-		return
-	}
-	inodePtr, ok := o.rebuilt.Tree(inodeCtx, inodeKey.TreeID).Items(inodeCtx).Load(inodeKey.Key)
-	if !ok {
-		panic(fmt.Errorf("should not happen: could not load key: %v", inodeKey))
-	}
-	inodeFlags, ok := o.keyIO.Flags[inodePtr]
-	if !ok {
-		panic(fmt.Errorf("should not happen: INODE_ITEM did not have flags recorded"))
-	}
-	if inodeFlags.Err != nil {
-		o.fsErr(inodeCtx, inodeFlags.Err)
-		return
-	}
-
-	if inodeFlags.NoDataSum {
-		return
-	}
-
-	beg = roundDown(beg, btrfssum.BlockSize)
-	end = roundUp(end, btrfssum.BlockSize)
-	const treeID = btrfsprim.CSUM_TREE_OBJECTID
-	o._wantRange(ctx, treeID, btrfsprim.EXTENT_CSUM_OBJECTID, btrfsprim.EXTENT_CSUM_KEY,
-		uint64(beg), uint64(end))
-}
-
-// wantFileExt implements rebuildCallbacks.
-func (o *rebuilder) wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.want.reason", reason)
-	o._wantRange(ctx, treeID, ino, btrfsprim.EXTENT_DATA_KEY,
-		0, uint64(size))
 }

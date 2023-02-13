@@ -17,6 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -40,7 +41,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.Sca
 
 	progressWriter.Set(stats)
 	for _, devResults := range scanResults {
-		for laddr := range devResults.FoundNodes {
+		for _, laddr := range maps.SortedKeys(devResults.FoundNodes) {
 			if err := ctx.Err(); err != nil {
 				return btrfstree.Superblock{}, graph.Graph{}, nil, err
 			}

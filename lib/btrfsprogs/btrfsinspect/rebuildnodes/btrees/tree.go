@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	pkggraph "git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -99,10 +98,10 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 	// tree.leafToRoots
 	stack = append(stack, node)
 	var roots containers.Set[btrfsvol.LogicalAddr]
-	kps := slices.RemoveAllFunc(tree.forrest.graph.EdgesTo[node], func(kp *pkggraph.Edge) bool {
-		return !tree.isOwnerOK(tree.forrest.graph.Nodes[kp.FromNode].Owner, tree.forrest.graph.Nodes[kp.FromNode].Generation)
-	})
-	for _, kp := range kps {
+	for _, kp := range tree.forrest.graph.EdgesTo[node] {
+		if !tree.isOwnerOK(tree.forrest.graph.Nodes[kp.FromNode].Owner, tree.forrest.graph.Nodes[kp.FromNode].Generation) {
+			continue
+		}
 		tree.indexNode(ctx, kp.FromNode, index, progress, stack)
 		if len(index[kp.FromNode]) > 0 {
 			if roots == nil {
@@ -200,7 +199,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 					index.Store(itemKey, newPtr)
 					stats.NumItems++
 				} else {
-					if tree.shouldReplace(oldPtr.Node, newPtr.Node) {
+					if tree.ShouldReplace(oldPtr.Node, newPtr.Node) {
 						index.Store(itemKey, newPtr)
 					}
 					stats.NumDups++
@@ -218,7 +217,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 	})
 }
 
-func (tree *RebuiltTree) shouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
+func (tree *RebuiltTree) ShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
 	oldDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[oldNode].Owner)
 	newDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[newNode].Owner)
 	switch {
@@ -270,6 +269,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
+	dlog.Info(ctx, "adding root...")
 
 	leafToRoots := tree.leafToRoots(ctx)
 
@@ -288,7 +288,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 		progressWriter.Set(stats)
 
 		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			tree.forrest.cbAddedItem(ctx, tree.ID, itemKey)
+			tree.forrest.cb.AddedItem(ctx, tree.ID, itemKey)
 			stats.AddedItems++
 			progressWriter.Set(stats)
 		}
@@ -302,12 +302,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.forrest.excItems.Delete(tree.ID) // force re-gen
 
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
-		tree.forrest.trees.Range(func(otherTreeID btrfsprim.ObjID, otherTree *RebuiltTree) bool {
-			if otherTree == nil {
-				tree.forrest.trees.Delete(otherTreeID)
-			}
-			return true
-		})
+		tree.forrest.flushNegativeCache(ctx)
 	}
 }
 
@@ -329,10 +324,10 @@ func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 }
 
 // ReadItem reads an item from a tree.
-func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) (item btrfsitem.Item, ok bool) {
+func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
 	ptr, ok := tree.Items(ctx).Load(key)
 	if !ok {
-		return nil, false
+		panic(fmt.Errorf("should not happen: btrees.RebuiltTree.ReadItem called for not-included key: %v", key))
 	}
 	return tree.forrest.keyIO.ReadItem(ctx, ptr)
 }
