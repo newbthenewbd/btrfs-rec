@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	pkggraph "git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -99,10 +98,10 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 	// tree.leafToRoots
 	stack = append(stack, node)
 	var roots containers.Set[btrfsvol.LogicalAddr]
-	kps := slices.RemoveAllFunc(tree.forrest.graph.EdgesTo[node], func(kp *pkggraph.Edge) bool {
-		return !tree.isOwnerOK(tree.forrest.graph.Nodes[kp.FromNode].Owner, tree.forrest.graph.Nodes[kp.FromNode].Generation)
-	})
-	for _, kp := range kps {
+	for _, kp := range tree.forrest.graph.EdgesTo[node] {
+		if !tree.isOwnerOK(tree.forrest.graph.Nodes[kp.FromNode].Owner, tree.forrest.graph.Nodes[kp.FromNode].Generation) {
+			continue
+		}
 		tree.indexNode(ctx, kp.FromNode, index, progress, stack)
 		if len(index[kp.FromNode]) > 0 {
 			if roots == nil {
