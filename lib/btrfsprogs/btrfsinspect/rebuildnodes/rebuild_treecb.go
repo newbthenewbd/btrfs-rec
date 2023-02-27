@@ -10,6 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
 // AddedItem implements btrees.Callbacks.
@@ -18,6 +19,13 @@ func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btr
 		TreeID: tree,
 		Key:    key,
 	})
+}
+
+// AddedRoot implements btrees.Callbacks.
+func (o *rebuilder) AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr) {
+	if retries := o.retryItemQueue[tree]; retries != nil {
+		o.addedItemQueue.InsertFrom(retries)
+	}
 }
 
 // LookupRoot implements btrees.Callbacks.
@@ -33,7 +41,7 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 	ctx = withWant(ctx, logFieldTreeWant, "tree Root", wantKey)
 	foundKey, ok := o._want(ctx, wantKey)
 	if !ok {
-		o.enqueueRetry()
+		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
 		return 0, btrfsitem.Root{}, false
 	}
 	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey).(type) {
@@ -57,7 +65,7 @@ func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btr
 	}
 	ctx = withWant(ctx, logFieldTreeWant, "resolve parent UUID", wantKey)
 	if !o._wantOff(ctx, wantKey) {
-		o.enqueueRetry()
+		o.enqueueRetry(btrfsprim.UUID_TREE_OBJECTID)
 		return 0, false
 	}
 	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key()).(type) {
