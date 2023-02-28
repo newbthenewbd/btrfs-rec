@@ -141,8 +141,8 @@ func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diski
 			}
 			return nil
 		},
-		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem},
-		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem},
+		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem()},
+		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem()},
 	})
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
