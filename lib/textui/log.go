@@ -237,28 +237,30 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	}
 
 	// caller //////////////////////////////////////////////////////////////
-	const (
-		thisModule             = "git.lukeshu.com/btrfs-progs-ng"
-		thisPackage            = "git.lukeshu.com/btrfs-progs-ng/lib/textui"
-		maximumCallerDepth int = 25
-		minimumCallerDepth int = 3 // runtime.Callers + .log + .Log
-	)
-	var pcs [maximumCallerDepth]uintptr
-	depth := runtime.Callers(minimumCallerDepth, pcs[:])
-	frames := runtime.CallersFrames(pcs[:depth])
-	for f, again := frames.Next(); again; f, again = frames.Next() {
-		if !strings.HasPrefix(f.Function, thisModule+"/") {
-			continue
+	if lvl >= dlog.LogLevelDebug {
+		const (
+			thisModule             = "git.lukeshu.com/btrfs-progs-ng"
+			thisPackage            = "git.lukeshu.com/btrfs-progs-ng/lib/textui"
+			maximumCallerDepth int = 25
+			minimumCallerDepth int = 3 // runtime.Callers + .log + .Log
+		)
+		var pcs [maximumCallerDepth]uintptr
+		depth := runtime.Callers(minimumCallerDepth, pcs[:])
+		frames := runtime.CallersFrames(pcs[:depth])
+		for f, again := frames.Next(); again; f, again = frames.Next() {
+			if !strings.HasPrefix(f.Function, thisModule+"/") {
+				continue
+			}
+			if strings.HasPrefix(f.Function, thisPackage+".") {
+				continue
+			}
+			if nextField == len(fieldKeys) {
+				logBuf.WriteString(" :")
+			}
+			file := f.File[strings.LastIndex(f.File, thisModDir+"/")+len(thisModDir+"/"):]
+			fmt.Fprintf(logBuf, " (from %s:%d)", file, f.Line)
+			break
 		}
-		if strings.HasPrefix(f.Function, thisPackage+".") {
-			continue
-		}
-		if nextField == len(fieldKeys) {
-			logBuf.WriteString(" :")
-		}
-		file := f.File[strings.LastIndex(f.File, thisModDir+"/")+len(thisModDir+"/"):]
-		fmt.Fprintf(logBuf, " (from %s:%d)", file, f.Line)
-		break
 	}
 
 	// boilerplate /////////////////////////////////////////////////////////
