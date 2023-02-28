@@ -44,7 +44,9 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
 		return 0, btrfsitem.Root{}, false
 	}
-	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey).(type) {
+	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey)
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
 	case *btrfsitem.Root:
 		return btrfsprim.Generation(foundKey.Offset), *itemBody, true
 	case *btrfsitem.Error:
@@ -68,7 +70,9 @@ func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btr
 		o.enqueueRetry(btrfsprim.UUID_TREE_OBJECTID)
 		return 0, false
 	}
-	switch itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key()).(type) {
+	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key())
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:

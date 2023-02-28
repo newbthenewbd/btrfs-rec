@@ -288,6 +288,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 				Key:  item.Key,
 				Body: item.Body,
 			})
+			item.Body.Free()
 			if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
 				o.treeQueue.Insert(item.ObjectID)
 			}

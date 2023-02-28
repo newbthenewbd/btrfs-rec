@@ -7,6 +7,7 @@ package keyio
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -48,6 +49,7 @@ type Handle struct {
 	Names map[ItemPtr][]byte      // DIR_INDEX
 	Sizes map[ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
 
+	mu    sync.Mutex
 	cache containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
@@ -153,6 +155,8 @@ func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *disk
 }
 
 func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	if o.graph.Nodes[ptr.Node].Level != 0 {
 		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for non-leaf node@%v", ptr.Node))
 	}
@@ -164,5 +168,5 @@ func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
 		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for out-of-bounds item index: index=%v len=%v",
 			ptr.Idx, len(items)))
 	}
-	return items[ptr.Idx].Body
+	return items[ptr.Idx].Body.CloneItem()
 }
