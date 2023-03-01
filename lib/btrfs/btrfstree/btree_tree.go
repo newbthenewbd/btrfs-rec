@@ -37,7 +37,7 @@ type TreeOperator interface {
 	//     002 (read node)
 	//     003 .Node() (or .BadNode())
 	//         for item in node.items:
-	//           if btrfsprim:
+	//           if internal:
 	//     004     .PreKeyPointer()
 	//     005     (recurse)
 	//     006     .PostKeyPointer()
@@ -68,7 +68,7 @@ type TreeWalkHandler struct {
 	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
 	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
 	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	// Callbacks for items on btrfsprim nodes
+	// Callbacks for items on internal nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
 	// Callbacks for items on leaf nodes
@@ -96,7 +96,7 @@ type TreeOperatorImpl struct {
 	NodeSource
 }
 
-// TreeWalk implements the 'Trees' interface.
+// TreeWalk implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	sb, err := fs.Superblock()
 	if err != nil {
@@ -110,8 +110,8 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
 }
 
-// TreeWalk is a utility method to help with implementing the 'Trees'.
-// interface.
+// RawTreeWalk is a utility method to help with implementing the
+// 'TreeOperator' interface.
 func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := TreePath{{
 		FromTree:         rootInfo.TreeID,
@@ -261,7 +261,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 		}
 
 		if node.Data.Head.Level > 0 {
-			// btrfsprim node
+			// internal node
 
 			// Search for the right-most node.Data.BodyInternal item for which
 			// `fn(item.Key) >= 0`.
@@ -476,7 +476,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 	return path, node, nil
 }
 
-// TreeSearch implements the 'Trees' interface.
+// TreeSearch implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) (Item, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
@@ -503,7 +503,7 @@ func KeySearch(fn func(btrfsprim.Key) int) func(btrfsprim.Key, uint32) int {
 	}
 }
 
-// TreeLookup implements the 'Trees' interface.
+// TreeLookup implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
 	item, err := fs.TreeSearch(treeID, KeySearch(key.Compare))
 	if err != nil {
@@ -512,7 +512,7 @@ func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key)
 	return item, err
 }
 
-// TreeSearchAll implements the 'Trees' interface.
+// TreeSearchAll implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) ([]Item, error) {
 	sb, err := fs.Superblock()
 	if err != nil {

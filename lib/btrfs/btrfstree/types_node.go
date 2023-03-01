@@ -89,7 +89,7 @@ type Node struct {
 
 	// The node's body (which one of these is present depends on
 	// the node's type, as specified in the header)
-	BodyInternal []KeyPointer // for btrfsprim nodes
+	BodyInternal []KeyPointer // for internal nodes
 	BodyLeaf     []Item       // for leave nodes
 
 	Padding []byte
@@ -105,7 +105,7 @@ type NodeHeader struct {
 	Generation    btrfsprim.Generation `bin:"off=0x50, siz=0x8"`
 	Owner         btrfsprim.ObjID      `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
 	NumItems      uint32               `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
-	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for btrfsprim nodes
+	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
 	binstruct.End `bin:"off=0x65"`
 }
 
