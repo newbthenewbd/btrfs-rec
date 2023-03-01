@@ -47,8 +47,7 @@ func (o keyAndTree) String() string {
 }
 
 type rebuilder struct {
-	sb    btrfstree.Superblock
-	graph btrfsutil.Graph
+	scan  ScanDevicesResult
 	keyIO *btrfsutil.KeyIO
 
 	rebuilt *btrfsutil.RebuiltForrest
@@ -79,17 +78,18 @@ type Rebuilder interface {
 
 func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (Rebuilder, error) {
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.step", "read-fs-data")
-	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeList) // ScanDevices does its own logging
+	scanData, err := ScanDevices(ctx, fs, nodeList) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
 
+	keyIO := btrfsutil.NewKeyIO(fs, scanData.Superblock, scanData.Graph)
+
 	o := &rebuilder{
-		sb:    sb,
-		graph: nodeGraph,
+		scan:  scanData,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
+	o.rebuilt = btrfsutil.NewRebuiltForrest(scanData.Superblock, scanData.Graph, keyIO, o)
 	return o, nil
 }
 
@@ -385,8 +385,8 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		} else {
 			choices[choice] = ChoiceInfo{
 				Count:      1,
-				Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)),
-				Generation: o.graph.Nodes[choice].Generation,
+				Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.scan.Graph.Nodes[choice].Owner)),
+				Generation: o.scan.Graph.Nodes[choice].Generation,
 			}
 		}
 	}
@@ -399,8 +399,8 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 			} else {
 				choices[choice] = ChoiceInfo{
 					Count:      1,
-					Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)),
-					Generation: o.graph.Nodes[choice].Generation,
+					Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.scan.Graph.Nodes[choice].Owner)),
+					Generation: o.scan.Graph.Nodes[choice].Generation,
 				}
 			}
 		}

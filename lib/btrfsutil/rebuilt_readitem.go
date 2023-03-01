@@ -29,37 +29,20 @@ func (ptr ItemPtr) String() string {
 	return fmt.Sprintf("node@%v[%v]", ptr.Node, ptr.Slot)
 }
 
-type SizeAndErr struct {
-	Size uint64
-	Err  error
-}
-
-type FlagsAndErr struct {
-	NoDataSum bool
-	Err       error
-}
-
 type KeyIO struct {
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
 	graph   Graph
 
-	Flags map[ItemPtr]FlagsAndErr // INODE_ITEM
-	Names map[ItemPtr][]byte      // DIR_INDEX
-	Sizes map[ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
-
 	mu    sync.Mutex
 	cache containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
 }
 
-func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *KeyIO {
+func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph) *KeyIO {
 	return &KeyIO{
 		rawFile: file,
 		sb:      sb,
-
-		Flags: make(map[ItemPtr]FlagsAndErr),
-		Names: make(map[ItemPtr][]byte),
-		Sizes: make(map[ItemPtr]SizeAndErr),
+		graph:   graph,
 
 		cache: containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]{
 			MaxLen: textui.Tunable(8),
@@ -68,54 +51,6 @@ func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *
 			},
 		},
 	}
-}
-
-func (o *KeyIO) InsertNode(node *btrfstree.Node) {
-	for i, item := range node.BodyLeaf {
-		ptr := ItemPtr{
-			Node: node.Head.Addr,
-			Slot: i,
-		}
-		switch itemBody := item.Body.(type) {
-		case *btrfsitem.Inode:
-			o.Flags[ptr] = FlagsAndErr{
-				NoDataSum: itemBody.Flags.Has(btrfsitem.INODE_NODATASUM),
-				Err:       nil,
-			}
-		case *btrfsitem.DirEntry:
-			if item.Key.ItemType == btrfsprim.DIR_INDEX_KEY {
-				o.Names[ptr] = append([]byte(nil), itemBody.Name...)
-			}
-		case *btrfsitem.ExtentCSum:
-			o.Sizes[ptr] = SizeAndErr{
-				Size: uint64(itemBody.Size()),
-				Err:  nil,
-			}
-		case *btrfsitem.FileExtent:
-			size, err := itemBody.Size()
-			o.Sizes[ptr] = SizeAndErr{
-				Size: uint64(size),
-				Err:  err,
-			}
-		case *btrfsitem.Error:
-			switch item.Key.ItemType {
-			case btrfsprim.INODE_ITEM_KEY:
-				o.Flags[ptr] = FlagsAndErr{
-					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
-						ptr, node.Head.Owner, item.Key, itemBody.Err),
-				}
-			case btrfsprim.EXTENT_CSUM_KEY, btrfsprim.EXTENT_DATA_KEY:
-				o.Sizes[ptr] = SizeAndErr{
-					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
-						ptr, node.Head.Owner, item.Key, itemBody.Err),
-				}
-			}
-		}
-	}
-}
-
-func (o *KeyIO) SetGraph(graph Graph) {
-	o.graph = graph
 }
 
 func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *btrfstree.Node {

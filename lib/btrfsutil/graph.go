@@ -131,8 +131,8 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	})
 }
 
-func NewGraph(sb btrfstree.Superblock) *Graph {
-	g := &Graph{
+func NewGraph(sb btrfstree.Superblock) Graph {
+	g := Graph{
 		Nodes:     make(map[btrfsvol.LogicalAddr]GraphNode),
 		BadNodes:  make(map[btrfsvol.LogicalAddr]error),
 		EdgesFrom: make(map[btrfsvol.LogicalAddr][]*GraphEdge),

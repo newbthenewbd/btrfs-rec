@@ -145,7 +145,7 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
-			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
+			if itemName, ok := o.scan.Names[ptr]; ok && bytes.Equal(itemName, name) {
 				found = true
 			}
 			return !found
@@ -166,7 +166,7 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
-			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
+			if itemName, ok := o.scan.Names[ptr]; ok && bytes.Equal(itemName, name) {
 				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, ptr.Node))
 			}
 			return true
@@ -203,7 +203,7 @@ func (o *rebuilder) _walkRange(
 			}
 		},
 		func(runKey btrfsprim.Key, runPtr btrfsutil.ItemPtr) bool {
-			runSizeAndErr, ok := o.keyIO.Sizes[runPtr]
+			runSizeAndErr, ok := o.scan.Sizes[runPtr]
 			if !ok {
 				panic(fmt.Errorf("should not happen: %v (%v) did not have a size recorded",
 					runPtr, keyAndTree{TreeID: treeID, Key: runKey}))
@@ -372,7 +372,7 @@ func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inod
 	if !ok {
 		panic(fmt.Errorf("should not happen: could not load key: %v", inodeWant))
 	}
-	inodeFlags, ok := o.keyIO.Flags[inodePtr]
+	inodeFlags, ok := o.scan.Flags[inodePtr]
 	if !ok {
 		panic(fmt.Errorf("should not happen: INODE_ITEM did not have flags recorded"))
 	}
