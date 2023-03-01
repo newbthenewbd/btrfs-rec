@@ -34,9 +34,9 @@ func (o forrestCallbacks) AddedRoot(_ context.Context, tree btrfsprim.ObjID, _ b
 
 // LookupRoot implements btrfsutil.RebuiltForrestCallbacks.
 func (o forrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
-		Key: Want{
+		Key: want{
 			ObjectID:   tree,
 			ItemType:   btrfsitem.ROOT_ITEM_KEY,
 			OffsetType: offsetAny,
@@ -65,7 +65,7 @@ func (o forrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) 
 
 // LookupUUID implements btrfsutil.RebuiltForrestCallbacks.
 func (o forrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: btrfsprim.UUID_TREE_OBJECTID,
 		Key:    wantFromKey(btrfsitem.UUIDToKey(uuid)),
 	}

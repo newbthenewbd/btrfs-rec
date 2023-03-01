@@ -23,8 +23,8 @@ const (
 	offsetName
 )
 
-type Want struct {
-	// TODO(lukeshu): Delete the 'Want' type in favor of
+type want struct {
+	// TODO(lukeshu): Delete the 'want' type in favor of
 	// btrfstree.Search.
 	ObjectID   btrfsprim.ObjID
 	ItemType   btrfsprim.ItemType
@@ -34,7 +34,7 @@ type Want struct {
 	OffsetName string
 }
 
-func (a Want) Compare(b Want) int {
+func (a want) Compare(b want) int {
 	if d := containers.NativeCompare(a.ObjectID, b.ObjectID); d != 0 {
 		return d
 	}
@@ -56,7 +56,7 @@ func (a Want) Compare(b Want) int {
 	return 0
 }
 
-func (o Want) Key() btrfsprim.Key {
+func (o want) Key() btrfsprim.Key {
 	return btrfsprim.Key{
 		ObjectID: o.ObjectID,
 		ItemType: o.ItemType,
@@ -64,8 +64,8 @@ func (o Want) Key() btrfsprim.Key {
 	}
 }
 
-func wantFromKey(k btrfsprim.Key) Want {
-	return Want{
+func wantFromKey(k btrfsprim.Key) want {
+	return want{
 		ObjectID:   k.ObjectID,
 		ItemType:   k.ItemType,
 		OffsetType: offsetExact,
@@ -73,7 +73,7 @@ func wantFromKey(k btrfsprim.Key) Want {
 	}
 }
 
-func (o Want) String() string {
+func (o want) String() string {
 	switch o.OffsetType {
 	case offsetAny:
 		return fmt.Sprintf("{%v %v ?}", o.ObjectID, o.ItemType)
@@ -88,12 +88,12 @@ func (o Want) String() string {
 	}
 }
 
-type WantWithTree struct {
+type wantWithTree struct {
 	TreeID btrfsprim.ObjID
-	Key    Want
+	Key    want
 }
 
-func (o WantWithTree) String() string {
+func (o wantWithTree) String() string {
 	return fmt.Sprintf("tree=%v key=%v", o.TreeID, o.Key)
 }
 
@@ -102,7 +102,7 @@ const (
 	logFieldTreeWant = "btrfs.util.rebuilt-forrest.add-tree.want"
 )
 
-func withWant(ctx context.Context, logField, reason string, wantKey WantWithTree) context.Context {
+func withWant(ctx context.Context, logField, reason string, wantKey wantWithTree) context.Context {
 	ctx = dlog.WithField(ctx, logField+".reason", reason)
 	ctx = dlog.WithField(ctx, logField+".key", wantKey)
 	return ctx

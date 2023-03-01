@@ -66,9 +66,9 @@ type rebuilder struct {
 }
 
 type treeAugmentQueue struct {
-	zero   map[Want]struct{}
-	single map[Want]btrfsvol.LogicalAddr
-	multi  map[Want]containers.Set[btrfsvol.LogicalAddr]
+	zero   map[want]struct{}
+	single map[want]btrfsvol.LogicalAddr
+	multi  map[want]containers.Set[btrfsvol.LogicalAddr]
 }
 
 type Rebuilder interface {
@@ -208,7 +208,7 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 		}
 		excPtr, ok := tree.PotentialItems(ctx).Load(key.Key)
 		if ok && tree.ShouldReplace(incPtr.Node, excPtr.Node) {
-			wantKey := WantWithTree{
+			wantKey := wantWithTree{
 				TreeID: key.TreeID,
 				Key:    wantFromKey(key.Key),
 			}
@@ -520,7 +520,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (queue *treeAugmentQueue) has(wantKey Want) bool {
+func (queue *treeAugmentQueue) has(wantKey want) bool {
 	if queue != nil {
 		if queue.zero != nil {
 			if _, ok := queue.zero[wantKey]; ok {
@@ -541,7 +541,7 @@ func (queue *treeAugmentQueue) has(wantKey Want) bool {
 	return false
 }
 
-func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (queue *treeAugmentQueue) store(wantKey want, choices containers.Set[btrfsvol.LogicalAddr]) {
 	if len(choices) == 0 && wantKey.OffsetType > offsetExact {
 		// This wantKey is unlikely to come up again, so it's
 		// not worth the RAM of storing a negative result.
@@ -550,27 +550,27 @@ func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsv
 	switch len(choices) {
 	case 0:
 		if queue.zero == nil {
-			queue.zero = make(map[Want]struct{})
+			queue.zero = make(map[want]struct{})
 		}
 		queue.zero[wantKey] = struct{}{}
 	case 1:
 		if queue.single == nil {
-			queue.single = make(map[Want]btrfsvol.LogicalAddr)
+			queue.single = make(map[want]btrfsvol.LogicalAddr)
 		}
 		queue.single[wantKey] = choices.TakeOne()
 	default:
 		if queue.multi == nil {
-			queue.multi = make(map[Want]containers.Set[btrfsvol.LogicalAddr])
+			queue.multi = make(map[want]containers.Set[btrfsvol.LogicalAddr])
 		}
 		queue.multi[wantKey] = choices
 	}
 }
 
-func (o *rebuilder) hasAugment(wantKey WantWithTree) bool {
+func (o *rebuilder) hasAugment(wantKey wantWithTree) bool {
 	return o.augmentQueue[wantKey.TreeID].has(wantKey.Key)
 }
 
-func (o *rebuilder) wantAugment(ctx context.Context, wantKey WantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (o *rebuilder) wantAugment(ctx context.Context, wantKey wantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
 	if o.augmentQueue[wantKey.TreeID] == nil {
 		o.augmentQueue[wantKey.TreeID] = new(treeAugmentQueue)
 	}

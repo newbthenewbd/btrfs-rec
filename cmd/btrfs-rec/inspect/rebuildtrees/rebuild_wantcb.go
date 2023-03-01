@@ -30,9 +30,9 @@ func (graphCallbacks) FSErr(ctx context.Context, e error) {
 
 // Want implements btrfscheck.GraphCallbacks.
 func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetAny,
@@ -42,7 +42,7 @@ func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfspri
 	o._want(ctx, wantKey)
 }
 
-func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsprim.Key, ok bool) {
+func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsprim.Key, ok bool) {
 	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return btrfsprim.Key{}, false
@@ -79,9 +79,9 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 
 // WantOff implements btrfscheck.GraphCallbacks.
 func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetExact,
@@ -92,7 +92,7 @@ func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfs
 	o._wantOff(ctx, wantKey)
 }
 
-func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool) {
+func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool) {
 	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return false
@@ -123,9 +123,9 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 
 // WantDirIndex implements btrfscheck.GraphCallbacks.
 func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   btrfsitem.DIR_INDEX_KEY,
 			OffsetType: offsetName,
@@ -248,9 +248,9 @@ func (o graphCallbacks) _wantRange(
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
 	beg, end uint64,
 ) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetAny,
@@ -358,9 +358,9 @@ func (o graphCallbacks) _wantRange(
 //
 // interval is [beg, end)
 func (o graphCallbacks) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
-	inodeWant := WantWithTree{
+	inodeWant := wantWithTree{
 		TreeID: inodeTree,
-		Key: Want{
+		Key: want{
 			ObjectID:   inode,
 			ItemType:   btrfsitem.INODE_ITEM_KEY,
 			OffsetType: offsetExact,
