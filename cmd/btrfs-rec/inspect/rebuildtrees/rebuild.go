@@ -89,7 +89,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 		scan:  scanData,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(scanData.Superblock, scanData.Graph, keyIO, o)
+	o.rebuilt = btrfsutil.NewRebuiltForrest(scanData.Superblock, scanData.Graph, keyIO, forrestCallbacks{o})
 	return o, nil
 }
 
@@ -286,7 +286,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", item.keyAndTree)
 			o.curKey.TreeID = item.TreeID
 			o.curKey.Key.Val = item.Key
-			btrfscheck.HandleItem(ctx, o, item.TreeID, btrfstree.Item{
+			btrfscheck.HandleItem(ctx, graphCallbacks{o}, item.TreeID, btrfstree.Item{
 				Key:  item.Key,
 				Body: item.Body,
 			})

@@ -19,13 +19,17 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
+type graphCallbacks struct {
+	*rebuilder
+}
+
 // FSErr implements btrfscheck.GraphCallbacks.
-func (*rebuilder) FSErr(ctx context.Context, e error) {
+func (graphCallbacks) FSErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 
 // Want implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
+func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -74,7 +78,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 }
 
 // WantOff implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
+func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -118,7 +122,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 }
 
 // WantDirIndex implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
+func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -174,7 +178,7 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 	o.wantAugment(ctx, wantKey, wants)
 }
 
-func (o *rebuilder) _walkRange(
+func (o graphCallbacks) _walkRange(
 	ctx context.Context,
 	items *containers.SortedMap[btrfsprim.Key, btrfsutil.ItemPtr],
 	treeID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
@@ -239,7 +243,7 @@ func (a gap) Compare(b gap) int {
 	return containers.NativeCompare(a.Beg, b.Beg)
 }
 
-func (o *rebuilder) _wantRange(
+func (o graphCallbacks) _wantRange(
 	ctx context.Context, reason string,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
 	beg, end uint64,
@@ -353,7 +357,7 @@ func (o *rebuilder) _wantRange(
 // WantCSum implements btrfscheck.GraphCallbacks.
 //
 // interval is [beg, end)
-func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
+func (o graphCallbacks) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
 	inodeWant := WantWithTree{
 		TreeID: inodeTree,
 		Key: Want{
@@ -392,7 +396,7 @@ func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inod
 }
 
 // WantFileExt implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+func (o graphCallbacks) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	o._wantRange(
 		ctx, reason,
 		treeID, ino, btrfsprim.EXTENT_DATA_KEY,
