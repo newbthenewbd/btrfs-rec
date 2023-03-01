@@ -12,7 +12,6 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
-	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -36,13 +35,9 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			var scanResults rebuildmappings.ScanDevicesResult
-			if scandevicesFilename != "" {
-				var err error
-				scanResults, err = readJSONFile[rebuildmappings.ScanDevicesResult](ctx, scandevicesFilename)
-				if err != nil {
-					return err
-				}
+			nodeList, err := readNodeList(ctx, scandevicesFilename)
+			if err != nil {
+				return err
 			}
 
 			var treeErrCnt int
@@ -98,23 +93,21 @@ func init() {
 				treeItemCnt = make(map[btrfsitem.Type]int)
 				textui.Fprintf(os.Stdout, "lost+found\n")
 				sb, _ := fs.Superblock()
-				for _, devResults := range scanResults {
-					for laddr := range devResults.FoundNodes {
-						if visitedNodes.Has(laddr) {
-							continue
-						}
-						visitedNodes.Insert(laddr)
-						node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
-							LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
-						})
-						if err != nil {
-							treeErrCnt++
-							continue
-						}
-						for _, item := range node.Data.BodyLeaf {
-							typ := item.Key.ItemType
-							treeItemCnt[typ]++
-						}
+				for _, laddr := range nodeList {
+					if visitedNodes.Has(laddr) {
+						continue
+					}
+					visitedNodes.Insert(laddr)
+					node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
+						LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+					})
+					if err != nil {
+						treeErrCnt++
+						continue
+					}
+					for _, item := range node.Data.BodyLeaf {
+						typ := item.Key.ItemType
+						treeItemCnt[typ]++
 					}
 				}
 				flush()

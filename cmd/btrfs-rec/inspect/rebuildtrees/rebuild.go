@@ -14,7 +14,6 @@ import (
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 
-	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
@@ -74,9 +73,9 @@ type Rebuilder interface {
 	ListRoots(context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
 }
 
-func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults rebuildmappings.ScanDevicesResult) (Rebuilder, error) {
+func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (Rebuilder, error) {
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.step", "read-fs-data")
-	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
+	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeList) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
-	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildtrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -30,17 +29,14 @@ func init() {
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			// This is wrapped in a func in order to *ensure* that `nodeScanResults` goes out of scope once
+			// This is wrapped in a func in order to *ensure* that `nodeList` goes out of scope once
 			// `rebuilder` has been created.
 			rebuilder, err := func(ctx context.Context) (rebuildtrees.Rebuilder, error) {
-				dlog.Infof(ctx, "Reading %q...", args[0])
-				nodeScanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
+				nodeList, err := readNodeList(ctx, args[0])
 				if err != nil {
 					return nil, err
 				}
-				dlog.Infof(ctx, "... done reading %q", args[0])
-
-				return rebuildtrees.NewRebuilder(ctx, fs, nodeScanResults)
+				return rebuildtrees.NewRebuilder(ctx, fs, nodeList)
 			}(ctx)
 			if err != nil {
 				return err

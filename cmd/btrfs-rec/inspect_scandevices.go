@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -14,6 +15,9 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 func init() {
@@ -43,4 +47,25 @@ func init() {
 			return nil
 		},
 	})
+}
+
+func readNodeList(ctx context.Context, filename string) ([]btrfsvol.LogicalAddr, error) {
+	if filename == "" {
+		return nil, nil
+	}
+	results, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, filename)
+	if err != nil {
+		return nil, err
+	}
+	var cnt int
+	for _, devResults := range results {
+		cnt += len(devResults.FoundNodes)
+	}
+	set := make(containers.Set[btrfsvol.LogicalAddr], cnt)
+	for _, devResults := range results {
+		for laddr := range devResults.FoundNodes {
+			set.Insert(laddr)
+		}
+	}
+	return maps.SortedKeys(set), nil
 }
