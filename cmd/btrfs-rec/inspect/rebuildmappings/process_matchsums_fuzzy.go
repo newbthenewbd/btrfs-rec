@@ -39,17 +39,17 @@ func (a fuzzyRecord) Compare(b fuzzyRecord) int {
 
 func matchBlockGroupSumsFuzzy(ctx context.Context,
 	fs *btrfs.FS,
-	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
+	blockgroups map[btrfsvol.LogicalAddr]blockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	logicalSums SumRunWithGaps[btrfsvol.LogicalAddr],
+	logicalSums sumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
 	_ctx := ctx
 
 	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.substep", "indexing")
 	dlog.Info(ctx, "Indexing physical regions...") // O(m)
-	regions := ListUnmappedPhysicalRegions(fs)
+	regions := listUnmappedPhysicalRegions(fs)
 	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
-	if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+	if err := walkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
 		return region.Walk(ctx, func(paddr btrfsvol.PhysicalAddr, sum btrfssum.ShortSum) error {
 			physicalIndex[sum] = append(physicalIndex[sum], btrfsvol.QualifiedPhysicalAddr{
 				Dev:  devID,
@@ -67,7 +67,7 @@ func matchBlockGroupSumsFuzzy(ctx context.Context,
 	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
+		bgRun := sumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 
 		d := bgRun.PatLen()
 		matches := make(map[btrfsvol.QualifiedPhysicalAddr]int)

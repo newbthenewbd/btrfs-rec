@@ -29,29 +29,31 @@ type ScanDevicesResult = map[btrfsvol.DeviceID]ScanOneDeviceResult
 type ScanOneDeviceResult struct {
 	Checksums        btrfssum.SumRun[btrfsvol.PhysicalAddr]
 	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
-	FoundChunks      []btrfstree.SysChunk
-	FoundBlockGroups []SysBlockGroup
-	FoundDevExtents  []SysDevExtent
-	FoundExtentCSums []SysExtentCSum
+	FoundChunks      []FoundChunk
+	FoundBlockGroups []FoundBlockGroup
+	FoundDevExtents  []FoundDevExtent
+	FoundExtentCSums []FoundExtentCSum
 }
 
-type SysBlockGroup struct {
+type FoundChunk = btrfstree.SysChunk
+
+type FoundBlockGroup struct {
 	Key btrfsprim.Key
 	BG  btrfsitem.BlockGroup
 }
 
-type SysDevExtent struct {
+type FoundDevExtent struct {
 	Key    btrfsprim.Key
 	DevExt btrfsitem.DevExtent
 }
 
-type SysExtentCSum struct {
+type FoundExtentCSum struct {
 	Generation btrfsprim.Generation
 	Sums       btrfsitem.ExtentCSum
 }
 
 // Compare implements containers.Ordered.
-func (a SysExtentCSum) Compare(b SysExtentCSum) int {
+func (a FoundExtentCSum) Compare(b FoundExtentCSum) int {
 	return containers.NativeCompare(a.Sums.Addr, b.Sums.Addr)
 }
 
@@ -129,7 +131,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 			case *btrfsitem.Chunk:
 				dlog.Tracef(ctx, "node@%v: item %v: found chunk",
 					addr, i)
-				scanner.result.FoundChunks = append(scanner.result.FoundChunks, btrfstree.SysChunk{
+				scanner.result.FoundChunks = append(scanner.result.FoundChunks, FoundChunk{
 					Key:   item.Key,
 					Chunk: *itemBody,
 				})
@@ -144,7 +146,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 			case *btrfsitem.BlockGroup:
 				dlog.Tracef(ctx, "node@%v: item %v: found block group",
 					addr, i)
-				scanner.result.FoundBlockGroups = append(scanner.result.FoundBlockGroups, SysBlockGroup{
+				scanner.result.FoundBlockGroups = append(scanner.result.FoundBlockGroups, FoundBlockGroup{
 					Key: item.Key,
 					BG:  *itemBody,
 				})
@@ -159,7 +161,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 			case *btrfsitem.DevExtent:
 				dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
 					addr, i)
-				scanner.result.FoundDevExtents = append(scanner.result.FoundDevExtents, SysDevExtent{
+				scanner.result.FoundDevExtents = append(scanner.result.FoundDevExtents, FoundDevExtent{
 					Key:    item.Key,
 					DevExt: *itemBody,
 				})
@@ -174,7 +176,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 			case *btrfsitem.ExtentCSum:
 				dlog.Tracef(ctx, "node@%v: item %v: found csums",
 					addr, i)
-				scanner.result.FoundExtentCSums = append(scanner.result.FoundExtentCSums, SysExtentCSum{
+				scanner.result.FoundExtentCSums = append(scanner.result.FoundExtentCSums, FoundExtentCSum{
 					Generation: node.Head.Generation,
 					Sums:       *itemBody,
 				})

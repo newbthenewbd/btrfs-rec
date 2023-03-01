@@ -19,8 +19,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumRunWithGaps[btrfsvol.LogicalAddr] {
-	var records []SysExtentCSum
+func extractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) sumRunWithGaps[btrfsvol.LogicalAddr] {
+	var records []FoundExtentCSum
 	for _, devResults := range scanResults {
 		records = append(records, devResults.FoundExtentCSums...)
 	}
@@ -37,7 +37,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumR
 		}
 	})
 	if len(records) == 0 {
-		return SumRunWithGaps[btrfsvol.LogicalAddr]{}
+		return sumRunWithGaps[btrfsvol.LogicalAddr]{}
 	}
 	sumSize := records[0].Sums.ChecksumSize
 
@@ -52,10 +52,10 @@ func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumR
 	// "AAAAAAA" shouldn't be present, and if we just discard "BBBBBBBB"
 	// because it conflicts with "CCCCCCC", then we would erroneously
 	// include "AAAAAAA".
-	addrspace := new(containers.RBTree[SysExtentCSum])
+	addrspace := new(containers.RBTree[FoundExtentCSum])
 	for _, newRecord := range records {
 		for {
-			conflict := addrspace.Search(func(oldRecord SysExtentCSum) int {
+			conflict := addrspace.Search(func(oldRecord FoundExtentCSum) int {
 				switch {
 				case newRecord.Sums.Addr.Add(newRecord.Sums.Size()) <= oldRecord.Sums.Addr:
 					// 'newRecord' is wholly to the left of 'oldRecord'.
@@ -127,7 +127,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumR
 			case newRecord.Sums.Addr.Add(newRecord.Sums.Size()) > overlapEnd:
 				suffix = newRecord.Sums.Sums[newOverlapEnd:]
 			}
-			unionRecord := SysExtentCSum{
+			unionRecord := FoundExtentCSum{
 				Generation: oldRecord.Generation,
 				Sums: btrfsitem.ExtentCSum{
 					SumRun: btrfssum.SumRun[btrfsvol.LogicalAddr]{
@@ -143,11 +143,11 @@ func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumR
 		}
 	}
 
-	// Now flatten that RBTree in to a SumRunWithGaps.
-	var flattened SumRunWithGaps[btrfsvol.LogicalAddr]
+	// Now flatten that RBTree in to a sumRunWithGaps.
+	var flattened sumRunWithGaps[btrfsvol.LogicalAddr]
 	var curAddr btrfsvol.LogicalAddr
 	var curSums strings.Builder
-	addrspace.Range(func(node *containers.RBNode[SysExtentCSum]) bool {
+	addrspace.Range(func(node *containers.RBNode[FoundExtentCSum]) bool {
 		curEnd := curAddr + (btrfsvol.LogicalAddr(curSums.Len()/sumSize) * btrfssum.BlockSize)
 		if node.Value.Sums.Addr != curEnd {
 			if curSums.Len() > 0 {
@@ -178,7 +178,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumR
 	return flattened
 }
 
-func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums SumRunWithGaps[btrfsvol.LogicalAddr]) []btrfssum.SumRun[btrfsvol.LogicalAddr] {
+func listUnmappedLogicalRegions(fs *btrfs.FS, logicalSums sumRunWithGaps[btrfsvol.LogicalAddr]) []btrfssum.SumRun[btrfsvol.LogicalAddr] {
 	// There are a lot of ways this algorithm could be made
 	// faster.
 	var ret []btrfssum.SumRun[btrfsvol.LogicalAddr]
@@ -221,8 +221,8 @@ func ListUnmappedLogicalRegions(fs *btrfs.FS, logicalSums SumRunWithGaps[btrfsvo
 	return ret
 }
 
-func SumsForLogicalRegion(sums SumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) SumRunWithGaps[btrfsvol.LogicalAddr] {
-	runs := SumRunWithGaps[btrfsvol.LogicalAddr]{
+func sumsForLogicalRegion(sums sumRunWithGaps[btrfsvol.LogicalAddr], beg btrfsvol.LogicalAddr, size btrfsvol.AddrDelta) sumRunWithGaps[btrfsvol.LogicalAddr] {
+	runs := sumRunWithGaps[btrfsvol.LogicalAddr]{
 		Addr: beg,
 		Size: size,
 	}

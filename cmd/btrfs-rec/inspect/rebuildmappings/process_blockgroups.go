@@ -13,18 +13,18 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-type BlockGroup struct {
+type blockGroup struct {
 	LAddr btrfsvol.LogicalAddr
 	Size  btrfsvol.AddrDelta
 	Flags btrfsvol.BlockGroupFlags
 }
 
-func DedupBlockGroups(scanResults ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
+func dedupedBlockGroups(scanResults ScanDevicesResult) (map[btrfsvol.LogicalAddr]blockGroup, error) {
 	// Dedup
-	bgsSet := make(containers.Set[BlockGroup])
+	bgsSet := make(containers.Set[blockGroup])
 	for _, devResults := range scanResults {
 		for _, bg := range devResults.FoundBlockGroups {
-			bgsSet.Insert(BlockGroup{
+			bgsSet.Insert(blockGroup{
 				LAddr: btrfsvol.LogicalAddr(bg.Key.ObjectID),
 				Size:  btrfsvol.AddrDelta(bg.Key.Offset),
 				Flags: bg.BG.Flags,
@@ -49,7 +49,7 @@ func DedupBlockGroups(scanResults ScanDevicesResult) (map[btrfsvol.LogicalAddr]B
 
 	// Return.  We return a map instead of a slice in order to
 	// facilitate easy deletes.
-	bgsMap := make(map[btrfsvol.LogicalAddr]BlockGroup, len(bgsSet))
+	bgsMap := make(map[btrfsvol.LogicalAddr]blockGroup, len(bgsSet))
 	for bg := range bgsSet {
 		bgsMap[bg.LAddr] = bg
 	}

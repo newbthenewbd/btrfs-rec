@@ -19,15 +19,15 @@ import (
 
 func matchBlockGroupSumsExact(ctx context.Context,
 	fs *btrfs.FS,
-	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
+	blockgroups map[btrfsvol.LogicalAddr]blockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	logicalSums SumRunWithGaps[btrfsvol.LogicalAddr],
+	logicalSums sumRunWithGaps[btrfsvol.LogicalAddr],
 ) error {
-	regions := ListUnmappedPhysicalRegions(fs)
+	regions := listUnmappedPhysicalRegions(fs)
 	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {
 		blockgroup := blockgroups[bgLAddr]
-		bgRun := SumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
+		bgRun := sumsForLogicalRegion(logicalSums, blockgroup.LAddr, blockgroup.Size)
 		if len(bgRun.Runs) == 0 {
 			dlog.Errorf(ctx, "(%v/%v) blockgroup[laddr=%v] can't be matched because it has 0 runs",
 				i+1, numBlockgroups, bgLAddr)
@@ -35,7 +35,7 @@ func matchBlockGroupSumsExact(ctx context.Context,
 		}
 
 		var matches []btrfsvol.QualifiedPhysicalAddr
-		if err := WalkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
+		if err := walkUnmappedPhysicalRegions(ctx, physicalSums, regions, func(devID btrfsvol.DeviceID, region btrfssum.SumRun[btrfsvol.PhysicalAddr]) error {
 			rawMatches := indexAll[int, btrfssum.ShortSum](region, bgRun)
 			for _, match := range rawMatches {
 				matches = append(matches, btrfsvol.QualifiedPhysicalAddr{

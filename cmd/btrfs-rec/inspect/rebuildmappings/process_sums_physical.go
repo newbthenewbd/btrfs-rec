@@ -16,7 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func ExtractPhysicalSums(scanResults ScanDevicesResult) map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr] {
+func extractPhysicalSums(scanResults ScanDevicesResult) map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr] {
 	ret := make(map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr], len(scanResults))
 	for devID, devResults := range scanResults {
 		ret[devID] = devResults.Checksums
@@ -24,12 +24,12 @@ func ExtractPhysicalSums(scanResults ScanDevicesResult) map[btrfsvol.DeviceID]bt
 	return ret
 }
 
-type PhysicalRegion struct {
+type physicalRegion struct {
 	Beg, End btrfsvol.PhysicalAddr
 }
 
-func ListUnmappedPhysicalRegions(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalRegion {
-	regions := make(map[btrfsvol.DeviceID][]PhysicalRegion)
+func listUnmappedPhysicalRegions(fs *btrfs.FS) map[btrfsvol.DeviceID][]physicalRegion {
+	regions := make(map[btrfsvol.DeviceID][]physicalRegion)
 	pos := make(map[btrfsvol.DeviceID]btrfsvol.PhysicalAddr)
 	mappings := fs.LV.Mappings()
 	sort.Slice(mappings, func(i, j int) bool {
@@ -37,7 +37,7 @@ func ListUnmappedPhysicalRegions(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalR
 	})
 	for _, mapping := range mappings {
 		if pos[mapping.PAddr.Dev] < mapping.PAddr.Addr {
-			regions[mapping.PAddr.Dev] = append(regions[mapping.PAddr.Dev], PhysicalRegion{
+			regions[mapping.PAddr.Dev] = append(regions[mapping.PAddr.Dev], physicalRegion{
 				Beg: pos[mapping.PAddr.Dev],
 				End: mapping.PAddr.Addr,
 			})
@@ -49,7 +49,7 @@ func ListUnmappedPhysicalRegions(fs *btrfs.FS) map[btrfsvol.DeviceID][]PhysicalR
 	for devID, dev := range fs.LV.PhysicalVolumes() {
 		devSize := dev.Size()
 		if pos[devID] < devSize {
-			regions[devID] = append(regions[devID], PhysicalRegion{
+			regions[devID] = append(regions[devID], physicalRegion{
 				Beg: pos[devID],
 				End: devSize,
 			})
@@ -62,9 +62,9 @@ func roundUp[T constraints.Integer](x, multiple T) T {
 	return ((x + multiple - 1) / multiple) * multiple
 }
 
-func WalkUnmappedPhysicalRegions(ctx context.Context,
+func walkUnmappedPhysicalRegions(ctx context.Context,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
-	gaps map[btrfsvol.DeviceID][]PhysicalRegion,
+	gaps map[btrfsvol.DeviceID][]physicalRegion,
 	fn func(btrfsvol.DeviceID, btrfssum.SumRun[btrfsvol.PhysicalAddr]) error,
 ) error {
 	for _, devID := range maps.SortedKeys(gaps) {
