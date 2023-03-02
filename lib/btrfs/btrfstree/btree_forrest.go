@@ -78,3 +78,62 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 		}
 	}
 }
+
+type TreeOperatorImpl struct {
+	NodeSource
+}
+
+func (fs TreeOperatorImpl) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*RawTree, error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, err
+	}
+	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
+	if err != nil {
+		return nil, err
+	}
+	return &RawTree{
+		Forrest:  fs,
+		TreeRoot: *rootInfo,
+	}, nil
+}
+
+// TreeWalk implements the 'TreeOperator' interface.
+func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	tree, err := fs.RawTree(ctx, treeID)
+	if err != nil {
+		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		return
+	}
+	tree.TreeWalk(ctx, errHandle, cbs)
+}
+
+// TreeLookup implements the 'TreeOperator' interface.
+func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
+	ctx := context.TODO()
+	tree, err := fs.RawTree(ctx, treeID)
+	if err != nil {
+		return Item{}, err
+	}
+	return tree.TreeLookup(ctx, key)
+}
+
+// TreeSearch implements the 'TreeOperator' interface.
+func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
+	ctx := context.TODO()
+	tree, err := fs.RawTree(ctx, treeID)
+	if err != nil {
+		return Item{}, err
+	}
+	return tree.TreeSearch(ctx, searcher)
+}
+
+// TreeSearchAll implements the 'TreeOperator' interface.
+func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
+	ctx := context.TODO()
+	tree, err := fs.RawTree(ctx, treeID)
+	if err != nil {
+		return nil, err
+	}
+	return tree.TreeSearchAll(ctx, searcher)
+}

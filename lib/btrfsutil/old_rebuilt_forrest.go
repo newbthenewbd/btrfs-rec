@@ -166,6 +166,10 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		cacheEntry.RootErr = err
 		return
 	}
+	tree := &btrfstree.RawTree{
+		Forrest:  btrfstree.TreeOperatorImpl{NodeSource: bt.inner},
+		TreeRoot: *root,
+	}
 
 	errHandle := func(err *btrfstree.TreeError) {
 		if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
@@ -224,7 +228,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		},
 	}
 
-	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(ctx, *root, errHandle, cbs)
+	tree.TreeWalk(ctx, errHandle, cbs)
 }
 
 func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error) error {

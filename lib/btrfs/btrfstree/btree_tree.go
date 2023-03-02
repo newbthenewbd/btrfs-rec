@@ -18,39 +18,24 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-type TreeOperatorImpl struct {
-	NodeSource
+type RawTree struct {
+	Forrest TreeOperatorImpl
+	TreeRoot
 }
 
-// TreeWalk implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	sb, err := fs.Superblock()
-	if err != nil {
-		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
-	}
-	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
-	if err != nil {
-		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
-		return
-	}
-	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
-}
-
-// RawTreeWalk is a utility method to help with implementing the
-// 'TreeOperator' interface.
-func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (tree *RawTree) TreeWalk(ctx context.Context, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := Path{{
-		FromTree:         rootInfo.ID,
+		FromTree:         tree.ID,
 		FromItemSlot:     -1,
-		ToNodeAddr:       rootInfo.RootNode,
-		ToNodeGeneration: rootInfo.Generation,
-		ToNodeLevel:      rootInfo.Level,
+		ToNodeAddr:       tree.RootNode,
+		ToNodeGeneration: tree.Generation,
+		ToNodeLevel:      tree.Level,
 		ToMaxKey:         btrfsprim.MaxKey,
 	}}
-	fs.treeWalk(ctx, path, errHandle, cbs)
+	tree.walk(ctx, path, errHandle, cbs)
 }
 
-func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (tree *RawTree) walk(ctx context.Context, path Path, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -69,7 +54,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle fu
 			return
 		}
 	}
-	node, err := fs.ReadNode(path)
+	node, err := tree.Forrest.ReadNode(path)
 	defer node.Free()
 	if ctx.Err() != nil {
 		return
@@ -117,7 +102,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle fu
 					return
 				}
 			}
-			fs.treeWalk(ctx, itemPath, errHandle, cbs)
+			tree.walk(ctx, itemPath, errHandle, cbs)
 			if cbs.PostKeyPointer != nil {
 				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
 					errHandle(&TreeError{Path: itemPath, Err: err})
@@ -167,20 +152,20 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle fu
 	}
 }
 
-func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
+func (tree *RawTree) search(_ context.Context, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
 	path := Path{{
-		FromTree:         treeRoot.ID,
+		FromTree:         tree.ID,
 		FromItemSlot:     -1,
-		ToNodeAddr:       treeRoot.RootNode,
-		ToNodeGeneration: treeRoot.Generation,
-		ToNodeLevel:      treeRoot.Level,
+		ToNodeAddr:       tree.RootNode,
+		ToNodeGeneration: tree.Generation,
+		ToNodeLevel:      tree.Level,
 		ToMaxKey:         btrfsprim.MaxKey,
 	}}
 	for {
 		if path.Node(-1).ToNodeAddr == 0 {
 			return nil, nil, ErrNoItem
 		}
-		node, err := fs.ReadNode(path)
+		node, err := tree.Forrest.ReadNode(path)
 		if err != nil {
 			node.Free()
 			return nil, nil, err
@@ -403,18 +388,8 @@ func (fs TreeOperatorImpl) next(path Path, node *Node) (Path, *Node, error) {
 	return path, node, nil
 }
 
-// TreeSearch implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
-	ctx := context.TODO()
-	sb, err := fs.Superblock()
-	if err != nil {
-		return Item{}, err
-	}
-	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
-	if err != nil {
-		return Item{}, err
-	}
-	path, node, err := fs.treeSearch(*rootInfo, searcher.Search)
+func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Item, error) {
+	path, node, err := tree.search(ctx, searcher.Search)
 	if err != nil {
 		return Item{}, fmt.Errorf("item with %s: %w", searcher, err)
 	}
@@ -424,23 +399,12 @@ func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearc
 	return item, nil
 }
 
-// TreeLookup implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
-	return fs.TreeSearch(treeID, SearchExactKey(key))
+func (tree *RawTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (Item, error) {
+	return tree.TreeSearch(ctx, SearchExactKey(key))
 }
 
-// TreeSearchAll implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
-	ctx := context.TODO()
-	sb, err := fs.Superblock()
-	if err != nil {
-		return nil, err
-	}
-	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
-	if err != nil {
-		return nil, err
-	}
-	middlePath, middleNode, err := fs.treeSearch(*rootInfo, searcher.Search)
+func (tree *RawTree) TreeSearchAll(ctx context.Context, searcher TreeSearcher) ([]Item, error) {
+	middlePath, middleNode, err := tree.search(ctx, searcher.Search)
 	if err != nil {
 		return nil, fmt.Errorf("items with %s: %w", searcher, err)
 	}
@@ -450,7 +414,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 	var errs derror.MultiError
 	prevPath, prevNode := middlePath, middleNode
 	for {
-		prevPath, prevNode, err = fs.prev(prevPath, prevNode)
+		prevPath, prevNode, err = tree.Forrest.prev(prevPath, prevNode)
 		if err != nil {
 			errs = append(errs, err)
 			break
@@ -469,7 +433,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 	slices.Reverse(ret)
 	if prevNode.Head.Addr != middlePath.Node(-1).ToNodeAddr {
 		prevNode.Free()
-		middleNode, err = fs.ReadNode(middlePath)
+		middleNode, err = tree.Forrest.ReadNode(middlePath)
 		if err != nil {
 			middleNode.Free()
 			return nil, fmt.Errorf("items with %s: %w", searcher, err)
@@ -477,7 +441,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 	}
 	nextPath, nextNode := middlePath, middleNode
 	for {
-		nextPath, nextNode, err = fs.next(nextPath, nextNode)
+		nextPath, nextNode, err = tree.Forrest.next(nextPath, nextNode)
 		if err != nil {
 			errs = append(errs, err)
 			break
