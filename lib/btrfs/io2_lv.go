@@ -161,12 +161,15 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 			}
 		}
 	}
+	chunkTree, err := fs.ForrestLookup(ctx, btrfsprim.CHUNK_TREE_OBJECTID)
+	if err != nil {
+		return err
+	}
+
 	var errs derror.MultiError
-	fs.TreeWalk(ctx, btrfsprim.CHUNK_TREE_OBJECTID, func(err *btrfstree.TreeError) {
-		errs = append(errs, err)
-	}, btrfstree.TreeWalkHandler{Item: func(_ btrfstree.Path, item btrfstree.Item) {
+	if err := chunkTree.TreeRange(ctx, func(item btrfstree.Item) bool {
 		if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-			return
+			return true
 		}
 		switch itemBody := item.Body.(type) {
 		case *btrfsitem.Chunk:
@@ -183,10 +186,14 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 			// updated.
 			panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
 		}
-	}})
+		return true
+	}); err != nil {
+		errs = append(errs, err)
+	}
 	if len(errs) > 0 {
 		return errs
 	}
+
 	return nil
 }
 

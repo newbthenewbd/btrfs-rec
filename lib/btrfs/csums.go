@@ -5,6 +5,7 @@
 package btrfs
 
 import (
+	"context"
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -47,8 +48,12 @@ func ChecksumQualifiedPhysical(fs *FS, alg btrfssum.CSumType, paddr btrfsvol.Qua
 	return ChecksumPhysical(dev, alg, paddr.Addr)
 }
 
-func LookupCSum(fs btrfstree.TreeOperator, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
-	item, err := fs.TreeSearch(btrfsprim.CSUM_TREE_OBJECTID, btrfstree.SearchCSum(laddr, alg.Size()))
+func LookupCSum(ctx context.Context, fs btrfstree.Forrest, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
+	csumTree, err := fs.ForrestLookup(ctx, btrfsprim.CSUM_TREE_OBJECTID)
+	if err != nil {
+		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, err
+	}
+	item, err := csumTree.TreeSearch(ctx, btrfstree.SearchCSum(laddr, alg.Size()))
 	if err != nil {
 		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, err
 	}
