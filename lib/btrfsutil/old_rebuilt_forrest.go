@@ -40,9 +40,20 @@ func (e oldRebuiltTreeError) Unwrap() error {
 }
 
 type oldRebuiltTreeValue struct {
-	Path     SkinnyPath
 	Key      btrfsprim.Key
 	ItemSize uint32
+
+	Node nodeInfo
+	Slot int
+}
+
+type nodeInfo struct {
+	LAddr      btrfsvol.LogicalAddr
+	Level      uint8
+	Generation btrfsprim.Generation
+	Owner      btrfsprim.ObjID
+	MinItem    btrfsprim.Key
+	MaxItem    btrfsprim.Key
 }
 
 // Compare implements containers.Ordered.
@@ -67,8 +78,6 @@ func newOldRebuiltTree() oldRebuiltTree {
 type OldRebuiltForrest struct {
 	ctx   context.Context //nolint:containedctx // don't have an option while keeping the same API
 	inner *btrfs.FS
-
-	arena *SkinnyPathArena
 
 	// btrfsprim.ROOT_TREE_OBJECTID
 	rootTreeMu sync.Mutex
@@ -133,16 +142,7 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 			treeRoot, err = btrfstree.LookupTreeRoot(bt, *sb, treeID)
 		}
 	}
-	if bt.arena == nil {
-		var _sb btrfstree.Superblock
-		if sb != nil {
-			_sb = *sb
-		}
-		bt.arena = &SkinnyPathArena{
-			FS: bt.inner,
-			SB: _sb,
-		}
-	}
+
 	cacheEntry := newOldRebuiltTree()
 	if err != nil {
 		cacheEntry.RootErr = err
@@ -151,6 +151,7 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 		bt.rawTreeWalk(*treeRoot, cacheEntry, nil)
 		dlog.Infof(bt.ctx, "... done indexing tree %v", treeID)
 	}
+
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTree = &cacheEntry
 	} else {
@@ -158,6 +159,8 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 	}
 	return cacheEntry
 }
+
+func discardOK[T any](x T, _ bool) T { return x }
 
 func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry oldRebuiltTree, walked *[]btrfsprim.Key) {
 	errHandle := func(err *btrfstree.TreeError) {
@@ -173,7 +176,32 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 		})
 	}
 
+	var curNode nodeInfo
 	cbs := btrfstree.TreeWalkHandler{
+		BadNode: func(path btrfstree.TreePath, node *btrfstree.Node, err error) error {
+			if node != nil {
+				curNode = nodeInfo{
+					LAddr:      path.Node(-1).ToNodeAddr,
+					Level:      node.Head.Level,
+					Generation: node.Head.Generation,
+					Owner:      node.Head.Owner,
+					MinItem:    discardOK(node.MinItem()),
+					MaxItem:    discardOK(node.MaxItem()),
+				}
+			}
+			return err
+		},
+		Node: func(path btrfstree.TreePath, node *btrfstree.Node) error {
+			curNode = nodeInfo{
+				LAddr:      path.Node(-1).ToNodeAddr,
+				Level:      node.Head.Level,
+				Generation: node.Head.Generation,
+				Owner:      node.Head.Owner,
+				MinItem:    discardOK(node.MinItem()),
+				MaxItem:    discardOK(node.MaxItem()),
+			}
+			return nil
+		},
 		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
 			if cacheEntry.Items.Search(func(v oldRebuiltTreeValue) int { return item.Key.Compare(v.Key) }) != nil {
 				// This is a panic because I'm not really sure what the best way to
@@ -182,9 +210,11 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, root.TreeID))
 			}
 			cacheEntry.Items.Insert(oldRebuiltTreeValue{
-				Path:     bt.arena.Deflate(path),
 				Key:      item.Key,
 				ItemSize: item.BodySize,
+
+				Node: curNode,
+				Slot: path.Node(-1).FromItemSlot,
 			})
 			if walked != nil {
 				*walked = append(*walked, item.Key)
@@ -217,6 +247,33 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 	return errs
 }
 
+func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
+	sb, err := bt.inner.Superblock()
+	if err != nil {
+		panic(fmt.Errorf("should not happen: i/o error: %w", err))
+	}
+
+	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeInfo.LAddr, btrfstree.NodeExpectations{
+		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeInfo.LAddr},
+		Level:      containers.Optional[uint8]{OK: true, Val: nodeInfo.Level},
+		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: nodeInfo.Generation},
+		Owner: func(treeID btrfsprim.ObjID) error {
+			if treeID != nodeInfo.Owner {
+				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
+					nodeInfo.Owner, treeID)
+			}
+			return nil
+		},
+		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: nodeInfo.MinItem},
+		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: nodeInfo.MaxItem},
+	})
+	if err != nil {
+		panic(fmt.Errorf("should not happen: i/o error: %w", err))
+	}
+
+	return node
+}
+
 func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
 	tree := bt.RebuiltTree(treeID)
 	if tree.RootErr != nil {
@@ -230,14 +287,10 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstr
 		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, tree.addErrs(searcher.Search, btrfstree.ErrNoItem))
 	}
 
-	itemPath := bt.arena.Inflate(indexItem.Value.Path)
-	node, err := bt.inner.ReadNode(itemPath.Parent())
+	node := bt.readNode(indexItem.Value.Node)
 	defer node.Free()
-	if err != nil {
-		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, tree.addErrs(searcher.Search, err))
-	}
 
-	item := node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+	item := node.BodyLeaf[indexItem.Value.Slot]
 	item.Body = item.Body.CloneItem()
 
 	// Since we were only asked to return 1 item, it isn't
@@ -266,18 +319,12 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrf
 
 	ret := make([]btrfstree.Item, len(indexItems))
 	var node *btrfstree.Node
-	for i := range indexItems {
-		itemPath := bt.arena.Inflate(indexItems[i].Path)
-		if node == nil || node.Head.Addr != itemPath.Node(-2).ToNodeAddr {
-			var err error
+	for i, indexItem := range indexItems {
+		if node == nil || node.Head.Addr != indexItem.Node.LAddr {
 			node.Free()
-			node, err = bt.inner.ReadNode(itemPath.Parent())
-			if err != nil {
-				node.Free()
-				return nil, fmt.Errorf("items with %s: %w", searcher, tree.addErrs(searcher.Search, err))
-			}
+			node = bt.readNode(indexItem.Node)
 		}
-		ret[i] = node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		ret[i] = node.BodyLeaf[indexItem.Slot]
 		ret[i].Body = ret[i].Body.CloneItem()
 	}
 	node.Free()
@@ -312,18 +359,28 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		if bt.ctx.Err() != nil {
 			return false
 		}
-		itemPath := bt.arena.Inflate(indexItem.Value.Path)
-		if node == nil || node.Head.Addr != itemPath.Node(-2).ToNodeAddr {
-			var err error
+		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
 			node.Free()
-			node, err = bt.inner.ReadNode(itemPath.Parent())
-			if err != nil {
-				node.Free()
-				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-				return true
-			}
+			node = bt.readNode(indexItem.Value.Node)
 		}
-		item := node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		item := node.BodyLeaf[indexItem.Value.Slot]
+
+		itemPath := btrfstree.TreePath{
+			{
+				FromTree:         treeID,
+				ToNodeAddr:       indexItem.Value.Node.LAddr,
+				ToNodeGeneration: indexItem.Value.Node.Generation,
+				ToNodeLevel:      indexItem.Value.Node.Level,
+				ToKey:            indexItem.Value.Node.MinItem,
+				ToMaxKey:         indexItem.Value.Node.MaxItem,
+			},
+			{
+				FromTree:     indexItem.Value.Node.Owner,
+				FromItemSlot: indexItem.Value.Slot,
+				ToKey:        indexItem.Value.Key,
+				ToMaxKey:     indexItem.Value.Key,
+			},
+		}
 		if err := cbs.Item(itemPath, item); err != nil {
 			errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 		}
