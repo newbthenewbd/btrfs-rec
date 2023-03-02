@@ -105,7 +105,7 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 		return
 	}
-	tree.TreeWalk(ctx, errHandle, cbs)
+	tree.TreeWalk(ctx, cbs)
 }
 
 // TreeLookup implements the 'TreeOperator' interface.

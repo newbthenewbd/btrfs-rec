@@ -168,15 +168,15 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 			errs = append(errs, err)
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) {
 				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-					return nil
+					return
 				}
 				switch itemBody := item.Body.(type) {
 				case *btrfsitem.Chunk:
 					for _, mapping := range itemBody.Mappings(item.Key) {
 						if err := fs.LV.AddMapping(mapping); err != nil {
-							return err
+							errs = append(errs, err)
 						}
 					}
 				case *btrfsitem.Error:
@@ -187,7 +187,6 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 					// updated.
 					panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
 				}
-				return nil
 			},
 		},
 	)

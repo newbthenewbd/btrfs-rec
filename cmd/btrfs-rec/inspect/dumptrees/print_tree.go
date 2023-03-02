@@ -53,9 +53,9 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 			dlog.Error(ctx, err)
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) {
 				if item.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
-					return nil
+					return
 				}
 				treeName, ok := map[btrfsprim.ObjID]string{
 					btrfsprim.ROOT_TREE_OBJECTID:        "root",
@@ -82,7 +82,6 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 				}
 				textui.Fprintf(out, "%v tree key %v \n", treeName, item.Key.Format(btrfsprim.ROOT_TREE_OBJECTID))
 				printTree(ctx, out, fs, item.Key.ObjectID)
-				return nil
 			},
 		},
 	)
@@ -99,20 +98,19 @@ var nodeHeaderSize = binstruct.StaticSize(btrfstree.NodeHeader{})
 func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfsprim.ObjID) {
 	var itemOffset uint32
 	handlers := btrfstree.TreeWalkHandler{
-		Node: func(path btrfstree.Path, node *btrfstree.Node) error {
+		Node: func(path btrfstree.Path, node *btrfstree.Node) {
 			printHeaderInfo(out, node)
 			itemOffset = node.Size - uint32(nodeHeaderSize)
-			return nil
 		},
-		PreKeyPointer: func(path btrfstree.Path, item btrfstree.KeyPointer) error {
+		KeyPointer: func(path btrfstree.Path, item btrfstree.KeyPointer) bool {
 			treeID := path[0].FromTree
 			textui.Fprintf(out, "\tkey %v block %v gen %v\n",
 				item.Key.Format(treeID),
 				item.BlockPtr,
 				item.Generation)
-			return nil
+			return true
 		},
-		Item: func(path btrfstree.Path, item btrfstree.Item) error {
+		Item: func(path btrfstree.Path, item btrfstree.Item) {
 			treeID := path[0].FromTree
 			i := path.Node(-1).FromItemSlot
 			bs, _ := binstruct.Marshal(item.Body)
@@ -359,7 +357,6 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			default:
 				textui.Fprintf(out, "\t\t(error) unhandled item type: %T\n", body)
 			}
-			return nil
 		},
 	}
 	handlers.BadItem = handlers.Item

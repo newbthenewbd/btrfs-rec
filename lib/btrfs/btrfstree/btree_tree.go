@@ -6,9 +6,7 @@ package btrfstree
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	iofs "io/fs"
 	"math"
 
 	"github.com/datawire/dlib/derror"
@@ -23,7 +21,7 @@ type RawTree struct {
 	TreeRoot
 }
 
-func (tree *RawTree) TreeWalk(ctx context.Context, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (tree *RawTree) TreeWalk(ctx context.Context, cbs TreeWalkHandler) {
 	path := Path{{
 		FromTree:         tree.ID,
 		FromItemSlot:     -1,
@@ -32,10 +30,10 @@ func (tree *RawTree) TreeWalk(ctx context.Context, errHandle func(*TreeError), c
 		ToNodeLevel:      tree.Level,
 		ToMaxKey:         btrfsprim.MaxKey,
 	}}
-	tree.walk(ctx, path, errHandle, cbs)
+	tree.walk(ctx, path, cbs)
 }
 
-func (tree *RawTree) walk(ctx context.Context, path Path, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -43,114 +41,85 @@ func (tree *RawTree) walk(ctx context.Context, path Path, errHandle func(*TreeEr
 		return
 	}
 
-	if cbs.PreNode != nil {
-		if err := cbs.PreNode(path); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return
-			}
-			errHandle(&TreeError{Path: path, Err: err})
-		}
-		if ctx.Err() != nil {
-			return
-		}
-	}
+	// 001
 	node, err := tree.Forrest.ReadNode(path)
 	defer node.Free()
 	if ctx.Err() != nil {
 		return
 	}
-	if err != nil && node != nil && cbs.BadNode != nil {
-		// opportunity to fix the node
-		err = cbs.BadNode(path, node, err)
-		if errors.Is(err, iofs.SkipDir) {
-			return
+
+	// 002
+	switch {
+	case err == nil:
+		if cbs.Node != nil {
+			cbs.Node(path, node)
 		}
-	}
-	if err != nil {
-		errHandle(&TreeError{Path: path, Err: err})
-	} else if cbs.Node != nil {
-		if err := cbs.Node(path, node); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return
-			}
-			errHandle(&TreeError{Path: path, Err: err})
+	default:
+		process := cbs.BadNode != nil && cbs.BadNode(path, node, err)
+		if !process {
+			return
 		}
 	}
 	if ctx.Err() != nil {
 		return
 	}
-	if node != nil {
-		for i, item := range node.BodyInterior {
-			toMaxKey := path.Node(-1).ToMaxKey
-			if i+1 < len(node.BodyInterior) {
-				toMaxKey = node.BodyInterior[i+1].Key.Mm()
-			}
-			itemPath := append(path, PathElem{
-				FromTree:         node.Head.Owner,
-				FromItemSlot:     i,
-				ToNodeAddr:       item.BlockPtr,
-				ToNodeGeneration: item.Generation,
-				ToNodeLevel:      node.Head.Level - 1,
-				ToKey:            item.Key,
-				ToMaxKey:         toMaxKey,
-			})
-			if cbs.PreKeyPointer != nil {
-				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
-					if errors.Is(err, iofs.SkipDir) {
-						continue
-					}
-					errHandle(&TreeError{Path: itemPath, Err: err})
-				}
-				if ctx.Err() != nil {
-					return
-				}
-			}
-			tree.walk(ctx, itemPath, errHandle, cbs)
-			if cbs.PostKeyPointer != nil {
-				if err := cbs.PostKeyPointer(itemPath, item); err != nil {
-					errHandle(&TreeError{Path: itemPath, Err: err})
-				}
-				if ctx.Err() != nil {
-					return
-				}
-			}
+
+	// 003-004
+	if node == nil {
+		return
+	}
+	// branch a (interior)
+	for i, item := range node.BodyInterior {
+		toMaxKey := path.Node(-1).ToMaxKey
+		if i+1 < len(node.BodyInterior) {
+			toMaxKey = node.BodyInterior[i+1].Key.Mm()
 		}
-		for i, item := range node.BodyLeaf {
-			itemPath := append(path, PathElem{
-				FromTree:     node.Head.Owner,
-				FromItemSlot: i,
-				ToKey:        item.Key,
-				ToMaxKey:     item.Key,
-			})
-			if errBody, isErr := item.Body.(*btrfsitem.Error); isErr {
-				if cbs.BadItem == nil {
-					errHandle(&TreeError{Path: itemPath, Err: errBody.Err})
-				} else {
-					if err := cbs.BadItem(itemPath, item); err != nil {
-						errHandle(&TreeError{Path: itemPath, Err: err})
-					}
-					if ctx.Err() != nil {
-						return
-					}
-				}
-			} else {
-				if cbs.Item != nil {
-					if err := cbs.Item(itemPath, item); err != nil {
-						errHandle(&TreeError{Path: itemPath, Err: err})
-					}
-					if ctx.Err() != nil {
-						return
-					}
-				}
+		itemPath := append(path, PathElem{
+			FromTree:         node.Head.Owner,
+			FromItemSlot:     i,
+			ToNodeAddr:       item.BlockPtr,
+			ToNodeGeneration: item.Generation,
+			ToNodeLevel:      node.Head.Level - 1,
+			ToKey:            item.Key,
+			ToMaxKey:         toMaxKey,
+		})
+		// 003a
+		recurse := cbs.KeyPointer == nil || cbs.KeyPointer(itemPath, item)
+		if ctx.Err() != nil {
+			return
+		}
+		// 004a
+		if recurse {
+			tree.walk(ctx, itemPath, cbs)
+			if ctx.Err() != nil {
+				return
 			}
 		}
 	}
-	if cbs.PostNode != nil {
-		if err := cbs.PostNode(path, node); err != nil {
-			if errors.Is(err, iofs.SkipDir) {
-				return
+	// branch b (leaf)
+	if cbs.Item == nil && cbs.BadItem == nil {
+		return
+	}
+	for i, item := range node.BodyLeaf {
+		itemPath := append(path, PathElem{
+			FromTree:     node.Head.Owner,
+			FromItemSlot: i,
+			ToKey:        item.Key,
+			ToMaxKey:     item.Key,
+		})
+		// 003b
+		switch item.Body.(type) {
+		case *btrfsitem.Error:
+			if cbs.BadItem != nil {
+				cbs.BadItem(itemPath, item)
 			}
-			errHandle(&TreeError{Path: path, Err: err})
+		default:
+			if cbs.Item != nil {
+				cbs.Item(itemPath, item)
+			}
+		}
+		if ctx.Err() != nil {
+			return
 		}
 	}
 }
@@ -181,20 +150,22 @@ func searchKP(haystack []KeyPointer, searchFn func(key btrfsprim.Key, size uint3
 func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Item, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var retErr error
-
-	var ret Item
-	var selKP KeyPointer
-	tree.TreeWalk(ctx, func(err *TreeError) {
-		if retErr == nil {
+	setErr := func(err error) {
+		if retErr == nil && err != nil {
 			retErr = fmt.Errorf("item with %s: %w", searcher, err)
 		}
 		cancel()
-	}, TreeWalkHandler{
-		Node: func(_ Path, node *Node) error {
+	}
+
+	var ret Item
+	var selKP KeyPointer
+	tree.TreeWalk(ctx, TreeWalkHandler{
+		Node: func(_ Path, node *Node) {
 			if node.Head.Level > 0 { // interior node
 				kp, ok := searchKP(node.BodyInterior, searcher.Search)
 				if !ok {
-					return ErrNoItem
+					setErr(ErrNoItem)
+					return
 				}
 				selKP = kp
 			} else { // leaf node
@@ -202,18 +173,19 @@ func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Ite
 					return searcher.Search(item.Key, item.BodySize)
 				})
 				if !ok {
-					return ErrNoItem
+					setErr(ErrNoItem)
+					return
 				}
 				ret = node.BodyLeaf[slot]
 				ret.Body = ret.Body.CloneItem()
 			}
-			return nil
 		},
-		PreKeyPointer: func(_ Path, kp KeyPointer) error {
-			if kp == selKP {
-				return nil
-			}
-			return iofs.SkipDir
+		BadNode: func(path Path, _ *Node, err error) bool {
+			setErr(fmt.Errorf("%v: %w", path, err))
+			return false
+		},
+		KeyPointer: func(_ Path, kp KeyPointer) bool {
+			return kp == selKP
 		},
 	})
 
@@ -230,33 +202,34 @@ func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSea
 
 	var minKP btrfsprim.Key
 	var cnt int
-	tree.TreeWalk(ctx, func(err *TreeError) {
-		errs = append(errs, err)
-	}, TreeWalkHandler{
-		Node: func(_ Path, node *Node) error {
+	tree.TreeWalk(ctx, TreeWalkHandler{
+		Node: func(_ Path, node *Node) {
 			// Only bother for interior nodes.
 			if node.Head.Level == 0 {
-				return nil
+				return
 			}
 			kp, ok := searchKP(node.BodyInterior, searcher.Search)
 			if !ok {
 				cancel()
-				return nil
+				return
 			}
 			minKP = kp.Key
-			return nil
 		},
-		PreKeyPointer: func(_ Path, kp KeyPointer) error {
+		BadNode: func(path Path, _ *Node, err error) bool {
+			errs = append(errs, fmt.Errorf("%v: %w", path, err))
+			return false
+		},
+		KeyPointer: func(_ Path, kp KeyPointer) bool {
 			if searcher.Search(kp.Key, math.MaxUint32) < 0 {
 				cancel()
-				return iofs.SkipDir
+				return false
 			}
 			if kp.Key.Compare(minKP) > 0 {
-				return iofs.SkipDir
+				return false
 			}
-			return nil
+			return true
 		},
-		Item: func(_ Path, item Item) error {
+		Item: func(_ Path, item Item) {
 			d := searcher.Search(item.Key, item.BodySize)
 			switch {
 			case d > 1:
@@ -269,9 +242,8 @@ func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSea
 			case d < 1:
 				cancel()
 			}
-			return nil
 		},
-		BadItem: func(_ Path, item Item) error {
+		BadItem: func(_ Path, item Item) {
 			d := searcher.Search(item.Key, item.BodySize)
 			switch {
 			case d > 1:
@@ -284,7 +256,6 @@ func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSea
 			case d < 1:
 				cancel()
 			}
-			return nil
 		},
 	})
 

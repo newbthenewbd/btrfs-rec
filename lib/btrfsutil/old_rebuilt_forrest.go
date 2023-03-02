@@ -13,6 +13,7 @@ import (
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -171,35 +172,17 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		TreeRoot: *root,
 	}
 
-	errHandle := func(err *btrfstree.TreeError) {
-		if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
-			// This is a panic because on the filesystems I'm working with it more likely
-			// indicates a bug in my item parser than a problem with the filesystem.
-			panic(fmt.Errorf("TODO: error parsing item: %w", err))
-		}
-		cacheEntry.Errors.Insert(oldRebuiltTreeError{
-			Min: err.Path.Node(-1).ToKey,
-			Max: err.Path.Node(-1).ToMaxKey,
-			Err: err.Err,
-		})
-	}
-
 	var curNode nodeInfo
 	cbs := btrfstree.TreeWalkHandler{
-		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) error {
-			if node != nil {
-				curNode = nodeInfo{
-					LAddr:      path.Node(-1).ToNodeAddr,
-					Level:      node.Head.Level,
-					Generation: node.Head.Generation,
-					Owner:      node.Head.Owner,
-					MinItem:    discardOK(node.MinItem()),
-					MaxItem:    discardOK(node.MaxItem()),
-				}
-			}
-			return err
+		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
+			cacheEntry.Errors.Insert(oldRebuiltTreeError{
+				Min: path.Node(-1).ToKey,
+				Max: path.Node(-1).ToMaxKey,
+				Err: err,
+			})
+			return false
 		},
-		Node: func(path btrfstree.Path, node *btrfstree.Node) error {
+		Node: func(path btrfstree.Path, node *btrfstree.Node) {
 			curNode = nodeInfo{
 				LAddr:      path.Node(-1).ToNodeAddr,
 				Level:      node.Head.Level,
@@ -208,9 +191,8 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 				MinItem:    discardOK(node.MinItem()),
 				MaxItem:    discardOK(node.MaxItem()),
 			}
-			return nil
 		},
-		Item: func(path btrfstree.Path, item btrfstree.Item) error {
+		Item: func(path btrfstree.Path, item btrfstree.Item) {
 			if cacheEntry.Items.Search(func(v oldRebuiltTreeValue) int { return item.Key.Compare(v.Key) }) != nil {
 				// This is a panic because I'm not really sure what the best way to
 				// handle this is, and so if this happens I want the program to crash
@@ -224,11 +206,11 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 				Node: curNode,
 				Slot: path.Node(-1).FromItemSlot,
 			})
-			return nil
 		},
 	}
+	cbs.BadItem = cbs.Item
 
-	tree.TreeWalk(ctx, errHandle, cbs)
+	tree.TreeWalk(ctx, cbs)
 }
 
 func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error) error {
@@ -358,6 +340,8 @@ func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btr
 	return err
 }
 
+// TreeWalk implements btrfstree.TreeOperator.  It doesn't actually
+// visit nodes or keypointers (just items).
 func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
 	tree := bt.RebuiltTree(ctx, treeID)
 	if tree.RootErr != nil {
@@ -370,11 +354,11 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		})
 		return
 	}
-	tree.treeWalk(ctx, errHandle, cbs)
+	tree.treeWalk(ctx, cbs)
 }
 
-func (tree oldRebuiltTree) treeWalk(ctx context.Context, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	if cbs.Item == nil {
+func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+	if cbs.Item == nil && cbs.BadItem == nil {
 		return
 	}
 	var node *btrfstree.Node
@@ -407,10 +391,17 @@ func (tree oldRebuiltTree) treeWalk(ctx context.Context, errHandle func(*btrfstr
 				ToMaxKey:     indexItem.Value.Key,
 			},
 		}
-		if err := cbs.Item(itemPath, item); err != nil {
-			errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
+		switch item.Body.(type) {
+		case *btrfsitem.Error:
+			if cbs.BadItem != nil {
+				cbs.BadItem(itemPath, item)
+			}
+		default:
+			if cbs.Item != nil {
+				cbs.Item(itemPath, item)
+			}
 		}
-		return true
+		return ctx.Err() == nil
 	})
 	node.Free()
 }

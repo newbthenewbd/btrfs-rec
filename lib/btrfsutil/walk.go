@@ -61,7 +61,7 @@ func WalkAllTrees(ctx context.Context, fs btrfstree.TreeOperator, cbs WalkAllTre
 		},
 	}
 	origItem := cbs.Item
-	cbs.Item = func(path btrfstree.Path, item btrfstree.Item) error {
+	cbs.Item = func(path btrfstree.Path, item btrfstree.Item) {
 		if item.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			trees = append(trees, struct {
 				Name string
@@ -73,9 +73,8 @@ func WalkAllTrees(ctx context.Context, fs btrfstree.TreeOperator, cbs WalkAllTre
 			})
 		}
 		if origItem != nil {
-			return origItem(path, item)
+			origItem(path, item)
 		}
-		return nil
 	}
 
 	for i := 0; i < len(trees); i++ {
