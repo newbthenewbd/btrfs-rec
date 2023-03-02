@@ -71,10 +71,10 @@ func init() {
 					treeItemCnt = make(map[btrfsitem.Type]int)
 					textui.Fprintf(os.Stdout, "tree id=%v name=%q\n", treeID, name)
 				},
-				Err: func(_ *btrfsutil.WalkError) {
+				BadTree: func(_ string, _ btrfsprim.ObjID, _ error) {
 					treeErrCnt++
 				},
-				TreeWalkHandler: btrfstree.TreeWalkHandler{
+				Tree: btrfstree.TreeWalkHandler{
 					Node: func(path btrfstree.Path, node *btrfstree.Node) {
 						visitedNodes.Insert(node.Head.Addr)
 					},

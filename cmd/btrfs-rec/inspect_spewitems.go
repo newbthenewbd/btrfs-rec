@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -30,10 +31,10 @@ func init() {
 			spew.DisablePointerAddresses = true
 
 			btrfsutil.WalkAllTrees(ctx, fs, btrfsutil.WalkAllTreesHandler{
-				Err: func(err *btrfsutil.WalkError) {
-					dlog.Error(ctx, err)
+				BadTree: func(name string, id btrfsprim.ObjID, err error) {
+					dlog.Errorf(ctx, "%v: %v", name, err)
 				},
-				TreeWalkHandler: btrfstree.TreeWalkHandler{
+				Tree: btrfstree.TreeWalkHandler{
 					Item: func(path btrfstree.Path, item btrfstree.Item) {
 						textui.Fprintf(os.Stdout, "%s = ", path)
 						spew.Dump(item)
