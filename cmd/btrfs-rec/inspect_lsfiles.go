@@ -32,7 +32,7 @@ func init() {
 			return lsfiles.LsFiles(
 				cmd.Context(),
 				out,
-				btrfsutil.NewOldRebuiltForrest(cmd.Context(), fs))
+				btrfsutil.NewOldRebuiltForrest(fs))
 		}),
 	})
 }

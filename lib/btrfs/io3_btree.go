@@ -89,30 +89,6 @@ func (fs *FS) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfst
 
 var _ btrfstree.Forrest = (*FS)(nil)
 
-// btrfstree.TreeOperator //////////////////////////////////////////////////////
-
-// TreeWalk implements btrfstree.TreeOperator.
-func (fs *FS) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeWalk(ctx, treeID, errHandle, cbs)
-}
-
-// TreeLookup implements btrfstree.TreeOperator.
-func (fs *FS) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeLookup(treeID, key)
-}
-
-// TreeSearch implements btrfstree.TreeOperator.
-func (fs *FS) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
-	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearch(treeID, searcher)
-}
-
-// TreeSearchAll implements btrfstree.TreeOperator.
-func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
-	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, searcher)
-}
-
-var _ btrfstree.TreeOperator = (*FS)(nil)
-
 // ReadableFS //////////////////////////////////////////////////////////////////
 
 type ReadableFS interface {

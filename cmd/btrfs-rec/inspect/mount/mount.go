@@ -54,7 +54,7 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string, noChecksums b
 	rootSubvol := &subvolume{
 		Subvolume: btrfs.NewSubvolume(
 			ctx,
-			btrfsutil.NewOldRebuiltForrest(ctx, fs),
+			btrfsutil.NewOldRebuiltForrest(fs),
 			btrfsprim.FS_TREE_OBJECTID,
 			noChecksums,
 		),

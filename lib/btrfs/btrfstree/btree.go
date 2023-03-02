@@ -137,59 +137,6 @@ type TreeWalkHandler struct {
 	BadItem    func(Path, Item)
 }
 
-// Compat //////////////////////////////////////////////////////////////////////
-
-// TreeOperator is an interface for performing basic btree operations.
-type TreeOperator interface {
-	// TreeWalk walks a tree, triggering callbacks for every node,
-	// key-pointer, and item; as well as for any errors encountered.
-	//
-	// If the tree is valid, then everything is walked in key-order; but
-	// if the tree is broken, then ordering is not guaranteed.
-	//
-	// Canceling the Context causes TreeWalk to return early; no values
-	// from the Context are used.
-	//
-	// The lifecycle of callbacks is:
-	//
-	//	000  (read superblock) (maybe cbs.BadSuperblock())
-	//
-	//	001  (read node)
-	//	002  cbs.Node() or cbs.BadNode()
-	//	     if interior:
-	//	       for kp in node.items:
-	//	003a     if cbs.PreKeyPointer == nil || cbs.PreKeyPointer() {
-	//	004b       (recurse)
-	//	     else:
-	//	       for item in node.items:
-	//	003b     cbs.Item() or cbs.BadItem()
-	TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
-
-	TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error)
-	TreeSearch(treeID btrfsprim.ObjID, search TreeSearcher) (Item, error)
-
-	// If some items are able to be read, but there is an error reading the
-	// full set, then it might return *both* a list of items and an error.
-	//
-	// If the tree is not found, an error that is ErrNoTree is
-	// returned.
-	//
-	// If no such item is found, an error that is ErrNoItem is
-	// returned.
-	TreeSearchAll(treeID btrfsprim.ObjID, search TreeSearcher) ([]Item, error)
-}
-
-type TreeError struct {
-	Path Path
-	Err  error
-}
-
-func (e *TreeError) Unwrap() error { return e.Err }
-
-func (e *TreeError) Error() string {
-	return fmt.Sprintf("%v: %v", e.Path, e.Err)
-}
-
 type NodeSource interface {
 	Superblock() (*Superblock, error)
 	AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp NodeExpectations) (*Node, error)
