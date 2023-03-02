@@ -14,7 +14,62 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
+type Forrest interface {
+	// ForrestLookup returns (nil, ErrNoTree) if the tree does not
+	// exist but there is otherwise no error.
+	ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (Tree, error)
+}
+
 type Tree interface {
+	// TreeLookup looks up the Item for a given key.
+	//
+	// If no such Item exists, but there is otherwise no error,
+	// then ErrNoItem is returned.
+	TreeLookup(ctx context.Context, key btrfsprim.Key) (Item, error)
+
+	// TreeSearch searches the Tree for a value for which
+	// `search.Search(itemKey, itemSize) == 0`.
+	//
+	//	: + + + 0 0 0 - - -
+	//	:       ^ ^ ^
+	//	:       any of
+	//
+	// You can conceptualize `search.Search` as subtraction:
+	//
+	//	func(strawKey btrfsprim.Key, strawSize uint32) int {
+	//	    return needle - straw
+	//	}
+	//
+	// `search.Search` may be called with key/size pairs that do not
+	// correspond to an existing Item (for key-pointers in
+	// interior nodes in the tree); in which case the size
+	// math.MaxUint32.
+	//
+	// If no such Item exists, but there is otherwise no error,
+	// then an error that is ErrNoItem is returned.
+	TreeSearch(ctx context.Context, search TreeSearcher) (Item, error)
+
+	// TreeRange iterates over the Tree in order, calling
+	// `handleFn` for each Item.
+	TreeRange(ctx context.Context, handleFn func(Item) bool) error
+
+	// TreeSubrange iterates over the Tree in order, calling
+	// `handleFn` for all Items for which `search.Search` returns
+	// 0.
+	//
+	// `search.Search` may be called with key/size pairs that do
+	// not correspond to an existing Item (for key-pointers in
+	// interior nodes in the tree); in which case the size
+	// math.MaxUint32.
+	//
+	// If handleFn is called for fewer than `min` items, an error
+	// that is ErrNoItem is returned.
+	TreeSubrange(ctx context.Context,
+		min int,
+		search TreeSearcher,
+		handleFn func(Item) bool,
+	) error
+
 	// CheckOwner returns whether it is permissible for a node
 	// with .Head.Owner=owner and .Head.Generation=gen to be in
 	// this tree.
@@ -23,6 +78,33 @@ type Tree interface {
 	// specifies whether it should return an error (false) or nil
 	// (true).
 	TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error
+
+	// TreeWalk is a lower-level call than TreeSubrange.  Use with
+	// hesitancy.
+	//
+	// It walks a Tree, triggering callbacks for every node, key-pointer,
+	// and item; as well as for any errors encountered.
+	//
+	// If the Tree is valid, then everything is walked in key-order; but
+	// if the Tree is broken, then ordering is not guaranteed.
+	//
+	// Canceling the Context causes TreeWalk to return early; no values
+	// from the Context are used.
+	//
+	// The lifecycle of callbacks is:
+	//
+	//	000  (read superblock) (maybe cbs.BadSuperblock())
+	//
+	//	001  (read node)
+	//	002  cbs.Node() or cbs.BadNode()
+	//	     if interior:
+	//	       for kp in node.items:
+	//	003a     if cbs.PreKeyPointer == nil || cbs.PreKeyPointer() {
+	//	004b       (recurse)
+	//	     else:
+	//	       for item in node.items:
+	//	003b     cbs.Item() or cbs.BadItem()
+	TreeWalk(ctx context.Context, cbs TreeWalkHandler)
 }
 
 type TreeSearcher interface {
@@ -54,6 +136,8 @@ type TreeWalkHandler struct {
 	Item       func(Path, Item)
 	BadItem    func(Path, Item)
 }
+
+// Compat //////////////////////////////////////////////////////////////////////
 
 // TreeOperator is an interface for performing basic btree operations.
 type TreeOperator interface {

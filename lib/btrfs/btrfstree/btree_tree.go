@@ -16,11 +16,15 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
+// RawTree implements Tree.
 type RawTree struct {
-	Forrest TreeOperatorImpl
+	Forrest RawForrest
 	TreeRoot
 }
 
+var _ Tree = (*RawTree)(nil)
+
+// TreeWalk implements the 'Tree' interface.
 func (tree *RawTree) TreeWalk(ctx context.Context, cbs TreeWalkHandler) {
 	sb, err := tree.Forrest.NodeSource.Superblock()
 	if err != nil {
@@ -161,6 +165,7 @@ func searchKP(haystack []KeyPointer, searchFn func(key btrfsprim.Key, size uint3
 	return KeyPointer{}, false
 }
 
+// TreeSearch implements the 'Tree' interface.
 func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Item, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var retErr error
@@ -206,10 +211,40 @@ func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Ite
 	return ret, retErr
 }
 
+// TreeLookup implements the 'Tree' interface.
 func (tree *RawTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (Item, error) {
 	return tree.TreeSearch(ctx, SearchExactKey(key))
 }
 
+// TreeRange implements the 'Tree' interface.
+func (tree *RawTree) TreeRange(ctx context.Context, handleFn func(Item) bool) error {
+	ctx, cancel := context.WithCancel(ctx)
+	var errs derror.MultiError
+
+	tree.TreeWalk(ctx, TreeWalkHandler{
+		BadNode: func(path Path, _ *Node, err error) bool {
+			errs = append(errs, fmt.Errorf("%v: %w", path, err))
+			return false
+		},
+		Item: func(_ Path, item Item) {
+			if !handleFn(item) {
+				cancel()
+			}
+		},
+		BadItem: func(_ Path, item Item) {
+			if !handleFn(item) {
+				cancel()
+			}
+		},
+	})
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// TreeSubrange implements the 'Tree' interface.
 func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSearcher, handleFn func(Item) bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var errs derror.MultiError

@@ -102,7 +102,7 @@ func NewSubvolume(
 		sv.rootErr = err
 		return sv
 	}
-	rootInfo, err := btrfstree.LookupTreeRoot(ctx, sv.fs, *sb, sv.TreeID)
+	rootInfo, err := btrfstree.OldLookupTreeRoot(ctx, sv.fs.TreeSearch, *sb, sv.TreeID)
 	if err != nil {
 		sv.rootErr = err
 		return sv

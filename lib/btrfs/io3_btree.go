@@ -12,6 +12,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -73,6 +74,21 @@ func (fs *FS) readNode(_ context.Context, addr btrfsvol.LogicalAddr, nodeEntry *
 
 var _ btrfstree.NodeSource = (*FS)(nil)
 
+// btrfstree.Forrest ///////////////////////////////////////////////////////////
+
+// RawTree is a variant of ForrestLookup that returns a concrete type
+// instead of an interface.
+func (fs *FS) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*btrfstree.RawTree, error) {
+	return btrfstree.RawForrest{NodeSource: fs}.RawTree(ctx, treeID)
+}
+
+// ForrestLookup implements btree.Forrest.
+func (fs *FS) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfstree.Tree, error) {
+	return btrfstree.RawForrest{NodeSource: fs}.ForrestLookup(ctx, treeID)
+}
+
+var _ btrfstree.Forrest = (*FS)(nil)
+
 // btrfstree.TreeOperator //////////////////////////////////////////////////////
 
 // TreeWalk implements btrfstree.TreeOperator.
@@ -96,3 +112,18 @@ func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearc
 }
 
 var _ btrfstree.TreeOperator = (*FS)(nil)
+
+// ReadableFS //////////////////////////////////////////////////////////////////
+
+type ReadableFS interface {
+	btrfstree.Forrest
+
+	Superblock() (*btrfstree.Superblock, error)
+
+	Name() string
+
+	// For reading file contents.
+	diskio.ReaderAt[btrfsvol.LogicalAddr]
+}
+
+var _ ReadableFS = (*FS)(nil)

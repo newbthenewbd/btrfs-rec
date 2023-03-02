@@ -14,6 +14,8 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
+// LookupTreeRoot //////////////////////////////////////////////////////////////
+
 // A TreeRoot is more-or-less a btrfsitem.Root, but simpler; returned by
 // LookupTreeRoot.
 type TreeRoot struct {
@@ -28,8 +30,37 @@ type TreeRoot struct {
 }
 
 // LookupTreeRoot is a utility function to help with implementing the
-// 'TreeOperator' interface.
-func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
+// 'Forrest' interface.
+//
+// The 'forrest' passed to LookupTreeRoot must handle:
+//
+//	forrest.ForrestLookup(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+//
+// It is OK for forrest.ForrestLookup to recurse and call
+// LookupTreeRoot, as LookupTreeRoot will not call ForrestLookup for
+// ROOT_TREE_OBJECTID; so it will not be an infinite recursion.
+func LookupTreeRoot(ctx context.Context, forrest Forrest, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
+	return OldLookupTreeRoot(
+		ctx,
+		func(rootTreeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
+			rootTree, err := forrest.ForrestLookup(ctx, rootTreeID)
+			if err != nil {
+				return Item{}, err
+			}
+			rootItem, err := rootTree.TreeSearch(ctx, searcher)
+			if err != nil {
+				return Item{}, err
+			}
+			return rootItem, nil
+		},
+		sb,
+		treeID,
+	)
+}
+
+// OldLookupTreeRoot is a utility function to help with implementing
+// the old 'TreeOperator' interface.
+func OldLookupTreeRoot(_ context.Context, treeSearch func(treeID btrfsprim.ObjID, _ TreeSearcher) (Item, error), sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
 		return &TreeRoot{
@@ -60,7 +91,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 			Generation: sb.BlockGroupRootGeneration,
 		}, nil
 	default:
-		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, SearchRootItem(treeID))
+		rootItem, err := treeSearch(btrfsprim.ROOT_TREE_OBJECTID, SearchRootItem(treeID))
 		if err != nil {
 			if errors.Is(err, ErrNoItem) {
 				err = fmt.Errorf("%w: %s", ErrNoTree, err)
@@ -87,28 +118,50 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 	}
 }
 
-type TreeOperatorImpl struct {
+// RawForrest //////////////////////////////////////////////////////////////////
+
+// RawForrest implements Forrest.
+type RawForrest struct {
 	NodeSource NodeSource
 }
 
-func (fs TreeOperatorImpl) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*RawTree, error) {
-	sb, err := fs.NodeSource.Superblock()
+var _ Forrest = RawForrest{}
+
+// RawTree is a variant of ForrestLookup that returns a concrete type
+// instead of an interface.
+func (forrest RawForrest) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*RawTree, error) {
+	sb, err := forrest.NodeSource.Superblock()
 	if err != nil {
 		return nil, err
 	}
-	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
+	rootInfo, err := LookupTreeRoot(ctx, forrest, *sb, treeID)
 	if err != nil {
 		return nil, err
 	}
 	return &RawTree{
-		Forrest:  fs,
+		Forrest:  forrest,
 		TreeRoot: *rootInfo,
 	}, nil
 }
 
+// ForrestLookup implements Forrest.
+func (forrest RawForrest) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (Tree, error) {
+	tree, err := forrest.RawTree(ctx, treeID)
+	if err != nil {
+		return nil, err
+	}
+	return tree, nil
+}
+
+// Compat //////////////////////////////////////////////////////////////////////
+
+var _ TreeOperator = RawForrest{}
+
+type TreeOperatorImpl = RawForrest
+
 // TreeWalk implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	tree, err := fs.RawTree(ctx, treeID)
+func (forrest RawForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
+	tree, err := forrest.RawTree(ctx, treeID)
 	if err != nil {
 		errHandle(&TreeError{Path: Path{PathRoot{TreeID: treeID}}, Err: err})
 		return
@@ -117,9 +170,9 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 }
 
 // TreeLookup implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
+func (forrest RawForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
 	ctx := context.TODO()
-	tree, err := fs.RawTree(ctx, treeID)
+	tree, err := forrest.RawTree(ctx, treeID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -127,9 +180,9 @@ func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key)
 }
 
 // TreeSearch implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
+func (forrest RawForrest) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
 	ctx := context.TODO()
-	tree, err := fs.RawTree(ctx, treeID)
+	tree, err := forrest.RawTree(ctx, treeID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -137,9 +190,9 @@ func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearc
 }
 
 // TreeSearchAll implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
+func (forrest RawForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
 	ctx := context.TODO()
-	tree, err := fs.RawTree(ctx, treeID)
+	tree, err := forrest.RawTree(ctx, treeID)
 	if err != nil {
 		return nil, err
 	}
