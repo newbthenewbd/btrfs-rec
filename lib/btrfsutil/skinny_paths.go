@@ -60,13 +60,13 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 		return btrfstree.TreePathElem{}, err
 	}
 	if node.Data.Head.Level > 0 {
-		if itemIdx >= len(node.Data.BodyInternal) {
+		if itemIdx >= len(node.Data.BodyInterior) {
 			panic("should not happen")
 		}
-		for i, item := range node.Data.BodyInternal {
+		for i, item := range node.Data.BodyInterior {
 			toMaxKey := parent.Node(-1).ToMaxKey
-			if i+1 < len(node.Data.BodyInternal) {
-				toMaxKey = node.Data.BodyInternal[i+1].Key.Mm()
+			if i+1 < len(node.Data.BodyInterior) {
+				toMaxKey = node.Data.BodyInterior[i+1].Key.Mm()
 			}
 			elem := btrfstree.TreePathElem{
 				FromTree:         node.Data.Head.Owner,

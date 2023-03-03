@@ -183,8 +183,8 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 		}
 	} else {
 		g.Nodes[nodeRef.Addr] = nodeData
-		kps := make([]GraphEdge, len(nodeRef.Data.BodyInternal))
-		for i, kp := range nodeRef.Data.BodyInternal {
+		kps := make([]GraphEdge, len(nodeRef.Data.BodyInterior))
+		for i, kp := range nodeRef.Data.BodyInterior {
 			kps[i] = GraphEdge{
 				FromNode:     nodeRef.Addr,
 				FromItem:     i,

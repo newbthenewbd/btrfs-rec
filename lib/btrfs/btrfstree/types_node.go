@@ -89,7 +89,7 @@ type Node struct {
 
 	// The node's body (which one of these is present depends on
 	// the node's type, as specified in the header)
-	BodyInternal []KeyPointer // for internal nodes
+	BodyInterior []KeyPointer // for interior nodes
 	BodyLeaf     []Item       // for leave nodes
 
 	Padding []byte
@@ -105,7 +105,7 @@ type NodeHeader struct {
 	Generation    btrfsprim.Generation `bin:"off=0x50, siz=0x8"`
 	Owner         btrfsprim.ObjID      `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
 	NumItems      uint32               `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
-	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for internal nodes
+	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for interior nodes
 	binstruct.End `bin:"off=0x65"`
 }
 
@@ -122,10 +122,10 @@ func (node Node) MaxItems() uint32 {
 
 func (node Node) MinItem() (btrfsprim.Key, bool) {
 	if node.Head.Level > 0 {
-		if len(node.BodyInternal) == 0 {
+		if len(node.BodyInterior) == 0 {
 			return btrfsprim.Key{}, false
 		}
-		return node.BodyInternal[0].Key, true
+		return node.BodyInterior[0].Key, true
 	} else {
 		if len(node.BodyLeaf) == 0 {
 			return btrfsprim.Key{}, false
@@ -136,10 +136,10 @@ func (node Node) MinItem() (btrfsprim.Key, bool) {
 
 func (node Node) MaxItem() (btrfsprim.Key, bool) {
 	if node.Head.Level > 0 {
-		if len(node.BodyInternal) == 0 {
+		if len(node.BodyInterior) == 0 {
 			return btrfsprim.Key{}, false
 		}
-		return node.BodyInternal[len(node.BodyInternal)-1].Key, true
+		return node.BodyInterior[len(node.BodyInterior)-1].Key, true
 	} else {
 		if len(node.BodyLeaf) == 0 {
 			return btrfsprim.Key{}, false
@@ -186,7 +186,7 @@ func (node *Node) UnmarshalBinary(nodeBuf []byte) (int, error) {
 			n, nodeHeaderSize)
 	}
 	if node.Head.Level > 0 {
-		_n, err := node.unmarshalInternal(nodeBuf[n:])
+		_n, err := node.unmarshalInterior(nodeBuf[n:])
 		n += _n
 		if err != nil {
 			return n, fmt.Errorf("btrfsprim: %w", err)
@@ -214,7 +214,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 			nodeHeaderSize, node.Size)
 	}
 	if node.Head.Level > 0 {
-		node.Head.NumItems = uint32(len(node.BodyInternal))
+		node.Head.NumItems = uint32(len(node.BodyInterior))
 	} else {
 		node.Head.NumItems = uint32(len(node.BodyLeaf))
 	}
@@ -232,7 +232,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	}
 
 	if node.Head.Level > 0 {
-		if err := node.marshalInternalTo(buf[nodeHeaderSize:]); err != nil {
+		if err := node.marshalInteriorTo(buf[nodeHeaderSize:]); err != nil {
 			return buf, err
 		}
 	} else {
@@ -244,7 +244,7 @@ func (node Node) MarshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
-// Node: "internal" ////////////////////////////////////////////////////////////////////////////////
+// Node: "interior" ////////////////////////////////////////////////////////////////////////////////
 
 type KeyPointer struct {
 	Key           btrfsprim.Key        `bin:"off=0x0, siz=0x11"`
@@ -253,11 +253,11 @@ type KeyPointer struct {
 	binstruct.End `bin:"off=0x21"`
 }
 
-func (node *Node) unmarshalInternal(bodyBuf []byte) (int, error) {
+func (node *Node) unmarshalInterior(bodyBuf []byte) (int, error) {
 	n := 0
-	node.BodyInternal = make([]KeyPointer, node.Head.NumItems)
-	for i := range node.BodyInternal {
-		_n, err := binstruct.Unmarshal(bodyBuf[n:], &node.BodyInternal[i])
+	node.BodyInterior = make([]KeyPointer, node.Head.NumItems)
+	for i := range node.BodyInterior {
+		_n, err := binstruct.Unmarshal(bodyBuf[n:], &node.BodyInterior[i])
 		n += _n
 		if err != nil {
 			return n, fmt.Errorf("item %v: %w", i, err)
@@ -267,9 +267,9 @@ func (node *Node) unmarshalInternal(bodyBuf []byte) (int, error) {
 	return len(bodyBuf), nil
 }
 
-func (node *Node) marshalInternalTo(bodyBuf []byte) error {
+func (node *Node) marshalInteriorTo(bodyBuf []byte) error {
 	n := 0
-	for i, item := range node.BodyInternal {
+	for i, item := range node.BodyInterior {
 		bs, err := binstruct.Marshal(item)
 		if err != nil {
 			return fmt.Errorf("item %v: %w", i, err)

@@ -37,7 +37,7 @@ type TreeOperator interface {
 	//     002 (read node)
 	//     003 .Node() (or .BadNode())
 	//         for item in node.items:
-	//           if internal:
+	//           if interior:
 	//     004     .PreKeyPointer()
 	//     005     (recurse)
 	//     006     .PostKeyPointer()
@@ -68,7 +68,7 @@ type TreeWalkHandler struct {
 	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
 	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
 	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	// Callbacks for items on internal nodes
+	// Callbacks for items on interior nodes
 	PreKeyPointer  func(TreePath, KeyPointer) error
 	PostKeyPointer func(TreePath, KeyPointer) error
 	// Callbacks for items on leaf nodes
@@ -169,10 +169,10 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 		return
 	}
 	if node != nil {
-		for i, item := range node.Data.BodyInternal {
+		for i, item := range node.Data.BodyInterior {
 			toMaxKey := path.Node(-1).ToMaxKey
-			if i+1 < len(node.Data.BodyInternal) {
-				toMaxKey = node.Data.BodyInternal[i+1].Key.Mm()
+			if i+1 < len(node.Data.BodyInterior) {
+				toMaxKey = node.Data.BodyInterior[i+1].Key.Mm()
 			}
 			itemPath := append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
@@ -261,9 +261,9 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 		}
 
 		if node.Data.Head.Level > 0 {
-			// internal node
+			// interior node
 
-			// Search for the right-most node.Data.BodyInternal item for which
+			// Search for the right-most node.Data.BodyInterior item for which
 			// `fn(item.Key) >= 0`.
 			//
 			//    + + + + 0 - - - -
@@ -271,7 +271,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			// There may or may not be a value that returns '0'.
 			//
 			// i.e. find the highest value that isn't too high.
-			lastGood, ok := slices.SearchHighest(node.Data.BodyInternal, func(kp KeyPointer) int {
+			lastGood, ok := slices.SearchHighest(node.Data.BodyInterior, func(kp KeyPointer) int {
 				return slices.Min(fn(kp.Key, math.MaxUint32), 0) // don't return >0; a key can't be "too low"
 			})
 			if !ok {
@@ -279,16 +279,16 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				return nil, nil, iofs.ErrNotExist
 			}
 			toMaxKey := path.Node(-1).ToMaxKey
-			if lastGood+1 < len(node.Data.BodyInternal) {
-				toMaxKey = node.Data.BodyInternal[lastGood+1].Key.Mm()
+			if lastGood+1 < len(node.Data.BodyInterior) {
+				toMaxKey = node.Data.BodyInterior[lastGood+1].Key.Mm()
 			}
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
 				FromItemIdx:      lastGood,
-				ToNodeAddr:       node.Data.BodyInternal[lastGood].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInternal[lastGood].Generation,
+				ToNodeAddr:       node.Data.BodyInterior[lastGood].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInterior[lastGood].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInternal[lastGood].Key,
+				ToKey:            node.Data.BodyInterior[lastGood].Key,
 				ToMaxKey:         toMaxKey,
 			})
 			FreeNodeRef(node)
@@ -344,7 +344,7 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.Logical
 				FreeNodeRef(node)
 				return nil, nil, err
 			}
-			path.Node(-1).ToNodeAddr = node.Data.BodyInternal[path.Node(-1).FromItemIdx].BlockPtr
+			path.Node(-1).ToNodeAddr = node.Data.BodyInterior[path.Node(-1).FromItemIdx].BlockPtr
 		}
 	}
 	// go down
@@ -360,11 +360,11 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.Logical
 		if node.Data.Head.Level > 0 {
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
-				FromItemIdx:      len(node.Data.BodyInternal) - 1,
-				ToNodeAddr:       node.Data.BodyInternal[len(node.Data.BodyInternal)-1].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Generation,
+				FromItemIdx:      len(node.Data.BodyInterior) - 1,
+				ToNodeAddr:       node.Data.BodyInterior[len(node.Data.BodyInterior)-1].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInterior[len(node.Data.BodyInterior)-1].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInternal[len(node.Data.BodyInternal)-1].Key,
+				ToKey:            node.Data.BodyInterior[len(node.Data.BodyInterior)-1].Key,
 				ToMaxKey:         path.Node(-1).ToMaxKey,
 			})
 		} else {
@@ -427,7 +427,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 				FreeNodeRef(node)
 				return nil, nil, err
 			}
-			path.Node(-1).ToNodeAddr = node.Data.BodyInternal[path.Node(-1).FromItemIdx].BlockPtr
+			path.Node(-1).ToNodeAddr = node.Data.BodyInterior[path.Node(-1).FromItemIdx].BlockPtr
 		}
 	}
 	// go down
@@ -443,24 +443,24 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 		}
 		if node.Data.Head.Level > 0 {
 			toMaxKey := path.Node(-1).ToMaxKey
-			if len(node.Data.BodyInternal) > 1 {
-				toMaxKey = node.Data.BodyInternal[1].Key.Mm()
+			if len(node.Data.BodyInterior) > 1 {
+				toMaxKey = node.Data.BodyInterior[1].Key.Mm()
 			}
 			path = append(path, TreePathElem{
 				FromTree:         node.Data.Head.Owner,
 				FromItemIdx:      0,
-				ToNodeAddr:       node.Data.BodyInternal[0].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInternal[0].Generation,
+				ToNodeAddr:       node.Data.BodyInterior[0].BlockPtr,
+				ToNodeGeneration: node.Data.BodyInterior[0].Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInternal[0].Key,
+				ToKey:            node.Data.BodyInterior[0].Key,
 				ToMaxKey:         toMaxKey,
 			})
 		} else {
 			path = append(path, TreePathElem{
 				FromTree:    node.Data.Head.Owner,
 				FromItemIdx: 0,
-				ToKey:       node.Data.BodyInternal[0].Key,
-				ToMaxKey:    node.Data.BodyInternal[0].Key,
+				ToKey:       node.Data.BodyInterior[0].Key,
+				ToMaxKey:    node.Data.BodyInterior[0].Key,
 			})
 		}
 	}
