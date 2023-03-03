@@ -114,6 +114,8 @@ func NewOldRebuiltForrest(ctx context.Context, inner *btrfs.FS) *OldRebuiltForre
 	}
 }
 
+// RebuiltTree returns a handle for an individual tree.  An error is
+// indicated by the ret.RootErr member.
 func (bt *OldRebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) oldRebuiltTree {
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
@@ -263,10 +265,12 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 	return node
 }
 
+// TreeLookup implements btrfstree.TreeOperator.
 func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
 	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
 }
 
+// TreeSearch implements btrfstree.TreeOperator.
 func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
 	tree := bt.RebuiltTree(bt.ctx, treeID)
 	if tree.RootErr != nil {
@@ -291,6 +295,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstr
 	return item, nil
 }
 
+// TreeSearchAll implements btrfstree.TreeOperator.
 func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
 	tree := bt.RebuiltTree(bt.ctx, treeID)
 	if tree.RootErr != nil {
@@ -380,10 +385,12 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 	node.Free()
 }
 
+// Superblock implements btrfs.ReadableFS.
 func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
 	return bt.inner.Superblock()
 }
 
+// ReadAt implements diskio.ReaderAt (and btrfs.ReadableFS).
 func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
 }
