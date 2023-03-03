@@ -28,6 +28,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -45,14 +46,21 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string, noChecksums b
 		deviceName = abs
 	}
 
+	sb, err := fs.Superblock()
+	if err != nil {
+		return err
+	}
+
 	rootSubvol := &subvolume{
-		Subvolume: btrfs.Subvolume{
-			FS:          btrfsutil.NewOldRebuiltForrest(ctx, fs),
-			TreeID:      btrfsprim.FS_TREE_OBJECTID,
-			NoChecksums: noChecksums,
-		},
+		Subvolume: btrfs.NewSubvolume(
+			btrfsutil.NewOldRebuiltForrest(ctx, fs),
+			btrfsprim.FS_TREE_OBJECTID,
+			noChecksums,
+		),
 		DeviceName: deviceName,
 		Mountpoint: mountpoint,
+
+		sb: sb,
 	}
 	return rootSubvol.Run(ctx)
 }
@@ -107,9 +115,11 @@ type fileState struct {
 }
 
 type subvolume struct {
-	btrfs.Subvolume
+	*btrfs.Subvolume
 	DeviceName string
 	Mountpoint string
+
+	sb *btrfstree.Superblock
 
 	fuseutil.NotImplementedFileSystem
 	lastHandle  uint64
@@ -189,11 +199,8 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 					workerName := fmt.Sprintf("%d-%s", val.Inode, filepath.Base(subMountpoint))
 					sv.grp.Go(workerName, func(ctx context.Context) error {
 						subSv := &subvolume{
-							Subvolume: btrfs.Subvolume{
-								FS:          sv.FS,
-								TreeID:      entry.Location.ObjectID,
-								NoChecksums: sv.NoChecksums,
-							},
+							sb:         sv.sb,
+							Subvolume:  sv.NewChildSubvolume(entry.Location.ObjectID),
 							DeviceName: sv.DeviceName,
 							Mountpoint: filepath.Join(sv.Mountpoint, subMountpoint[1:]),
 						}
@@ -208,11 +215,9 @@ func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) 
 }
 
 func (sv *subvolume) StatFS(_ context.Context, op *fuseops.StatFSOp) error {
+	sb := sv.sb
+
 	// See linux.git/fs/btrfs/super.c:btrfs_statfs()
-	sb, err := sv.FS.Superblock()
-	if err != nil {
-		return err
-	}
 
 	op.IoSize = sb.SectorSize
 	op.BlockSize = sb.SectorSize

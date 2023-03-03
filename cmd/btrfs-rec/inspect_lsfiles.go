@@ -45,10 +45,11 @@ func init() {
 			}()
 			ctx := cmd.Context()
 
-			printSubvol(out, "", true, "/", &btrfs.Subvolume{
-				FS:     btrfsutil.NewOldRebuiltForrest(ctx, fs),
-				TreeID: btrfsprim.FS_TREE_OBJECTID,
-			})
+			printSubvol(out, "", true, "/", btrfs.NewSubvolume(
+				btrfsutil.NewOldRebuiltForrest(ctx, fs),
+				btrfsprim.FS_TREE_OBJECTID,
+				false,
+			))
 
 			return nil
 		}),
@@ -160,10 +161,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 			}
 			printDir(out, prefix, isLast, name, dir)
 		case btrfsitem.ROOT_ITEM_KEY:
-			printSubvol(out, prefix, isLast, name, &btrfs.Subvolume{
-				FS:     subvol.FS,
-				TreeID: entry.Location.ObjectID,
-			})
+			printSubvol(out, prefix, isLast, name, subvol.NewChildSubvolume(entry.Location.ObjectID))
 		default:
 			panic(fmt.Errorf("TODO: I don't know how to handle an FT_DIR with location.ItemType=%v: %q",
 				entry.Location.ItemType, name))
