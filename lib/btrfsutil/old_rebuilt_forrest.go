@@ -114,7 +114,7 @@ func NewOldRebuiltForrest(ctx context.Context, inner *btrfs.FS) *OldRebuiltForre
 	}
 }
 
-func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree {
+func (bt *OldRebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) oldRebuiltTree {
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
 		defer bt.rootTreeMu.Unlock()
@@ -133,9 +133,9 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 	}
 
 	cacheEntry := newOldRebuiltTree()
-	dlog.Infof(bt.ctx, "indexing tree %v...", treeID)
-	bt.rawTreeWalk(treeID, &cacheEntry)
-	dlog.Infof(bt.ctx, "... done indexing tree %v", treeID)
+	dlog.Infof(ctx, "indexing tree %v...", treeID)
+	bt.rawTreeWalk(ctx, treeID, &cacheEntry)
+	dlog.Infof(ctx, "... done indexing tree %v", treeID)
 
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTree = &cacheEntry
@@ -147,13 +147,13 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 
 func discardOK[T any](x T, _ bool) T { return x }
 
-func (bt *OldRebuiltForrest) rawTreeWalk(treeID btrfsprim.ObjID, cacheEntry *oldRebuiltTree) {
+func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.ObjID, cacheEntry *oldRebuiltTree) {
 	sb, err := bt.inner.Superblock()
 	if err != nil {
 		cacheEntry.RootErr = err
 		return
 	}
-	root, err := btrfstree.LookupTreeRoot(bt.ctx, bt, *sb, treeID)
+	root, err := btrfstree.LookupTreeRoot(ctx, bt, *sb, treeID)
 	if err != nil {
 		cacheEntry.RootErr = err
 		return
@@ -216,7 +216,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(treeID btrfsprim.ObjID, cacheEntry *old
 		},
 	}
 
-	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(bt.ctx, *root, errHandle, cbs)
+	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(ctx, *root, errHandle, cbs)
 }
 
 func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
@@ -268,7 +268,7 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 }
 
 func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
-	tree := bt.RebuiltTree(treeID)
+	tree := bt.RebuiltTree(bt.ctx, treeID)
 	if tree.RootErr != nil {
 		return btrfstree.Item{}, tree.RootErr
 	}
@@ -292,7 +292,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstr
 }
 
 func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
-	tree := bt.RebuiltTree(treeID)
+	tree := bt.RebuiltTree(bt.ctx, treeID)
 	if tree.RootErr != nil {
 		return nil, tree.RootErr
 	}
@@ -328,7 +328,7 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrf
 }
 
 func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	tree := bt.RebuiltTree(treeID)
+	tree := bt.RebuiltTree(ctx, treeID)
 	if tree.RootErr != nil {
 		errHandle(&btrfstree.TreeError{
 			Path: btrfstree.Path{{
