@@ -56,6 +56,7 @@ type rebuilder struct {
 		Key    containers.Optional[btrfsprim.Key]
 	}
 	treeQueue          containers.Set[btrfsprim.ObjID]
+	retryItemQueue     map[btrfsprim.ObjID]containers.Set[keyAndTree]
 	addedItemQueue     containers.Set[keyAndTree]
 	settledItemQueue   containers.Set[keyAndTree]
 	augmentQueue       map[btrfsprim.ObjID]*treeAugmentQueue
@@ -98,6 +99,7 @@ func (o *rebuilder) Rebuild(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.step", "rebuild")
 
 	// Initialize
+	o.retryItemQueue = make(map[btrfsprim.ObjID]containers.Set[keyAndTree])
 	o.addedItemQueue = make(containers.Set[keyAndTree])
 	o.settledItemQueue = make(containers.Set[keyAndTree])
 	o.augmentQueue = make(map[btrfsprim.ObjID]*treeAugmentQueue)
@@ -133,7 +135,7 @@ func (o *rebuilder) Rebuild(ctx context.Context) error {
 		}
 		runtime.GC()
 
-		// Apply augments (drain o.augmentQueue, fill o.addedItemQueue).
+		// Apply augments (drain o.augmentQueue (and maybe o.retryItemQueue), fill o.addedItemQueue).
 		if err := o.processAugmentQueue(ctx); err != nil {
 			return err
 		}
@@ -286,6 +288,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 				Key:  item.Key,
 				Body: item.Body,
 			})
+			item.Body.Free()
 			if item.ItemType == btrfsitem.ROOT_ITEM_KEY {
 				o.treeQueue.Insert(item.ObjectID)
 			}
@@ -300,7 +303,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 	return grp.Wait()
 }
 
-// processAugmentQueue drains o.augmentQueue, filling o.addedItemQueue.
+// processAugmentQueue drains o.augmentQueue (and maybe o.retryItemQueue), filling o.addedItemQueue.
 func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.substep", "apply-augments")
 
@@ -342,9 +345,12 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 	return nil
 }
 
-func (o *rebuilder) enqueueRetry() {
+func (o *rebuilder) enqueueRetry(ifTreeID btrfsprim.ObjID) {
 	if o.curKey.Key.OK {
-		o.settledItemQueue.Insert(keyAndTree{
+		if o.retryItemQueue[ifTreeID] == nil {
+			o.retryItemQueue[ifTreeID] = make(containers.Set[keyAndTree])
+		}
+		o.retryItemQueue[ifTreeID].Insert(keyAndTree{
 			TreeID: o.curKey.TreeID,
 			Key:    o.curKey.Key.Val,
 		})

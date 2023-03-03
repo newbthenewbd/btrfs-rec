@@ -1,5 +1,5 @@
-git.lukeshu.com/go/lowmemjson v0.3.4 h1:lGvZhZ6qclJOulDoSNUHRsdzZIGolHesg392wrBXskY=
-git.lukeshu.com/go/lowmemjson v0.3.4/go.mod h1:cP+ybDhmhZYlTNZjqMMhEjp0kmGDwzkygw/3fXcME0U=
+git.lukeshu.com/go/lowmemjson v0.3.8 h1:wFm5jg8iC1owd1veYMryMgbSG8m4aeXb+wNEJnIyUiI=
+git.lukeshu.com/go/lowmemjson v0.3.8/go.mod h1:cP+ybDhmhZYlTNZjqMMhEjp0kmGDwzkygw/3fXcME0U=
 git.lukeshu.com/go/typedsync v0.1.0 h1:BYv123nWCymA3zZpokP6nDdtNQ6p7Q51hSWGno/U3Dc=
 git.lukeshu.com/go/typedsync v0.1.0/go.mod h1:EAn7NcfoGeGMv3DWxKQnifcT/rYPAIEqp9Rsz//oYqY=
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=

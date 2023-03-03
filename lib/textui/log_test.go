@@ -15,8 +15,13 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-func logLineRegexp(inner string) string {
-	return `[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{4} ` + inner + ` \(from lib/textui/log_test\.go:[0-9]+\)\n`
+func logLineRegexp(includePos bool, inner string) string {
+	ret := `[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{4} ` + inner
+	if includePos {
+		ret += ` : \(from lib/textui/log_test\.go:[0-9]+\)`
+	}
+	ret += `\n`
+	return ret
 }
 
 func TestLogFormat(t *testing.T) {
@@ -25,7 +30,7 @@ func TestLogFormat(t *testing.T) {
 	ctx := dlog.WithLogger(context.Background(), textui.NewLogger(&out, dlog.LogLevelTrace))
 	dlog.Debugf(ctx, "foo %d", 12345)
 	assert.Regexp(t,
-		`^`+logLineRegexp(`DBG : foo 12,345 :`)+`$`,
+		`^`+logLineRegexp(true, `DBG : foo 12,345`)+`$`,
 		out.String())
 }
 
@@ -45,12 +50,12 @@ func TestLogLevel(t *testing.T) {
 	dlog.Error(ctx, "Error")
 	assert.Regexp(t,
 		`^`+
-			logLineRegexp(`ERR : Error :`)+
-			logLineRegexp(`WRN : Warn :`)+
-			logLineRegexp(`INF : Info :`)+
-			logLineRegexp(`INF : Info :`)+
-			logLineRegexp(`WRN : Warn :`)+
-			logLineRegexp(`ERR : Error :`)+
+			logLineRegexp(false, `ERR : Error`)+
+			logLineRegexp(false, `WRN : Warn`)+
+			logLineRegexp(false, `INF : Info`)+
+			logLineRegexp(false, `INF : Info`)+
+			logLineRegexp(false, `WRN : Warn`)+
+			logLineRegexp(false, `ERR : Error`)+
 			`$`,
 		out.String())
 }
@@ -62,6 +67,6 @@ func TestLogField(t *testing.T) {
 	ctx = dlog.WithField(ctx, "foo", 12345)
 	dlog.Info(ctx, "msg")
 	assert.Regexp(t,
-		`^`+logLineRegexp(`INF : msg : foo=12,345`)+`$`,
+		`^`+logLineRegexp(false, `INF : msg : foo=12,345`)+`$`,
 		out.String())
 }

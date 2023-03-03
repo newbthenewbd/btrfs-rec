@@ -22,6 +22,7 @@ import (
 
 type Callbacks interface {
 	AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
+	AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
 	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
 	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 }

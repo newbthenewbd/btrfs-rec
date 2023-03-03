@@ -40,7 +40,7 @@ func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.Ob
 
 func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsprim.Key, ok bool) {
 	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
-		o.enqueueRetry()
+		o.enqueueRetry(wantKey.TreeID)
 		return btrfsprim.Key{}, false
 	}
 
@@ -90,7 +90,7 @@ func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim
 
 func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool) {
 	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
-		o.enqueueRetry()
+		o.enqueueRetry(wantKey.TreeID)
 		return false
 	}
 
@@ -131,7 +131,7 @@ func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrf
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
+		o.enqueueRetry(treeID)
 		return
 	}
 
@@ -256,7 +256,7 @@ func (o *rebuilder) _wantRange(
 	wantKey.Key.OffsetType = offsetRange
 
 	if o.rebuilt.Tree(ctx, treeID) == nil {
-		o.enqueueRetry()
+		o.enqueueRetry(treeID)
 		return
 	}
 
@@ -365,7 +365,7 @@ func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inod
 	}
 	inodeCtx := withWant(ctx, logFieldItemWant, reason, inodeWant)
 	if !o._wantOff(inodeCtx, inodeWant) {
-		o.enqueueRetry()
+		o.enqueueRetry(inodeTree)
 		return
 	}
 	inodePtr, ok := o.rebuilt.Tree(inodeCtx, inodeTree).Items(inodeCtx).Load(inodeWant.Key.Key())

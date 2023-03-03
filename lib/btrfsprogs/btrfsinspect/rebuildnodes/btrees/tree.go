@@ -304,6 +304,7 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
 		tree.forrest.flushNegativeCache(ctx)
 	}
+	tree.forrest.cb.AddedRoot(ctx, tree.ID, rootNode)
 }
 
 // main public API /////////////////////////////////////////////////////////////////////////////////////////////////////
