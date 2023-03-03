@@ -148,7 +148,7 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 		cacheEntry.RootErr = err
 	} else {
 		dlog.Infof(bt.ctx, "indexing tree %v...", treeID)
-		bt.rawTreeWalk(*treeRoot, cacheEntry, nil)
+		bt.rawTreeWalk(*treeRoot, cacheEntry)
 		dlog.Infof(bt.ctx, "... done indexing tree %v", treeID)
 	}
 
@@ -162,7 +162,7 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 
 func discardOK[T any](x T, _ bool) T { return x }
 
-func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry oldRebuiltTree, walked *[]btrfsprim.Key) {
+func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry oldRebuiltTree) {
 	errHandle := func(err *btrfstree.TreeError) {
 		if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
 			// This is a panic because on the filesystems I'm working with it more likely
@@ -216,9 +216,6 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 				Node: curNode,
 				Slot: path.Node(-1).FromItemSlot,
 			})
-			if walked != nil {
-				*walked = append(*walked, item.Key)
-			}
 			return nil
 		},
 	}
@@ -395,28 +392,4 @@ func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
 
 func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
-}
-
-func (bt *OldRebuiltForrest) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.LogicalAddr) ([]btrfsprim.Key, error) {
-	sb, err := bt.Superblock()
-	if err != nil {
-		return nil, err
-	}
-	tree := bt.RebuiltTree(treeID)
-	if tree.RootErr != nil {
-		return nil, tree.RootErr
-	}
-	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeAddr, btrfstree.NodeExpectations{})
-	defer node.Free()
-	if err != nil {
-		return nil, err
-	}
-	var ret []btrfsprim.Key
-	bt.rawTreeWalk(btrfstree.TreeRoot{
-		TreeID:     treeID,
-		RootNode:   nodeAddr,
-		Level:      node.Head.Level,
-		Generation: node.Head.Generation,
-	}, tree, &ret)
-	return ret, nil
 }
