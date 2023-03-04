@@ -12,6 +12,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -172,7 +173,7 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 	default:
 		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
 		if !ok {
-			ts.trees[treeID].rootErr = fmt.Errorf("failed to look up ROOT_ITEM")
+			ts.trees[treeID].rootErr = btrfstree.ErrNoTree
 			return
 		}
 		root = rootItem.ByteNr
@@ -227,4 +228,41 @@ func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.Ob
 		}
 	}
 	return ret
+}
+
+// btrfs.ReadableFS interface //////////////////////////////////////////////////////////////////////////////////////////
+
+var _ btrfs.ReadableFS = (*RebuiltForrest)(nil)
+
+// Name implements btrfs.ReadableFS.
+func (ts *RebuiltForrest) Name() string {
+	return ts.inner.Name()
+}
+
+// ForrestLookup implements btrfstree.Forrest (and btrfs.ReadableFS).
+//
+// It is identical to .RebuiltTree(), but returns an interface rather
+// than a concrete type.
+func (ts *RebuiltForrest) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfstree.Tree, error) {
+	return ts.RebuiltTree(ctx, treeID)
+}
+
+// Superblock implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
+	return ts.inner.Superblock()
+}
+
+// AcquireNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp btrfstree.NodeExpectations) (*btrfstree.Node, error) {
+	return ts.inner.AcquireNode(ctx, addr, exp)
+}
+
+// ReleaseNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) ReleaseNode(node *btrfstree.Node) {
+	ts.inner.ReleaseNode(node)
+}
+
+// ReadAt implements diskio.ReaderAt[btrfsvol.LogicalAddr] (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
+	return ts.inner.ReadAt(p, off)
 }

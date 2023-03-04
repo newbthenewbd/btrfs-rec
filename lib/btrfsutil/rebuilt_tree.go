@@ -14,6 +14,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -509,4 +510,263 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 		return nil
 	}
 	return ret
+}
+
+// btrfstree.Tree interface ////////////////////////////////////////////////////////////////////////////////////////////
+
+var _ btrfstree.Tree = (*RebuiltTree)(nil)
+
+// TreeParentID implements btrfstree.Tree.
+func (tree *RebuiltTree) TreeParentID(_ context.Context) (btrfsprim.ObjID, btrfsprim.Generation, error) {
+	if tree.Parent == nil {
+		return 0, 0, nil
+	}
+	return tree.Parent.ID, tree.ParentGen, nil
+}
+
+// TreeLookup implements btrfstree.Tree.
+//
+// BUG(lukeshu): Errors in the tree are not ever returned.
+func (tree *RebuiltTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (btrfstree.Item, error) {
+	return tree.TreeSearch(ctx, btrfstree.SearchExactKey(key))
+}
+
+// TreeSearch implements btrfstree.Tree.  It is a thin wrapper around
+// tree.RebuiltItems(ctx).Search (to do the search) and
+// tree.TreeLookup (to read item bodies).
+//
+// BUG(lukeshu): Errors in the tree are not ever returned.
+func (tree *RebuiltTree) TreeSearch(ctx context.Context, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
+	_, ptr, ok := tree.RebuiltAcquireItems(ctx).Search(func(_ btrfsprim.Key, ptr ItemPtr) int {
+		straw := tree.forrest.graph.Nodes[ptr.Node].Items[ptr.Slot]
+		return searcher.Search(straw.Key, straw.Size)
+	})
+	tree.RebuiltReleaseItems()
+	if !ok {
+		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, btrfstree.ErrNoItem)
+	}
+	return tree.forrest.readItem(ctx, ptr), nil
+}
+
+// TreeRange implements btrfstree.Tree.  It is a thin wrapper around
+// tree.RebuiltItems(ctx).Range (to do the iteration) and
+// tree.TreeLookup (to read item bodies).
+//
+// BUG(lukeshu): Errors in the tree are not ever returned.
+func (tree *RebuiltTree) TreeRange(ctx context.Context, handleFn func(btrfstree.Item) bool) error {
+	tree.RebuiltAcquireItems(ctx).Range(func(_ btrfsprim.Key, ptr ItemPtr) bool {
+		return handleFn(tree.forrest.readItem(ctx, ptr))
+	})
+	tree.RebuiltReleaseItems()
+	return nil
+}
+
+// TreeSubrange implements btrfstree.Tree.  It is a thin wrapper
+// around tree.RebuiltItems(ctx).Subrange (to do the iteration) and
+// tree.TreeLookup (to read item bodies).
+//
+// BUG(lukeshu): Errors in the tree are not ever returned.
+func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
+	min int,
+	searcher btrfstree.TreeSearcher,
+	handleFn func(btrfstree.Item) bool,
+) error {
+	var cnt int
+	tree.RebuiltAcquireItems(ctx).Subrange(
+		func(_ btrfsprim.Key, ptr ItemPtr) int {
+			straw := tree.forrest.graph.Nodes[ptr.Node].Items[ptr.Slot]
+			return searcher.Search(straw.Key, straw.Size)
+		},
+		func(_ btrfsprim.Key, ptr ItemPtr) bool {
+			cnt++
+			return handleFn(tree.forrest.readItem(ctx, ptr))
+		},
+	)
+	tree.RebuiltReleaseItems()
+
+	if cnt < min {
+		return btrfstree.ErrNoItem
+	}
+
+	return nil
+}
+
+// TreeWalk implements btrfstree.Tree.
+func (tree *RebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
+	if _, err := tree.forrest.Superblock(); err != nil && cbs.BadSuperblock != nil {
+		cbs.BadSuperblock(err)
+	}
+
+	walker := &rebuiltWalker{
+		// Input: tree
+		tree:      tree,
+		nodeIndex: tree.acquireNodeIndex(ctx),
+		items:     tree.RebuiltAcquireItems(ctx),
+
+		// Input: args
+		cbs: cbs,
+
+		// State
+		visited: make(containers.Set[btrfsvol.LogicalAddr]),
+	}
+	defer tree.releaseNodeIndex()
+	defer tree.RebuiltReleaseItems()
+
+	for _, root := range maps.SortedKeys(tree.Roots) {
+		path := btrfstree.Path{
+			btrfstree.PathRoot{
+				Forrest:      tree.forrest,
+				TreeID:       tree.ID,
+				ToAddr:       root,
+				ToGeneration: tree.forrest.graph.Nodes[root].Generation,
+				ToLevel:      tree.forrest.graph.Nodes[root].Level,
+			},
+		}
+		walker.walk(ctx, path)
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+type rebuiltWalker struct {
+	// Input: tree
+	tree      *RebuiltTree
+	nodeIndex rebuiltNodeIndex
+	items     *containers.SortedMap[btrfsprim.Key, ItemPtr]
+
+	// Input: args
+	cbs btrfstree.TreeWalkHandler
+
+	// State
+	visited containers.Set[btrfsvol.LogicalAddr]
+}
+
+func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
+	if ctx.Err() != nil {
+		return
+	}
+
+	// 001
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, true)
+	if !ok {
+		panic(fmt.Errorf("should not happen: btrfsutil.rebuiltWalker.walk called with non-node path: %v",
+			path))
+	}
+	if err := walker.tree.forrest.graph.BadNodes[nodeAddr]; err != nil {
+		if walker.cbs.BadNode != nil {
+			_ = walker.cbs.BadNode(path, nil, err)
+		}
+		return
+	}
+	// 001-002
+	nodeInfo := walker.tree.forrest.graph.Nodes[nodeAddr]
+	if err := nodeInfo.CheckExpectations(walker.tree.forrest.graph, nodeExp); err != nil {
+		if walker.cbs.BadNode != nil {
+			// 001
+			node, _ := walker.tree.forrest.AcquireNode(ctx, nodeAddr, nodeExp)
+			defer walker.tree.forrest.ReleaseNode(node)
+			if ctx.Err() != nil {
+				return
+			}
+			// 002
+			_ = walker.cbs.BadNode(path, node, err)
+		}
+		return
+	}
+	if walker.visited.Has(nodeAddr) {
+		return
+	}
+	walker.visited.Insert(nodeAddr)
+	if walker.cbs.Node != nil {
+		// 001
+		node, _ := walker.tree.forrest.AcquireNode(ctx, nodeAddr, nodeExp)
+		if ctx.Err() != nil {
+			walker.tree.forrest.ReleaseNode(node)
+			return
+		}
+		// 002
+		walker.cbs.Node(path, node)
+		walker.tree.forrest.ReleaseNode(node)
+		if ctx.Err() != nil {
+			return
+		}
+	}
+
+	// branch a (interior)
+	for i, kp := range walker.tree.forrest.graph.EdgesFrom[nodeAddr] {
+		var toMaxKey btrfsprim.Key
+		for root, rootInfo := range walker.nodeIndex.nodeToRoots[nodeAddr] {
+			if !walker.tree.Roots.Has(root) {
+				continue
+			}
+			if rootInfo.hiMaxItem.Compare(toMaxKey) > 0 {
+				toMaxKey = rootInfo.hiMaxItem
+			}
+		}
+		itemPath := append(path, btrfstree.PathKP{
+			FromTree: walker.tree.forrest.graph.Nodes[nodeAddr].Owner,
+			FromSlot: i,
+
+			ToAddr:       kp.ToNode,
+			ToGeneration: kp.ToGeneration,
+			ToMinKey:     kp.ToKey,
+
+			ToMaxKey: toMaxKey,
+			ToLevel:  kp.ToLevel,
+		})
+		// 003a
+		recurse := walker.cbs.KeyPointer == nil || walker.cbs.KeyPointer(itemPath, btrfstree.KeyPointer{
+			Key:        kp.ToKey,
+			BlockPtr:   kp.ToNode,
+			Generation: kp.ToGeneration,
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		// 004a
+		if recurse {
+			walker.walk(ctx, itemPath)
+			if ctx.Err() != nil {
+				return
+			}
+		}
+	}
+
+	// branch b (leaf)
+	if walker.cbs.Item != nil || walker.cbs.BadItem != nil {
+		for i, keyAndSize := range walker.tree.forrest.graph.Nodes[nodeAddr].Items {
+			ptr, ok := walker.items.Load(keyAndSize.Key)
+			if !ok {
+				panic(fmt.Errorf("should not happen: index does not contain present item %v", keyAndSize.Key))
+			}
+			if ptr.Node != nodeAddr {
+				continue
+			}
+			itemPath := append(path, btrfstree.PathItem{
+				FromTree: walker.tree.forrest.graph.Nodes[nodeAddr].Owner,
+				FromSlot: i,
+
+				ToKey: keyAndSize.Key,
+			})
+			item := walker.tree.forrest.readItem(ctx, ptr)
+			// 003b
+			switch item.Body.(type) {
+			case *btrfsitem.Error:
+				if walker.cbs.BadItem != nil {
+					walker.cbs.BadItem(itemPath, item)
+				}
+			default:
+				if walker.cbs.Item != nil {
+					walker.cbs.Item(itemPath, item)
+				}
+			}
+			if ctx.Err() != nil {
+				return
+			}
+		}
+	}
 }
