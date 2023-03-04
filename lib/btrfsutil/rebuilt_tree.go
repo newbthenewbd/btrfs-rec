@@ -478,16 +478,6 @@ func (tree *RebuiltTree) RebuiltCOWDistance(parentID btrfsprim.ObjID) (dist int,
 	}
 }
 
-// ReadItem reads an item from a tree.
-func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
-	ptr, ok := tree.RebuiltAcquireItems(ctx).Load(key)
-	tree.RebuiltReleaseItems()
-	if !ok {
-		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
-	}
-	return tree.forrest.readItem(ctx, ptr).Body
-}
-
 // RebuiltLeafToRoots returns the list of potential roots (to pass to
 // .RebuiltAddRoot) that include a given leaf-node.
 func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {

@@ -10,6 +10,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
@@ -25,34 +26,25 @@ type RebuiltForrestExtendedCallbacks interface {
 }
 
 type noopRebuiltForrestCallbacks struct {
-	forrest *RebuiltForrest
+	forrest btrfstree.Forrest
 }
 
 func (noopRebuiltForrestCallbacks) AddedRoot(context.Context, btrfsprim.ObjID, btrfsvol.LogicalAddr) {
 }
 
 func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, _item btrfsitem.Root, ok bool) {
-	rootTree, err := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	rootTree, err := cb.forrest.ForrestLookup(ctx, btrfsprim.ROOT_TREE_OBJECTID)
 	if err != nil {
 		return 0, btrfsitem.Root{}, false
 	}
-	tgt := btrfsprim.Key{
-		ObjectID: tree,
-		ItemType: btrfsprim.ROOT_ITEM_KEY,
-	}
-	itemKey, itemPtr, ok := rootTree.RebuiltAcquireItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
-		key.Offset = 0
-		return tgt.Compare(key)
-	})
-	rootTree.RebuiltReleaseItems()
-	if !ok {
+	item, err := rootTree.TreeSearch(ctx, btrfstree.SearchRootItem(tree))
+	if err != nil {
 		return 0, btrfsitem.Root{}, false
 	}
-	item := cb.forrest.readItem(ctx, itemPtr)
 	defer item.Body.Free()
 	switch itemBody := item.Body.(type) {
 	case *btrfsitem.Root:
-		return btrfsprim.Generation(itemKey.Offset), *itemBody, true
+		return btrfsprim.Generation(item.Key.Offset), *itemBody, true
 	case *btrfsitem.Error:
 		return 0, btrfsitem.Root{}, false
 	default:
@@ -63,17 +55,15 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 }
 
 func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	uuidTree, err := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+	uuidTree, err := cb.forrest.ForrestLookup(ctx, btrfsprim.UUID_TREE_OBJECTID)
 	if err != nil {
 		return 0, false
 	}
 	tgt := btrfsitem.UUIDToKey(uuid)
-	itemPtr, ok := uuidTree.RebuiltAcquireItems(ctx).Load(tgt)
-	uuidTree.RebuiltReleaseItems()
-	if !ok {
+	item, err := uuidTree.TreeLookup(ctx, tgt)
+	if err != nil {
 		return 0, false
 	}
-	item := cb.forrest.readItem(ctx, itemPtr)
 	defer item.Body.Free()
 	switch itemBody := item.Body.(type) {
 	case *btrfsitem.UUIDMap:

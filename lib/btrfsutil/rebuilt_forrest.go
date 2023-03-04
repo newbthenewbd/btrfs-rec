@@ -159,16 +159,16 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 	var root btrfsvol.LogicalAddr
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
-		sb, _ := ts.inner.Superblock()
+		sb, _ := ts.Superblock()
 		root = sb.RootTree
 	case btrfsprim.CHUNK_TREE_OBJECTID:
-		sb, _ := ts.inner.Superblock()
+		sb, _ := ts.Superblock()
 		root = sb.ChunkTree
 	case btrfsprim.TREE_LOG_OBJECTID:
-		sb, _ := ts.inner.Superblock()
+		sb, _ := ts.Superblock()
 		root = sb.LogTree
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
-		sb, _ := ts.inner.Superblock()
+		sb, _ := ts.Superblock()
 		root = sb.BlockGroupRoot
 	default:
 		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
