@@ -338,12 +338,14 @@ func fieldOrd(key string) int {
 
 	// btrfsutil.RebuiltForrest ////////////////////////////////////////////
 	case "btrfs.util.rebuilt-forrest.add-tree":
-		return -7
+		return -8
 	case "btrfs.util.rebuilt-forrest.add-tree.want.key":
-		return -6
+		return -7
 	case "btrfs.util.rebuilt-forrest.add-tree.want.reason":
-		return -5
+		return -6
 	case "btrfs.util.rebuilt-tree.add-root":
+		return -5
+	case "btrfs.util.rebuilt-tree.index-errors":
 		return -4
 	case "btrfs.util.rebuilt-tree.index-inc-items":
 		return -3

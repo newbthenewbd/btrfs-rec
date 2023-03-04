@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/datawire/dlib/derror"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -45,7 +46,7 @@ type RebuiltTree struct {
 
 	Roots containers.Set[btrfsvol.LogicalAddr]
 
-	// There are 3 more mutable "members" that are protected by
+	// There are 4 more mutable "members" that are protected by
 	// `mu`; but they live in a shared Cache.  They are all
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
@@ -53,12 +54,14 @@ type RebuiltTree struct {
 	//  1. tree.acquireNodeIndex()             = tree.forrest.nodeIndex.Acquire(tree.ID)
 	//  2. tree.RebuiltAcquireItems()          = tree.forrest.incItems.Acquire(tree.ID)
 	//  3. tree.RebuiltAcquirePotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
+	//  4. tree.addErrs()                      = tree.forrest.errors.Acquire(tree.ID)
 }
 
 type rebuiltSharedCache struct {
 	nodeIndex containers.Cache[btrfsprim.ObjID, rebuiltNodeIndex]
 	incItems  containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
 	excItems  containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
+	errors    containers.Cache[btrfsprim.ObjID, containers.IntervalTree[btrfsprim.Key, rebuiltTreeError]]
 }
 
 func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
@@ -80,6 +83,12 @@ func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 		containers.SourceFunc[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
 			func(ctx context.Context, treeID btrfsprim.ObjID, excItems *containers.SortedMap[btrfsprim.Key, ItemPtr]) {
 				*excItems = forrest.trees[treeID].uncachedExcItems(ctx)
+			}))
+	ret.errors = containers.NewARCache[btrfsprim.ObjID, containers.IntervalTree[btrfsprim.Key, rebuiltTreeError]](
+		textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, containers.IntervalTree[btrfsprim.Key, rebuiltTreeError]](
+			func(ctx context.Context, treeID btrfsprim.ObjID, errs *containers.IntervalTree[btrfsprim.Key, rebuiltTreeError]) {
+				*errs = forrest.trees[treeID].uncachedErrors(ctx)
 			}))
 	return ret
 }
@@ -387,6 +396,245 @@ func (tree *RebuiltTree) uncachedItems(ctx context.Context, inc bool) containers
 	return index
 }
 
+// evictable member 4: .addErrs() //////////////////////////////////////////////////////////////////////////////////////
+
+type rebuiltTreeError struct {
+	Min  btrfsprim.Key
+	Max  btrfsprim.Key
+	Node btrfsvol.LogicalAddr
+	Err  error
+}
+
+func (e rebuiltTreeError) Error() string {
+	return fmt.Sprintf("keys %v-%v: node@%v: %v", e.Min, e.Max, e.Node, e.Err)
+}
+
+func (e rebuiltTreeError) Unwrap() error {
+	return e.Err
+}
+
+type errorStats struct {
+	Nodes   textui.Portion[int]
+	NumErrs int
+}
+
+func (s errorStats) String() string {
+	return textui.Sprintf("%v (%v errs)",
+		s.Nodes, s.NumErrs)
+}
+
+func (tree *RebuiltTree) uncachedErrors(ctx context.Context) containers.IntervalTree[btrfsprim.Key, rebuiltTreeError] {
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-errors", fmt.Sprintf("tree=%v", tree.ID))
+
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
+	errs := containers.IntervalTree[btrfsprim.Key, rebuiltTreeError]{
+		MinFn: func(err rebuiltTreeError) btrfsprim.Key {
+			return err.Min
+		},
+		MaxFn: func(err rebuiltTreeError) btrfsprim.Key {
+			return err.Max
+		},
+	}
+
+	nodeIndex := tree.acquireNodeIndex(ctx)
+	defer tree.releaseNodeIndex()
+
+	nodesToProcess := make(containers.Set[btrfsvol.LogicalAddr], len(nodeIndex.nodeToRoots))
+	for node := range nodeIndex.nodeToRoots {
+		if !maps.HaveAnyKeysInCommon(nodeIndex.nodeToRoots[node], tree.Roots) {
+			continue
+		}
+		nodesToProcess.Insert(node)
+		for _, kp := range tree.forrest.graph.EdgesFrom[node] {
+			nodesToProcess.Insert(kp.ToNode)
+		}
+	}
+	for root := range tree.Roots {
+		// For BadNodes that are roots.
+		nodesToProcess.Insert(root)
+	}
+
+	var stats errorStats
+	stats.Nodes.D = len(nodesToProcess)
+	progressWriter := textui.NewProgress[errorStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter.Set(stats)
+
+	var kps []*GraphEdge
+	for i, node := range maps.SortedKeys(nodesToProcess) {
+		stats.Nodes.N = i
+		progressWriter.Set(stats)
+
+		// `node` may either be in the tree, or just pointed
+		// to by a different node in the tree.  Decide whether
+		// it's in the tree, and gather all of the
+		// key-pointers in the tree that point to it.
+		inTree := maps.HaveAnyKeysInCommon(nodeIndex.nodeToRoots[node], tree.Roots)
+		kps = kps[:0]
+		for _, kp := range tree.forrest.graph.EdgesTo[node] {
+			if !maps.HaveAnyKeysInCommon(nodeIndex.nodeToRoots[kp.FromNode], tree.Roots) {
+				continue
+			}
+			kps = append(kps, kp)
+		}
+
+		// Look at all key-pointers to decide what our
+		// expectations are.
+		var (
+			expLevel  = make(containers.Set[uint8], len(kps))
+			expGen    = make(containers.Set[btrfsprim.Generation], len(kps))
+			expTree   = make(containers.Set[btrfsprim.ObjID], len(kps))
+			loMinItem = btrfsprim.MaxKey // lowest kp.ToKey seen
+			hiMinItem = btrfsprim.Key{}  // highest kp.ToKey seen
+			loMaxItem = btrfsprim.MaxKey // lowest nodeToRoots[node][root] seen
+			hiMaxItem = btrfsprim.Key{}  // highest nodeToRoots[node][root] seen
+		)
+		expTree.Insert(tree.ID)
+		if len(kps) == 0 {
+			// This is a root.
+			loMinItem = btrfsprim.Key{}
+			hiMaxItem = btrfsprim.MaxKey
+		} else {
+			// expLevel, expGen, loMinItem, hiMinItem,
+			for _, kp := range kps {
+				expLevel.Insert(kp.ToLevel)
+				expGen.Insert(kp.ToGeneration)
+				expTree.Insert(kp.FromTree)
+				if kp.ToKey.Compare(loMinItem) < 0 {
+					loMinItem = kp.ToKey
+				}
+				if kp.ToKey.Compare(hiMinItem) > 0 {
+					hiMinItem = kp.ToKey
+				}
+			}
+			// loMaxItem, hiMaxItem
+			if !inTree {
+				for _, kp := range kps {
+					for root, rootInfo := range nodeIndex.nodeToRoots[kp.FromNode] {
+						if !tree.Roots.Has(root) {
+							continue
+						}
+						if kp.FromSlot+1 < len(tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+							rootInfo.loMaxItem = tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+							rootInfo.hiMaxItem = rootInfo.loMaxItem
+						}
+						if loMaxItem.Compare(rootInfo.loMaxItem) > 0 {
+							loMaxItem = rootInfo.loMaxItem
+						}
+						if hiMaxItem.Compare(rootInfo.hiMaxItem) < 0 {
+							hiMaxItem = rootInfo.hiMaxItem
+						}
+					}
+				}
+			} else {
+				// As an optimization, we can look at this node's rootInfo directly.
+				// This should be equivalent to the above loop for `!inTree`, but is
+				// faster.
+				for root, rootInfo := range nodeIndex.nodeToRoots[node] {
+					if !tree.Roots.Has(root) {
+						continue
+					}
+					if loMaxItem.Compare(rootInfo.loMaxItem) > 0 {
+						loMaxItem = rootInfo.loMaxItem
+					}
+					if hiMaxItem.Compare(rootInfo.hiMaxItem) < 0 {
+						hiMaxItem = rootInfo.hiMaxItem
+					}
+				}
+			}
+		}
+
+		// Assemble all of that in to a btrfstree.NodeExpectations.
+		var nodeErrs derror.MultiError
+		exp := btrfstree.NodeExpectations{
+			LAddr:   containers.OptionalValue(node),
+			MinItem: containers.OptionalValue(hiMinItem),
+			MaxItem: containers.OptionalValue(loMaxItem),
+			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
+				var ownerErrs derror.MultiError
+				for _, kpTree := range maps.SortedKeys(expTree) {
+					if err := btrfstree.CheckOwner(ctx, tree.forrest, kpTree, owner, gen); err != nil {
+						ownerErrs = append(ownerErrs, err)
+					}
+				}
+				if len(ownerErrs) > 0 {
+					return ownerErrs
+				}
+				return nil
+			},
+		}
+		switch len(expLevel) {
+		case 0:
+			// do nothing
+		case 1:
+			exp.Level = containers.OptionalValue(expLevel.TakeOne())
+		default:
+			nodeErrs = append(nodeErrs,
+				fmt.Errorf("multiple KPs request different node levels: %v (actual: %v)",
+					maps.SortedKeys(expLevel), tree.forrest.graph.Nodes[node].Level))
+		}
+		switch len(expGen) {
+		case 0:
+			// do nothing
+		case 1:
+			exp.Generation = containers.OptionalValue(expGen.TakeOne())
+		default:
+			nodeErrs = append(nodeErrs,
+				fmt.Errorf("multiple KPs request different node generations: %v (actual: %v)",
+					maps.SortedKeys(expGen), tree.forrest.graph.Nodes[node].Generation))
+		}
+
+		// Check those expectations.
+		if hiMaxItem.Compare(loMinItem) < 0 {
+			nodeErrs = append(nodeErrs,
+				fmt.Errorf("loMinItem:%v > hiMaxItem:%v", loMinItem, hiMaxItem))
+			loMinItem = btrfsprim.Key{}
+			hiMaxItem = btrfsprim.MaxKey
+		}
+		if err := tree.forrest.graph.BadNodes[node]; err != nil {
+			nodeErrs = append(nodeErrs, err)
+		} else if err := tree.forrest.graph.Nodes[node].CheckExpectations(tree.forrest.graph, exp); err != nil {
+			nodeErrs = append(nodeErrs, err)
+		}
+
+		if len(nodeErrs) > 0 {
+			errs.Insert(rebuiltTreeError{
+				Min:  loMinItem,
+				Max:  hiMaxItem,
+				Node: node,
+				Err:  nodeErrs,
+			})
+
+			stats.NumErrs++
+			progressWriter.Set(stats)
+		}
+	}
+	stats.Nodes.N = stats.Nodes.D
+	progressWriter.Set(stats)
+	progressWriter.Done()
+
+	return errs
+}
+
+func (tree *RebuiltTree) addErrs(ctx context.Context, fn func(btrfsprim.Key, uint32) int, err error) error {
+	var errs derror.MultiError
+	tree.forrest.errors.Acquire(ctx, tree.ID).Subrange(
+		func(k btrfsprim.Key) int { return fn(k, 0) },
+		func(v rebuiltTreeError) bool {
+			errs = append(errs, v)
+			return true
+		})
+	tree.forrest.errors.Release(tree.ID)
+	if len(errs) == 0 {
+		return err
+	}
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
+
 // main public API /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (tree *RebuiltTree) RebuiltShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
@@ -497,6 +745,7 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	tree.Roots.Insert(rootNode)
 	tree.forrest.incItems.Delete(tree.ID) // force re-gen
 	tree.forrest.excItems.Delete(tree.ID) // force re-gen
+	tree.forrest.errors.Delete(tree.ID)   // force re-gen
 
 	if shouldFlush {
 		tree.forrest.flushNegativeCache(ctx)
@@ -565,8 +814,6 @@ func (tree *RebuiltTree) TreeParentID(_ context.Context) (btrfsprim.ObjID, btrfs
 }
 
 // TreeLookup implements btrfstree.Tree.
-//
-// BUG(lukeshu): Errors in the tree are not ever returned.
 func (tree *RebuiltTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (btrfstree.Item, error) {
 	return tree.TreeSearch(ctx, btrfstree.SearchExactKey(key))
 }
@@ -574,16 +821,19 @@ func (tree *RebuiltTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (btr
 // TreeSearch implements btrfstree.Tree.  It is a thin wrapper around
 // tree.RebuiltItems(ctx).Search (to do the search) and
 // tree.TreeLookup (to read item bodies).
-//
-// BUG(lukeshu): Errors in the tree are not ever returned.
 func (tree *RebuiltTree) TreeSearch(ctx context.Context, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
+	tree.forrest.commitTrees(ctx, tree.ID)
+	tree.initRoots(ctx)
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	_, ptr, ok := tree.RebuiltAcquireItems(ctx).Search(func(_ btrfsprim.Key, ptr ItemPtr) int {
 		straw := tree.forrest.graph.Nodes[ptr.Node].Items[ptr.Slot]
 		return searcher.Search(straw.Key, straw.Size)
 	})
 	tree.RebuiltReleaseItems()
 	if !ok {
-		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, btrfstree.ErrNoItem)
+		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, tree.addErrs(ctx, searcher.Search, btrfstree.ErrNoItem))
 	}
 	return tree.forrest.readItem(ctx, ptr), nil
 }
@@ -591,26 +841,32 @@ func (tree *RebuiltTree) TreeSearch(ctx context.Context, searcher btrfstree.Tree
 // TreeRange implements btrfstree.Tree.  It is a thin wrapper around
 // tree.RebuiltItems(ctx).Range (to do the iteration) and
 // tree.TreeLookup (to read item bodies).
-//
-// BUG(lukeshu): Errors in the tree are not ever returned.
 func (tree *RebuiltTree) TreeRange(ctx context.Context, handleFn func(btrfstree.Item) bool) error {
+	tree.forrest.commitTrees(ctx, tree.ID)
+	tree.initRoots(ctx)
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	tree.RebuiltAcquireItems(ctx).Range(func(_ btrfsprim.Key, ptr ItemPtr) bool {
 		return handleFn(tree.forrest.readItem(ctx, ptr))
 	})
 	tree.RebuiltReleaseItems()
-	return nil
+	return tree.addErrs(ctx, func(btrfsprim.Key, uint32) int { return 0 }, nil)
 }
 
 // TreeSubrange implements btrfstree.Tree.  It is a thin wrapper
 // around tree.RebuiltItems(ctx).Subrange (to do the iteration) and
 // tree.TreeLookup (to read item bodies).
-//
-// BUG(lukeshu): Errors in the tree are not ever returned.
 func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
 	min int,
 	searcher btrfstree.TreeSearcher,
 	handleFn func(btrfstree.Item) bool,
 ) error {
+	tree.forrest.commitTrees(ctx, tree.ID)
+	tree.initRoots(ctx)
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	var cnt int
 	tree.RebuiltAcquireItems(ctx).Subrange(
 		func(_ btrfsprim.Key, ptr ItemPtr) int {
@@ -624,8 +880,13 @@ func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
 	)
 	tree.RebuiltReleaseItems()
 
+	var err error
 	if cnt < min {
-		return btrfstree.ErrNoItem
+		err = btrfstree.ErrNoItem
+	}
+	err = tree.addErrs(ctx, searcher.Search, err)
+	if err != nil {
+		return fmt.Errorf("items with %s: %w", searcher, err)
 	}
 
 	return nil
