@@ -33,7 +33,7 @@ type RebuiltTree struct {
 	mu    sync.RWMutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	// There are 3 more mutable "members" that are protected by
-	// `mu`; but they live in a shared LRUcache.  They are all
+	// `mu`; but they live in a shared ARCache.  They are all
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
 	//
@@ -42,7 +42,7 @@ type RebuiltTree struct {
 	//  3. tree.PotentialItems() = tree.forrest.excItems.Load(tree.ID)
 }
 
-// LRU member 1: .leafToRoots() ////////////////////////////////////////////////////////////////////////////////////////
+// evictable member 1: .leafToRoots() //////////////////////////////////////////////////////////////////////////////////
 
 // leafToRoots returns all leafs (lvl=0) in the filesystem that pass
 // .isOwnerOK, whether or not they're in the tree.
@@ -129,7 +129,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 	}
 }
 
-// LRU members 2 and 3: .Items() and .PotentialItems() /////////////////////////////////////////////////////////////////
+// evictable members 2 and 3: .Items() and .PotentialItems() ///////////////////////////////////////////////////////////
 
 // Items returns a map of the items contained in this tree.
 //
