@@ -329,17 +329,17 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 	for i, leaf := range leafs {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
-		for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+		for j, itemKeyAndSize := range tree.forrest.graph.Nodes[leaf].Items {
 			newPtr := ItemPtr{
 				Node: leaf,
 				Slot: j,
 			}
-			if oldPtr, exists := index.Load(itemKey); !exists {
-				index.Store(itemKey, newPtr)
+			if oldPtr, exists := index.Load(itemKeyAndSize.Key); !exists {
+				index.Store(itemKeyAndSize.Key, newPtr)
 				stats.NumItems++
 			} else {
 				if tree.RebuiltShouldReplace(oldPtr.Node, newPtr.Node) {
-					index.Store(itemKey, newPtr)
+					index.Store(itemKeyAndSize.Key, newPtr)
 				}
 				stats.NumDups++
 			}
@@ -425,8 +425,8 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 			stats.AddedLeafs++
 			progressWriter.Set(stats)
 
-			for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-				extCB.AddedItem(ctx, tree.ID, itemKey)
+			for _, itemKeyAndSize := range tree.forrest.graph.Nodes[leaf].Items {
+				extCB.AddedItem(ctx, tree.ID, itemKeyAndSize.Key)
 				stats.AddedItems++
 				progressWriter.Set(stats)
 			}
