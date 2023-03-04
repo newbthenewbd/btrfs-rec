@@ -47,8 +47,7 @@ func (o keyAndTree) String() string {
 }
 
 type rebuilder struct {
-	scan  ScanDevicesResult
-	keyIO *btrfsutil.KeyIO
+	scan ScanDevicesResult
 
 	rebuilt *btrfsutil.RebuiltForrest
 
@@ -83,13 +82,10 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 		return nil, err
 	}
 
-	keyIO := btrfsutil.NewKeyIO(fs, scanData.Superblock, scanData.Graph)
-
 	o := &rebuilder{
-		scan:  scanData,
-		keyIO: keyIO,
+		scan: scanData,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(scanData.Superblock, scanData.Graph, keyIO, forrestCallbacks{o})
+	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Superblock, scanData.Graph, forrestCallbacks{o})
 	return o, nil
 }
 

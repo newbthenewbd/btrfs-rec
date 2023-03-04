@@ -6,6 +6,7 @@ package btrfsutil
 
 import (
 	"context"
+	"sync"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -14,6 +15,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -57,26 +59,30 @@ type RebuiltForrestCallbacks interface {
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
+	file  diskio.File[btrfsvol.LogicalAddr]
 	sb    btrfstree.Superblock
 	graph Graph
-	keyIO *KeyIO
 	cb    RebuiltForrestCallbacks
 
 	// mutable
+
 	treesMu  nestedMutex
 	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
 	leafs    containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
 	excItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
+
+	nodesMu sync.Mutex
+	nodes   containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
 // the callbacks must be non-nil.
-func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb RebuiltForrestCallbacks) *RebuiltForrest {
+func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	return &RebuiltForrest{
+		file:  file,
 		sb:    sb,
 		graph: graph,
-		keyIO: keyIO,
 		cb:    cb,
 
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
@@ -88,6 +94,13 @@ func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb Re
 		},
 		excItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
 			MaxLen: textui.Tunable(8),
+		},
+
+		nodes: containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]{
+			MaxLen: textui.Tunable(8),
+			OnRemove: func(_ btrfsvol.LogicalAddr, node *btrfstree.Node) {
+				node.Free()
+			},
 		},
 	}
 }
