@@ -30,10 +30,9 @@ type RebuiltForrestCallbacks interface {
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
 //
-// It is conceptually a btrfstree.TreeOperator, and adds similar
-// broken-tree handling to OldRebuiltForrest.  However, the API is
-// different than btrfstree.TreeOperator, and is much more efficient
-// than OldRebuiltForrest.
+// It is conceptually a btrfstree.Forrest, and adds similar
+// broken-tree handling to OldRebuiltForrest.  However, it is much
+// more efficient than OldRebuiltForrest.
 //
 // The efficiency improvements are possible because of the API
 // differences, which are necessary for how it is used in
@@ -49,11 +48,24 @@ type RebuiltForrestCallbacks interface {
 // Additionally, it provides some functionality that OldRebuiltForrest
 // does not:
 //
-//   - it provides a .LeafToRoots() method to advise on what
-//     additional roots should be added
+//   - it provides a RebuiltForrest.RebuiltListRoots() method for
+//     listing how trees have been repaired.
 //
-//   - it provides a .COWDistance() method to compare how related two
-//     trees are
+//   - it provides a RebuiltTree.RebuiltAddRoot() method for repairing a
+//     tree.
+//
+//   - it provides several RebuiltTree methods that provide advice on
+//     what roots should be added to a tree in order to repair it:
+//
+//     .RebuiltItems() and RebuiltPotentialItems() to compare what's
+//     in the tree and what could be in the tree.
+//
+//     .RebuiltLeafToRoots() to map potential items to things that can
+//     be passed to .RebuiltAddRoot().
+//
+//     .RebuiltCOWDistance() and .RebuiltShouldReplace() to provide
+//     information on deciding on an option from
+//     .RebuiltLeafToRoots().
 //
 // A zero RebuiltForrest is invalid; it must be initialized with
 // NewRebuiltForrest().
@@ -105,12 +117,15 @@ func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Supe
 	}
 }
 
-// Tree returns a given tree, initializing it if nescessary.  If it is
-// unable to initialize the tree, then nil is returned, and nothing is
-// done to the forrest.
+// RebuiltTree returns a given tree, initializing it if nescessary.
+// If it is unable to initialize the tree, then nil is returned, and
+// nothing is done to the forrest.
 //
 // The tree is initialized with the normal root node of the tree.
-func (ts *RebuiltForrest) Tree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
+//
+// This is identical to .ForrestLookup(), but returns a concrete type
+// rather than an interface.
+func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
 	ctx = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
 	if !ts.addTree(ctx, treeID, nil) {
@@ -125,8 +140,8 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	}
 	defer func() {
 		if !ok {
-			// Store a negative cache of this.  tree.AddRoot() for the ROOT or UUID
-			// trees will call .flushNegativeCache().
+			// Store a negative cache of this.  tree.RebuiltAddRoot() for the ROOT or
+			// UUID trees will call .flushNegativeCache().
 			ts.trees[treeID] = nil
 		}
 	}()
@@ -185,7 +200,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 
 	ts.trees[treeID] = tree
 	if root != 0 {
-		tree.AddRoot(ctx, root)
+		tree.RebuiltAddRoot(ctx, root)
 	}
 
 	return true
@@ -201,12 +216,12 @@ func (ts *RebuiltForrest) flushNegativeCache(ctx context.Context) {
 	}
 }
 
-// ListRoots returns a listing of all initialized trees and their root
-// nodes.
+// RebuiltListRoots returns a listing of all initialized trees and
+// their root nodes.
 //
 // Do not mutate the set of roots for a tree; it is a pointer to the
 // RebuiltForrest's internal set!
-func (ts *RebuiltForrest) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
 	_ = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])

@@ -48,7 +48,7 @@ func (o forrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) 
 		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey)
+	itemBody := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey)
 	defer itemBody.Free()
 	switch itemBody := itemBody.(type) {
 	case *btrfsitem.Root:
@@ -74,7 +74,7 @@ func (o forrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (
 		o.enqueueRetry(btrfsprim.UUID_TREE_OBJECTID)
 		return 0, false
 	}
-	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key())
+	itemBody := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key())
 	defer itemBody.Free()
 	switch itemBody := itemBody.(type) {
 	case *btrfsitem.UUIDMap:

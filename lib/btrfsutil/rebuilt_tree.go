@@ -37,9 +37,9 @@ type RebuiltTree struct {
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
 	//
-	//  1. tree.leafToRoots()    = tree.forrest.leafs.Load(tree.ID)
-	//  2. tree.Items()          = tree.forrest.incItems.Load(tree.ID)
-	//  3. tree.PotentialItems() = tree.forrest.excItems.Load(tree.ID)
+	//  1. tree.leafToRoots()           = tree.forrest.leafs.Load(tree.ID)
+	//  2. tree.RebuiltItems()          = tree.forrest.incItems.Load(tree.ID)
+	//  3. tree.RebuiltPotentialItems() = tree.forrest.excItems.Load(tree.ID)
 }
 
 // evictable member 1: .leafToRoots() //////////////////////////////////////////////////////////////////////////////////
@@ -129,23 +129,23 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 	}
 }
 
-// evictable members 2 and 3: .Items() and .PotentialItems() ///////////////////////////////////////////////////////////
+// evictable members 2 and 3: .RebuiltItems() and .RebuiltPotentialItems() /////////////////////////////////////////////
 
-// Items returns a map of the items contained in this tree.
+// RebuiltItems returns a map of the items contained in this tree.
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+func (tree *RebuiltTree) RebuiltItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.incItems, tree.Roots.HasAny)
 }
 
-// PotentialItems returns a map of items that could be added to this
-// tree with .AddRoot().
+// RebuiltPotentialItems returns a map of items that could be added to
+// this tree with .RebuiltAddRoot().
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+func (tree *RebuiltTree) RebuiltPotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.excItems,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
@@ -198,7 +198,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 					index.Store(itemKey, newPtr)
 					stats.NumItems++
 				} else {
-					if tree.ShouldReplace(oldPtr.Node, newPtr.Node) {
+					if tree.RebuiltShouldReplace(oldPtr.Node, newPtr.Node) {
 						index.Store(itemKey, newPtr)
 					}
 					stats.NumDups++
@@ -216,9 +216,11 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 	})
 }
 
-func (tree *RebuiltTree) ShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
-	oldDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[oldNode].Owner)
-	newDist, _ := tree.COWDistance(tree.forrest.graph.Nodes[newNode].Owner)
+// main public API /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+func (tree *RebuiltTree) RebuiltShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bool {
+	oldDist, _ := tree.RebuiltCOWDistance(tree.forrest.graph.Nodes[oldNode].Owner)
+	newDist, _ := tree.RebuiltCOWDistance(tree.forrest.graph.Nodes[newNode].Owner)
 	switch {
 	case newDist < oldDist:
 		// Replace the old one with the new lower-dist one.
@@ -248,8 +250,6 @@ func (tree *RebuiltTree) ShouldReplace(oldNode, newNode btrfsvol.LogicalAddr) bo
 	}
 }
 
-// .AddRoot() //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 type rootStats struct {
 	Leafs      textui.Portion[int]
 	AddedLeafs int
@@ -261,10 +261,10 @@ func (s rootStats) String() string {
 		s.Leafs, s.AddedLeafs, s.AddedItems)
 }
 
-// AddRoot adds an additional root node to the tree.  It is useful to
-// call .AddRoot() to re-attach part of the tree that has been broken
-// off.
-func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
+// RebuiltAddRoot adds an additional root node to the tree.  It is
+// useful to call .RebuiltAddRoot() to re-attach part of the tree that
+// has been broken off.
+func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
@@ -306,11 +306,9 @@ func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalA
 	tree.forrest.cb.AddedRoot(ctx, tree.ID, rootNode)
 }
 
-// main public API /////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// COWDistance returns how many COW-snapshots down the 'tree' is from
-// the 'parent'.
-func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok bool) {
+// RebuiltCOWDistance returns how many COW-snapshots down the 'tree'
+// is from the 'parent'.
+func (tree *RebuiltTree) RebuiltCOWDistance(parentID btrfsprim.ObjID) (dist int, ok bool) {
 	for {
 		if parentID == tree.ID {
 			return dist, true
@@ -325,18 +323,18 @@ func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 
 // ReadItem reads an item from a tree.
 func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
-	ptr, ok := tree.Items(ctx).Load(key)
+	ptr, ok := tree.RebuiltItems(ctx).Load(key)
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
 	}
 	return tree.forrest.readItem(ctx, ptr)
 }
 
-// LeafToRoots returns the list of potential roots (to pass to
-// .AddRoot) that include a given leaf-node.
-func (tree *RebuiltTree) LeafToRoots(ctx context.Context, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
+// RebuiltLeafToRoots returns the list of potential roots (to pass to
+// .RebuiltAddRoot) that include a given leaf-node.
+func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
 	if tree.forrest.graph.Nodes[leaf].Level != 0 {
-		panic(fmt.Errorf("should not happen: (tree=%v).LeafToRoots(leaf=%v): not a leaf",
+		panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): not a leaf",
 			tree.ID, leaf))
 	}
 	tree.mu.RLock()
@@ -344,7 +342,7 @@ func (tree *RebuiltTree) LeafToRoots(ctx context.Context, leaf btrfsvol.LogicalA
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for root := range tree.leafToRoots(ctx)[leaf] {
 		if tree.Roots.Has(root) {
-			panic(fmt.Errorf("should not happen: (tree=%v).LeafToRoots(leaf=%v): tree contains root=%v but not leaf",
+			panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): tree contains root=%v but not leaf",
 				tree.ID, leaf, root))
 		}
 		ret.Insert(root)

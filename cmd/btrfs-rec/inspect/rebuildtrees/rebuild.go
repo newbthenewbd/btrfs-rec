@@ -90,7 +90,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 }
 
 func (o *rebuilder) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
-	return o.rebuilt.ListRoots(ctx)
+	return o.rebuilt.RebuiltListRoots(ctx)
 }
 
 func (o *rebuilder) Rebuild(ctx context.Context) error {
@@ -159,7 +159,7 @@ func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 		}
 		// This will call o.AddedItem as nescessary, which
 		// inserts to o.addedItemQueue.
-		_ = o.rebuilt.Tree(ctx, o.curKey.TreeID)
+		_ = o.rebuilt.RebuiltTree(ctx, o.curKey.TreeID)
 	}
 
 	return nil
@@ -197,18 +197,18 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 		progressWriter.Set(progress)
 
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
-		tree := o.rebuilt.Tree(ctx, key.TreeID)
-		incPtr, ok := tree.Items(ctx).Load(key.Key)
+		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
+		incPtr, ok := tree.RebuiltItems(ctx).Load(key.Key)
 		if !ok {
 			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
 		}
-		excPtr, ok := tree.PotentialItems(ctx).Load(key.Key)
-		if ok && tree.ShouldReplace(incPtr.Node, excPtr.Node) {
+		excPtr, ok := tree.RebuiltPotentialItems(ctx).Load(key.Key)
+		if ok && tree.RebuiltShouldReplace(incPtr.Node, excPtr.Node) {
 			wantKey := wantWithTree{
 				TreeID: key.TreeID,
 				Key:    wantFromKey(key.Key),
 			}
-			o.wantAugment(ctx, wantKey, tree.LeafToRoots(ctx, excPtr.Node))
+			o.wantAugment(ctx, wantKey, tree.RebuiltLeafToRoots(ctx, excPtr.Node))
 			progress.NumAugments = o.numAugments
 			progress.NumAugmentTrees = len(o.augmentQueue)
 			progressWriter.Set(progress)
@@ -266,7 +266,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", key)
 			item := keyAndBody{
 				keyAndTree: key,
-				Body:       o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+				Body:       o.rebuilt.RebuiltTree(ctx, key.TreeID).ReadItem(ctx, key.Key),
 			}
 			select {
 			case itemChan <- item:
@@ -333,7 +333,7 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 			progressWriter.Set(progress)
 			// This will call o.AddedItem as nescessary, which
 			// inserts to o.addedItemQueue.
-			o.rebuilt.Tree(ctx, treeID).AddRoot(ctx, nodeAddr)
+			o.rebuilt.RebuiltTree(ctx, treeID).RebuiltAddRoot(ctx, nodeAddr)
 			progress.N++
 		}
 	}
@@ -381,7 +381,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		} else {
 			choices[choice] = ChoiceInfo{
 				Count:      1,
-				Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.scan.Graph.Nodes[choice].Owner)),
+				Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
 				Generation: o.scan.Graph.Nodes[choice].Generation,
 			}
 		}
@@ -395,7 +395,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 			} else {
 				choices[choice] = ChoiceInfo{
 					Count:      1,
-					Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.scan.Graph.Nodes[choice].Owner)),
+					Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
 					Generation: o.scan.Graph.Nodes[choice].Generation,
 				}
 			}

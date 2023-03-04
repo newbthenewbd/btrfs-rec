@@ -43,7 +43,7 @@ func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfspri
 }
 
 func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsprim.Key, ok bool) {
-	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return btrfsprim.Key{}, false
 	}
@@ -51,7 +51,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsp
 	// check if we already have it
 
 	tgt := wantKey.Key.Key()
-	if key, _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Search(func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
+	if key, _, ok := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 		key.Offset = 0
 		return tgt.Compare(key)
 	}); ok {
@@ -64,13 +64,13 @@ func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsp
 		return btrfsprim.Key{}, false
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltPotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			k.Offset = 0
 			return tgt.Compare(k)
 		},
 		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
+			wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltLeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, wantKey, wants)
@@ -93,7 +93,7 @@ func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfs
 }
 
 func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool) {
-	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return false
 	}
@@ -101,7 +101,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool
 	// check if we already have it
 
 	tgt := wantKey.Key.Key()
-	if _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Load(tgt); ok {
+	if _, ok := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltItems(ctx).Load(tgt); ok {
 		return true
 	}
 
@@ -111,10 +111,10 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool
 		return false
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltPotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int { return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
+			wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltLeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, wantKey, wants)
@@ -134,7 +134,7 @@ func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID 
 	}
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 
-	if o.rebuilt.Tree(ctx, treeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, treeID) == nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -143,7 +143,7 @@ func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID 
 
 	tgt := wantKey.Key.Key()
 	found := false
-	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, treeID).RebuiltItems(ctx).Subrange(
 		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
@@ -164,14 +164,14 @@ func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID 
 		return
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, treeID).RebuiltPotentialItems(ctx).Subrange(
 		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
 			if itemName, ok := o.scan.Names[ptr]; ok && bytes.Equal(itemName, name) {
-				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, ptr.Node))
+				wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltLeafToRoots(ctx, ptr.Node))
 			}
 			return true
 		})
@@ -259,7 +259,7 @@ func (o graphCallbacks) _wantRange(
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 	wantKey.Key.OffsetType = offsetRange
 
-	if o.rebuilt.Tree(ctx, treeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, treeID) == nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -275,7 +275,7 @@ func (o graphCallbacks) _wantRange(
 	})
 	o._walkRange(
 		ctx,
-		o.rebuilt.Tree(ctx, treeID).Items(ctx),
+		o.rebuilt.RebuiltTree(ctx, treeID).RebuiltItems(ctx),
 		treeID, objID, typ, beg, end,
 		func(runKey btrfsprim.Key, _ btrfsutil.ItemPtr, runBeg, runEnd uint64) {
 			var overlappingGaps []*containers.RBNode[gap]
@@ -320,7 +320,7 @@ func (o graphCallbacks) _wantRange(
 	if gaps.Len() == 0 {
 		return
 	}
-	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
+	potentialItems := o.rebuilt.RebuiltTree(ctx, treeID).RebuiltPotentialItems(ctx)
 	gaps.Range(func(rbNode *containers.RBNode[gap]) bool {
 		gap := rbNode.Value
 		last := gap.Beg
@@ -340,7 +340,7 @@ func (o graphCallbacks) _wantRange(
 				wantKey.Key.OffsetLow = gap.Beg
 				wantKey.Key.OffsetHigh = gap.End
 				wantCtx := withWant(ctx, logFieldItemWant, reason, wantKey)
-				o.wantAugment(wantCtx, wantKey, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(wantCtx, v.Node))
+				o.wantAugment(wantCtx, wantKey, o.rebuilt.RebuiltTree(wantCtx, treeID).RebuiltLeafToRoots(wantCtx, v.Node))
 				last = runEnd
 			})
 		if last < gap.End {
@@ -372,7 +372,7 @@ func (o graphCallbacks) WantCSum(ctx context.Context, reason string, inodeTree, 
 		o.enqueueRetry(inodeTree)
 		return
 	}
-	inodePtr, ok := o.rebuilt.Tree(inodeCtx, inodeTree).Items(inodeCtx).Load(inodeWant.Key.Key())
+	inodePtr, ok := o.rebuilt.RebuiltTree(inodeCtx, inodeTree).RebuiltItems(inodeCtx).Load(inodeWant.Key.Key())
 	if !ok {
 		panic(fmt.Errorf("should not happen: could not load key: %v", inodeWant))
 	}
