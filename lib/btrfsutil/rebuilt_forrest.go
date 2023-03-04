@@ -6,6 +6,7 @@ package btrfsutil
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/datawire/dlib/dlog"
@@ -25,6 +26,65 @@ type RebuiltForrestCallbacks interface {
 	AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
 	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
 	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+}
+
+type noopRebuiltForrestCallbacks struct {
+	forrest *RebuiltForrest
+}
+
+func (noopRebuiltForrestCallbacks) AddedItem(context.Context, btrfsprim.ObjID, btrfsprim.Key) {}
+func (noopRebuiltForrestCallbacks) AddedRoot(context.Context, btrfsprim.ObjID, btrfsvol.LogicalAddr) {
+}
+
+func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, _item btrfsitem.Root, ok bool) {
+	rootTree := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if rootTree == nil {
+		return 0, btrfsitem.Root{}, false
+	}
+	tgt := btrfsprim.Key{
+		ObjectID: tree,
+		ItemType: btrfsprim.ROOT_ITEM_KEY,
+	}
+	itemKey, itemPtr, ok := rootTree.RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
+		key.Offset = 0
+		return tgt.Compare(key)
+	})
+	itemBody := cb.forrest.readItem(ctx, itemPtr)
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
+	case *btrfsitem.Root:
+		return btrfsprim.Generation(itemKey.Offset), *itemBody, true
+	case *btrfsitem.Error:
+		return 0, btrfsitem.Root{}, false
+	default:
+		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
+		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
+	}
+}
+
+func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	uuidTree := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+	if uuidTree == nil {
+		return 0, false
+	}
+	tgt := btrfsitem.UUIDToKey(uuid)
+	itemPtr, ok := uuidTree.RebuiltItems(ctx).Load(tgt)
+	if !ok {
+		return 0, false
+	}
+	itemBody := cb.forrest.readItem(ctx, itemPtr)
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
+	case *btrfsitem.UUIDMap:
+		return itemBody.ObjID, true
+	case *btrfsitem.Error:
+		return 0, false
+	default:
+		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
+	}
 }
 
 // RebuiltForrest is an abstraction for rebuilding and accessing
@@ -88,10 +148,10 @@ type RebuiltForrest struct {
 	nodes   containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
 }
 
-// NewRebuiltForrest returns a new RebuiltForrest instance.  All of
-// the callbacks must be non-nil.
+// NewRebuiltForrest returns a new RebuiltForrest instance.  The
+// RebuiltForrestCallbacks may be nil.
 func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
-	return &RebuiltForrest{
+	ret := &RebuiltForrest{
 		file:  file,
 		sb:    sb,
 		graph: graph,
@@ -115,6 +175,12 @@ func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Supe
 			},
 		},
 	}
+	if ret.cb == nil {
+		ret.cb = noopRebuiltForrestCallbacks{
+			forrest: ret,
+		}
+	}
+	return ret
 }
 
 // RebuiltTree returns a given tree, initializing it if nescessary.
