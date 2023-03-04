@@ -113,7 +113,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 		},
 		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
 			treeID := path[0].FromTree
-			i := path.Node(-1).FromItemIdx
+			i := path.Node(-1).FromItemSlot
 			bs, _ := binstruct.Marshal(item.Body)
 			itemSize := uint32(len(bs))
 			itemOffset -= itemSize

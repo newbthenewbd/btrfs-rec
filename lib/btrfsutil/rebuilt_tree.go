@@ -192,7 +192,7 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 			for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
 				newPtr := ItemPtr{
 					Node: leaf,
-					Idx:  j,
+					Slot: j,
 				}
 				if oldPtr, exists := index.Load(itemKey); !exists {
 					index.Store(itemKey, newPtr)

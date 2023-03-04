@@ -237,7 +237,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfspri
 		return btrfstree.Item{}, bt.addErrs(tree, fn, err)
 	}
 
-	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 	item.Body = item.Body.CloneItem()
 
 	// Since we were only asked to return 1 item, it isn't
@@ -275,7 +275,7 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 				return nil, bt.addErrs(tree, fn, err)
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 		ret[i].Body = ret[i].Body.CloneItem()
 	}
 	btrfstree.FreeNodeRef(node)
@@ -315,7 +315,7 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 					return true
 				}
 			}
-			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 			if err := cbs.Item(itemPath, item); err != nil {
 				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 			}
