@@ -26,11 +26,15 @@ import (
 // Additionally, it provides some functionality on top of a vanilla
 // btrfs.ReadableFS:
 //
+//   - it provides a RebuiltTree.RebuiltAddRoot() method for repairing a
+//     tree.
+//
 //   - it provides a RebuiltForrest.RebuiltListRoots() method for
 //     listing how trees have been repaired.
 //
-//   - it provides a RebuiltTree.RebuiltAddRoot() method for repairing a
-//     tree.
+//   - it provides a RebuiltForrest.RebuiltAddRoots() method for
+//     batch-loading the results from
+//     RebuiltForrest.RebuiltListroots().
 //
 //   - it provides several RebuiltTree methods that provide advice on
 //     what roots should be added to a tree in order to repair it:
@@ -258,6 +262,48 @@ func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.Ob
 		}
 	}
 	return ret
+}
+
+// RebuiltAddRoots takes a listing of the root nodes for trees (as
+// returned by RebuiltListRoots), and augments the trees to include
+// them.
+func (ts *RebuiltForrest) RebuiltAddRoots(ctx context.Context, roots map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]) {
+	ctx = ts.treesMu.Lock(ctx)
+	defer ts.treesMu.Unlock()
+
+	essentialTrees := []btrfsprim.ObjID{
+		btrfsprim.ROOT_TREE_OBJECTID,
+		btrfsprim.UUID_TREE_OBJECTID,
+	}
+
+	for _, treeID := range essentialTrees {
+		treeRoots, ok := roots[treeID]
+		if !ok {
+			continue
+		}
+		tree, err := ts.RebuiltTree(ctx, treeID)
+		if err != nil {
+			dlog.Errorf(ctx, "RebuiltForrest.RebuiltAddRoots: cannot load essential tree %v: %v", treeID, err)
+			return
+		}
+		for _, root := range maps.SortedKeys(treeRoots) {
+			tree.RebuiltAddRoot(ctx, root)
+		}
+	}
+
+	for _, treeID := range maps.SortedKeys(roots) {
+		if slices.Contains(treeID, essentialTrees) {
+			continue
+		}
+		tree, err := ts.RebuiltTree(ctx, treeID)
+		if err != nil {
+			dlog.Errorf(ctx, "RebuiltForrest.RebuiltAddRoots: cannot load non-essential tree %v: %v", treeID, err)
+			continue
+		}
+		for _, root := range maps.SortedKeys(roots[treeID]) {
+			tree.RebuiltAddRoot(ctx, root)
+		}
+	}
 }
 
 // btrfs.ReadableFS interface //////////////////////////////////////////////////////////////////////////////////////////
