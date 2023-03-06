@@ -21,12 +21,10 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:  "scandevices",
-			Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+	inspectors.AddCommand(&cobra.Command{
+		Use:  "scandevices",
+		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			ctx := cmd.Context()
 
 			results, err := rebuildmappings.ScanDevices(ctx, fs)
@@ -45,7 +43,7 @@ func init() {
 			dlog.Info(ctx, "... done writing")
 
 			return nil
-		},
+		}),
 	})
 }
 

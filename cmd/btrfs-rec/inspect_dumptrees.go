@@ -16,18 +16,16 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:   "dump-trees",
-			Short: "A clone of `btrfs inspect-internal dump-tree`",
-			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+	inspectors.AddCommand(&cobra.Command{
+		Use:   "dump-trees",
+		Short: "A clone of `btrfs inspect-internal dump-tree`",
+		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			const version = "6.1.3"
 			out := os.Stdout
 			textui.Fprintf(out, "btrfs-progs v%v\n", version)
 			dumptrees.DumpTrees(cmd.Context(), out, fs)
 			return nil
-		},
+		}),
 	})
 }

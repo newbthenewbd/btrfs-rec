@@ -21,12 +21,10 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:  "rebuild-nodes NODESCAN.json",
-			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+	inspectors.AddCommand(&cobra.Command{
+		Use:  "rebuild-nodes NODESCAN.json",
+		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			// This is wrapped in a func in order to *ensure* that `nodeList` goes out of scope once
@@ -66,6 +64,6 @@ func init() {
 			dlog.Info(ctx, "... done writing")
 
 			return rebuildErr
-		},
+		}),
 	})
 }

@@ -19,13 +19,11 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:   "spew-items",
-			Short: "Spew all items as parsed",
-			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+	inspectors.AddCommand(&cobra.Command{
+		Use:   "spew-items",
+		Short: "Spew all items as parsed",
+		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			spew := spew.NewDefaultConfig()
@@ -51,6 +49,6 @@ func init() {
 				},
 			})
 			return nil
-		},
+		}),
 	})
 }

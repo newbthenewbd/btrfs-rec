@@ -27,13 +27,11 @@ import (
 
 func init() {
 	var scandevicesFilename string
-	cmd := subcommand{
-		Command: cobra.Command{
-			Use:   "ls-trees",
-			Short: "A brief view what types of items are in each tree",
-			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{
+		Use:   "ls-trees",
+		Short: "A brief view what types of items are in each tree",
+		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			nodeList, err := readNodeList(ctx, scandevicesFilename)
 			if err != nil {
@@ -114,11 +112,10 @@ func init() {
 			}
 
 			return nil
-		},
+		}),
 	}
-	cmd.Command.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'scandevices' to use for a lost+found tree")
-	if err := cmd.Command.MarkFlagFilename("scandevices"); err != nil {
-		panic(err)
-	}
-	inspectors = append(inspectors, cmd)
+	cmd.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'scandevices' to use for a lost+found tree")
+	noError(cmd.MarkFlagFilename("scandevices"))
+
+	inspectors.AddCommand(cmd)
 }

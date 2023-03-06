@@ -21,12 +21,27 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type subcommand struct {
-	cobra.Command
-	RunE func(*btrfs.FS, *cobra.Command, []string) error
-}
+var (
+	inspectors = &cobra.Command{
+		Use:   "inspect {[flags]|SUBCOMMAND}",
+		Short: "Inspect (but don't modify) a broken btrfs filesystem",
 
-var inspectors, repairers []subcommand
+		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
+		RunE: cliutil.RunSubcommands,
+	}
+	repairers = &cobra.Command{
+		Use:   "repair {[flags]|SUBCOMMAND}",
+		Short: "Repair a broken btrfs filesystem",
+
+		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
+		RunE: cliutil.RunSubcommands,
+
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			globalFlags.openFlag = os.O_RDWR
+			return nil
+		},
+	}
+)
 
 var globalFlags struct {
 	logLevel textui.LogLevelFlag
@@ -82,43 +97,8 @@ func main() {
 
 	// Sub-commands
 
-	argparserInspect := &cobra.Command{
-		Use:   "inspect {[flags]|SUBCOMMAND}",
-		Short: "Inspect (but don't modify) a broken btrfs filesystem",
-
-		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
-		RunE: cliutil.RunSubcommands,
-	}
-	argparser.AddCommand(argparserInspect)
-
-	argparserRepair := &cobra.Command{
-		Use:   "repair {[flags]|SUBCOMMAND}",
-		Short: "Repair a broken btrfs filesystem",
-
-		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
-		RunE: cliutil.RunSubcommands,
-
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			globalFlags.openFlag = os.O_RDWR
-			return nil
-		},
-	}
-	argparser.AddCommand(argparserRepair)
-
-	for _, cmdgrp := range []struct {
-		parent   *cobra.Command
-		children []subcommand
-	}{
-		{argparserInspect, inspectors},
-		{argparserRepair, repairers},
-	} {
-		for _, child := range cmdgrp.children {
-			cmd := child.Command
-			runE := child.RunE
-			cmd.RunE = runWithRawFS(runE)
-			cmdgrp.parent.AddCommand(&cmd)
-		}
-	}
+	argparser.AddCommand(inspectors)
+	argparser.AddCommand(repairers)
 
 	// Run
 
