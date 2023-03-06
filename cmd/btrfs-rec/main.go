@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/datawire/dlib/dgroup"
@@ -27,12 +28,24 @@ type subcommand struct {
 
 var inspectors, repairers []subcommand
 
-func main() {
-	logLevelFlag := textui.LogLevelFlag{
-		Level: dlog.LogLevelInfo,
+var globalFlags struct {
+	logLevel textui.LogLevelFlag
+	pvs      []string
+	mappings string
+
+	stopProfiling profile.StopFunc
+
+	openFlag int
+}
+
+func noError(err error) {
+	if err != nil {
+		panic(fmt.Errorf("should not happen: %w", err))
 	}
-	var pvsFlag []string
-	var mappingsFlag string
+}
+
+func main() {
+	// Base argparser
 
 	argparser := &cobra.Command{
 		Use:   "btrfs-rec {[flags]|SUBCOMMAND}",
@@ -50,21 +63,24 @@ func main() {
 	}
 	argparser.SetFlagErrorFunc(cliutil.FlagErrorFunc)
 	argparser.SetHelpTemplate(cliutil.HelpTemplate)
-	argparser.PersistentFlags().Var(&logLevelFlag, "verbosity", "set the verbosity")
-	argparser.PersistentFlags().StringArrayVar(&pvsFlag, "pv", nil, "open the file `physical_volume` as part of the filesystem")
-	if err := argparser.MarkPersistentFlagFilename("pv"); err != nil {
-		panic(err)
-	}
-	if err := argparser.MarkPersistentFlagRequired("pv"); err != nil {
-		panic(err)
-	}
-	argparser.PersistentFlags().StringVar(&mappingsFlag, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
-	if err := argparser.MarkPersistentFlagFilename("mappings"); err != nil {
-		panic(err)
-	}
-	stopProfiling := profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
-	openFlag := os.O_RDONLY
+	// Global flags
+
+	globalFlags.logLevel.Level = dlog.LogLevelInfo
+	argparser.PersistentFlags().Var(&globalFlags.logLevel, "verbosity", "set the verbosity")
+
+	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil, "open the file `physical_volume` as part of the filesystem")
+	noError(argparser.MarkPersistentFlagFilename("pv"))
+	noError(argparser.MarkPersistentFlagRequired("pv"))
+
+	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
+	noError(argparser.MarkPersistentFlagFilename("mappings"))
+
+	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
+
+	globalFlags.openFlag = os.O_RDONLY
+
+	// Sub-commands
 
 	argparserInspect := &cobra.Command{
 		Use:   "inspect {[flags]|SUBCOMMAND}",
@@ -83,7 +99,7 @@ func main() {
 		RunE: cliutil.RunSubcommands,
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			openFlag = os.O_RDWR
+			globalFlags.openFlag = os.O_RDWR
 			return nil
 		},
 	}
@@ -99,58 +115,64 @@ func main() {
 		for _, child := range cmdgrp.children {
 			cmd := child.Command
 			runE := child.RunE
-			cmd.RunE = func(cmd *cobra.Command, args []string) error {
-				ctx := cmd.Context()
-				logger := textui.NewLogger(os.Stderr, logLevelFlag.Level)
-				ctx = dlog.WithLogger(ctx, logger)
-				if logLevelFlag.Level >= dlog.LogLevelDebug {
-					ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
-				}
-				dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
-
-				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
-					EnableSignalHandling: true,
-				})
-				grp.Go("main", func(ctx context.Context) (err error) {
-					maybeSetErr := func(_err error) {
-						if _err != nil && err == nil {
-							err = _err
-						}
-					}
-					defer func() {
-						maybeSetErr(stopProfiling())
-					}()
-					fs, err := btrfsutil.Open(ctx, openFlag, pvsFlag...)
-					if err != nil {
-						return err
-					}
-					defer func() {
-						maybeSetErr(fs.Close())
-					}()
-
-					if mappingsFlag != "" {
-						mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, mappingsFlag)
-						if err != nil {
-							return err
-						}
-						for _, mapping := range mappingsJSON {
-							if err := fs.LV.AddMapping(mapping); err != nil {
-								return err
-							}
-						}
-					}
-
-					cmd.SetContext(ctx)
-					return runE(fs, cmd, args)
-				})
-				return grp.Wait()
-			}
+			cmd.RunE = runWithRawFS(runE)
 			cmdgrp.parent.AddCommand(&cmd)
 		}
 	}
 
+	// Run
+
 	if err := argparser.ExecuteContext(context.Background()); err != nil {
 		textui.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
 		os.Exit(1)
+	}
+}
+
+func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		logger := textui.NewLogger(os.Stderr, globalFlags.logLevel.Level)
+		ctx = dlog.WithLogger(ctx, logger)
+		if globalFlags.logLevel.Level >= dlog.LogLevelDebug {
+			ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
+		}
+		dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
+
+		grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
+			EnableSignalHandling: true,
+		})
+		grp.Go("main", func(ctx context.Context) (err error) {
+			maybeSetErr := func(_err error) {
+				if _err != nil && err == nil {
+					err = _err
+				}
+			}
+			defer func() {
+				maybeSetErr(globalFlags.stopProfiling())
+			}()
+			fs, err := btrfsutil.Open(ctx, globalFlags.openFlag, globalFlags.pvs...)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				maybeSetErr(fs.Close())
+			}()
+
+			if globalFlags.mappings != "" {
+				mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, globalFlags.mappings)
+				if err != nil {
+					return err
+				}
+				for _, mapping := range mappingsJSON {
+					if err := fs.LV.AddMapping(mapping); err != nil {
+						return err
+					}
+				}
+			}
+
+			cmd.SetContext(ctx)
+			return runE(fs, cmd, args)
+		})
+		return grp.Wait()
 	}
 }
