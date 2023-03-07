@@ -86,7 +86,6 @@ func main() {
 
 	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil, "open the file `physical_volume` as part of the filesystem")
 	noError(argparser.MarkPersistentFlagFilename("pv"))
-	noError(argparser.MarkPersistentFlagRequired("pv"))
 
 	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
 	noError(argparser.MarkPersistentFlagFilename("mappings"))
@@ -130,6 +129,11 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 			defer func() {
 				maybeSetErr(globalFlags.stopProfiling())
 			}()
+			if len(globalFlags.pvs) == 0 {
+				// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
+				// it doesn't interfere with the `help` sub-command.
+				return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
+			}
 			fs, err := btrfsutil.Open(ctx, globalFlags.openFlag, globalFlags.pvs...)
 			if err != nil {
 				return err
