@@ -22,7 +22,7 @@ import (
 
 func init() {
 	inspectors.AddCommand(&cobra.Command{
-		Use:  "rebuild-nodes NODESCAN.json",
+		Use:  "rebuild-trees NODESCAN.json",
 		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
 		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

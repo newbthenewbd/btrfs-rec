@@ -60,9 +60,9 @@ run-btrfs-rec $gendir/2.mappings.json \
       -e '2a{"LAddr":13631488,"PAddr":{"Dev":1,"Addr":13631488},"Size":1},') \
     inspect rebuild-mappings process $gendir/0.scandevices.json
 
-run-btrfs-rec $gendir/3.nodes.json \
+run-btrfs-rec $gendir/3.trees.json \
     --mappings=$gendir/2.mappings.json \
-    inspect rebuild-nodes $gendir/0.scandevices.json
+    inspect rebuild-trees $gendir/0.scandevices.json
 
 run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
