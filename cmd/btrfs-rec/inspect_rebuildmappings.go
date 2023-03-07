@@ -14,6 +14,9 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 func init() {
@@ -116,6 +119,47 @@ func init() {
 
 			return nil
 		}),
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list-nodes",
+		Short: "Produce a listing of btree nodes from previously read data",
+		Long: "" +
+			"This is a variant of `btrfs-rec inspect list-nodes` that takes " +
+			"advantage of using previously read data from " +
+			"`btrfs-rec inspect rebuild-nodes scan`.",
+		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			scanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
+			if err != nil {
+				return err
+			}
+
+			var cnt int
+			for _, devResults := range scanResults {
+				cnt += len(devResults.FoundNodes)
+			}
+			set := make(containers.Set[btrfsvol.LogicalAddr], cnt)
+			for _, devResults := range scanResults {
+				for laddr := range devResults.FoundNodes {
+					set.Insert(laddr)
+				}
+			}
+			nodeList := maps.SortedKeys(set)
+
+			dlog.Infof(ctx, "Writing nodes to stdout...")
+			if err := writeJSONFile(os.Stdout, nodeList, lowmemjson.ReEncoderConfig{
+				Indent:                "\t",
+				ForceTrailingNewlines: true,
+			}); err != nil {
+				return err
+			}
+			dlog.Info(ctx, "... done writing")
+
+			return nil
+		},
 	})
 
 	inspectors.AddCommand(cmd)

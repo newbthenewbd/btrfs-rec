@@ -26,14 +26,24 @@ import (
 )
 
 func init() {
-	var scandevicesFilename string
+	var nodeListFilename string
 	cmd := &cobra.Command{
 		Use:   "ls-trees",
 		Short: "A brief view what types of items are in each tree",
-		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		Long: "" +
+			"If no --node-list is given, then a slow sector-by-sector scan " +
+			"will be used to find all lost+found nodes.",
+		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
 		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			nodeList, err := readNodeList(ctx, scandevicesFilename)
+
+			var nodeList []btrfsvol.LogicalAddr
+			var err error
+			if nodeListFilename != "" {
+				nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](ctx, nodeListFilename)
+			} else {
+				nodeList, err = btrfsutil.ListNodes(ctx, fs)
+			}
 			if err != nil {
 				return err
 			}
@@ -86,7 +96,7 @@ func init() {
 				},
 			})
 
-			if scandevicesFilename != "" {
+			{
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
 				textui.Fprintf(os.Stdout, "lost+found\n")
@@ -114,8 +124,9 @@ func init() {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'btrfs-recs inspect rebuild-mappings scan' to use for a lost+found tree")
-	noError(cmd.MarkFlagFilename("scandevices"))
+	cmd.Flags().StringVar(&nodeListFilename, "node-list", "",
+		"Output of 'btrfs-recs inspect [rebuild-mappings] list-nodes' to use for a lost+found tree")
+	noError(cmd.MarkFlagFilename("node-list"))
 
 	inspectors.AddCommand(cmd)
 }

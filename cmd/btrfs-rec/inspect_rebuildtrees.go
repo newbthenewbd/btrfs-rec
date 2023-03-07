@@ -5,7 +5,6 @@
 package main
 
 import (
-	"context"
 	"os"
 	"runtime"
 	"time"
@@ -17,25 +16,39 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildtrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
-	inspectors.AddCommand(&cobra.Command{
-		Use:  "rebuild-trees NODESCAN.json",
-		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
+	var nodeListFilename string
+	cmd := &cobra.Command{
+		Use: "rebuild-trees",
+		Long: "" +
+			"Rebuild broken btrees based on missing items that are implied " +
+			"by present items.  This requires functioning " +
+			"chunk/dev-extent/blockgroup trees, which can be rebuilt " +
+			"separately with `btrfs-rec inspect rebuild-mappings`.\n" +
+			"\n" +
+			"If no --node-list is given, then a slow sector-by-sector scan " +
+			"will be used to find all nodes.",
+		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
 		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			// This is wrapped in a func in order to *ensure* that `nodeList` goes out of scope once
-			// `rebuilder` has been created.
-			rebuilder, err := func(ctx context.Context) (rebuildtrees.Rebuilder, error) {
-				nodeList, err := readNodeList(ctx, args[0])
-				if err != nil {
-					return nil, err
-				}
-				return rebuildtrees.NewRebuilder(ctx, fs, nodeList)
-			}(ctx)
+			var nodeList []btrfsvol.LogicalAddr
+			var err error
+			if nodeListFilename != "" {
+				nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](ctx, nodeListFilename)
+			} else {
+				nodeList, err = btrfsutil.ListNodes(ctx, fs)
+			}
+			if err != nil {
+				return err
+			}
+
+			rebuilder, err := rebuildtrees.NewRebuilder(ctx, fs, nodeList)
 			if err != nil {
 				return err
 			}
@@ -65,5 +78,10 @@ func init() {
 
 			return rebuildErr
 		}),
-	})
+	}
+	cmd.Flags().StringVar(&nodeListFilename, "node-list", "",
+		"Output of 'btrfs-recs inspect [rebuild-mappings] list-nodes' to use for the node list")
+	noError(cmd.MarkFlagFilename("node-list"))
+
+	inspectors.AddCommand(cmd)
 }

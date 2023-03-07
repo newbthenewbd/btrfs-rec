@@ -33,6 +33,8 @@ export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
 
 run-btrfs-rec $gendir/0.scandevices.json \
     inspect rebuild-mappings scan
+run-btrfs-rec $gendir/0.nodes.json \
+    inspect rebuild-mappings list-nodes $gendir/0.scandevices.json
 run-btrfs-rec $gendir/1.mappings.json \
     inspect rebuild-mappings process $gendir/0.scandevices.json
 
@@ -62,11 +64,11 @@ run-btrfs-rec $gendir/2.mappings.json \
 
 run-btrfs-rec $gendir/3.trees.json \
     --mappings=$gendir/2.mappings.json \
-    inspect rebuild-trees $gendir/0.scandevices.json
+    inspect rebuild-trees --node-list=$gendir/0.nodes.json
 
 run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
     inspect ls-files
 run-btrfs-rec $gendir/4.ls-trees.txt \
     --mappings=$gendir/2.mappings.json \
-    inspect ls-trees --scandevices=$gendir/0.scandevices.json
+    inspect ls-trees --node-list=$gendir/0.nodes.json
