@@ -114,7 +114,7 @@ func init() {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'scandevices' to use for a lost+found tree")
+	cmd.Flags().StringVar(&scandevicesFilename, "scandevices", "", "Output of 'btrfs-recs inspect rebuild-mappings scan' to use for a lost+found tree")
 	noError(cmd.MarkFlagFilename("scandevices"))
 
 	inspectors.AddCommand(cmd)
