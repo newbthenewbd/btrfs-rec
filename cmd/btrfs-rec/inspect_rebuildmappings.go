@@ -21,12 +21,12 @@ func init() {
 		Use:   "rebuild-mappings",
 		Short: "Rebuild broken chunk/dev-extent/blockgroup trees",
 		Long: "" +
-			"The rebuilt information is printed as JSON on stdout, and can\n" +
+			"The rebuilt information is printed as JSON on stdout, and can " +
 			"be loaded by the --mappings flag.\n" +
 			"\n" +
-			"This is very similar to `btrfs rescue chunk-recover`, but (1)\n" +
-			"does a better job, (2) is less buggy, and (3) doesn't actually\n" +
-			"write the info back to the filesystem; instead writing it\n" +
+			"This is very similar to `btrfs rescue chunk-recover`, but (1) " +
+			"does a better job, (2) is less buggy, and (3) doesn't actually " +
+			"write the info back to the filesystem; instead writing it " +
 			"out-of-band to stdout.\n" +
 			"\n" +
 			"The I/O and the CPU parts of this can be split up as:\n" +
