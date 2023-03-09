@@ -22,7 +22,9 @@ type TreeRoot struct {
 	Level      uint8
 	Generation btrfsprim.Generation
 
-	RootInode btrfsprim.ObjID // only for subvolume trees
+	RootInode  btrfsprim.ObjID // only for subvolume trees
+	ParentUUID btrfsprim.UUID
+	ParentGen  btrfsprim.Generation // offset of this tree's root item
 }
 
 // LookupTreeRoot is a utility function to help with implementing the
@@ -72,7 +74,10 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 				RootNode:   rootItemBody.ByteNr,
 				Level:      rootItemBody.Level,
 				Generation: rootItemBody.Generation,
+
 				RootInode:  rootItemBody.RootDirID,
+				ParentUUID: rootItemBody.ParentUUID,
+				ParentGen:  btrfsprim.Generation(rootItem.Key.Offset),
 			}, nil
 		case *btrfsitem.Error:
 			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v: %w", treeID, rootItemBody.Err)
@@ -83,10 +88,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 }
 
 type TreeOperatorImpl struct {
-	NodeSource interface {
-		NodeSource
-		NodeFile
-	}
+	NodeSource NodeSource
 }
 
 func (fs TreeOperatorImpl) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*RawTree, error) {
@@ -108,7 +110,7 @@ func (fs TreeOperatorImpl) RawTree(ctx context.Context, treeID btrfsprim.ObjID) 
 func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	tree, err := fs.RawTree(ctx, treeID)
 	if err != nil {
-		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		errHandle(&TreeError{Path: Path{PathRoot{TreeID: treeID}}, Err: err})
 		return
 	}
 	tree.TreeWalk(ctx, cbs)

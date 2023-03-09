@@ -76,10 +76,11 @@ func init() {
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
 					Node: func(path btrfstree.Path, node *btrfstree.Node) {
-						visitedNodes.Insert(path.Node(-1).ToNodeAddr)
+						visitedNodes.Insert(node.Head.Addr)
 					},
 					BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
-						visitedNodes.Insert(path.Node(-1).ToNodeAddr)
+						nodeAddr, _, _ := path.NodeExpectations(ctx, false)
+						visitedNodes.Insert(nodeAddr)
 						treeErrCnt++
 						return false
 					},

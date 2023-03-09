@@ -29,9 +29,6 @@ type FS struct {
 	cacheSuperblock  *btrfstree.Superblock
 
 	cacheNodes containers.Cache[btrfsvol.LogicalAddr, nodeCacheEntry]
-
-	cacheObjID2All  map[btrfsprim.ObjID]treeInfo
-	cacheUUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID
 }
 
 var _ diskio.File[btrfsvol.LogicalAddr] = (*FS)(nil)
