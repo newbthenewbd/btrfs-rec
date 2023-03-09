@@ -63,10 +63,7 @@ func matchBlockGroupSumsExact(ctx context.Context,
 			PAddr:      matches[0],
 			Size:       blockgroup.Size,
 			SizeLocked: true,
-			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
-				OK:  true,
-				Val: blockgroup.Flags,
-			},
+			Flags:      containers.OptionalValue(blockgroup.Flags),
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
 			dlog.Errorf(ctx, "error: %v", err)

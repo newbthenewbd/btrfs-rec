@@ -61,10 +61,7 @@ func (chunk Chunk) Mappings(key btrfsprim.Key) []btrfsvol.Mapping {
 			},
 			Size:       chunk.Head.Size,
 			SizeLocked: true,
-			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
-				OK:  true,
-				Val: chunk.Head.Type,
-			},
+			Flags:      containers.OptionalValue(chunk.Head.Type),
 		})
 	}
 	return ret

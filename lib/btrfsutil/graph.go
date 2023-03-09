@@ -209,7 +209,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	for laddr := range g.EdgesTo {
 		if _, ok := g.Nodes[laddr]; !ok {
 			_, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, sb, laddr, btrfstree.NodeExpectations{
-				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+				LAddr: containers.OptionalValue(laddr),
 			})
 			if err == nil {
 				progressWriter.Done()

@@ -39,9 +39,9 @@ func (ts *RebuiltForrest) readNode(ctx context.Context, laddr btrfsvol.LogicalAd
 
 	dlog.Debugf(ctx, "cache-miss node@%v, reading...", laddr)
 	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](ts.file, ts.sb, laddr, btrfstree.NodeExpectations{
-		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
-		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
-		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: graphInfo.Generation},
+		LAddr:      containers.OptionalValue(laddr),
+		Level:      containers.OptionalValue(graphInfo.Level),
+		Generation: containers.OptionalValue(graphInfo.Generation),
 		Owner: func(treeID btrfsprim.ObjID) error {
 			if treeID != graphInfo.Owner {
 				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
@@ -49,8 +49,8 @@ func (ts *RebuiltForrest) readNode(ctx context.Context, laddr btrfsvol.LogicalAd
 			}
 			return nil
 		},
-		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem()},
-		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem()},
+		MinItem: containers.OptionalValue(graphInfo.MinItem()),
+		MaxItem: containers.OptionalValue(graphInfo.MaxItem()),
 	})
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))

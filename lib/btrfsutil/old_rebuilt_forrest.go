@@ -247,9 +247,9 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 	}
 
 	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeInfo.LAddr, btrfstree.NodeExpectations{
-		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: nodeInfo.LAddr},
-		Level:      containers.Optional[uint8]{OK: true, Val: nodeInfo.Level},
-		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: nodeInfo.Generation},
+		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
+		Level:      containers.OptionalValue(nodeInfo.Level),
+		Generation: containers.OptionalValue(nodeInfo.Generation),
 		Owner: func(treeID btrfsprim.ObjID) error {
 			if treeID != nodeInfo.Owner {
 				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
@@ -257,8 +257,8 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 			}
 			return nil
 		},
-		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: nodeInfo.MinItem},
-		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: nodeInfo.MaxItem},
+		MinItem: containers.OptionalValue(nodeInfo.MinItem),
+		MaxItem: containers.OptionalValue(nodeInfo.MaxItem),
 	})
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))

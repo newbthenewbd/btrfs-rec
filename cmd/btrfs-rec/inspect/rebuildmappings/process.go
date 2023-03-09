@@ -137,10 +137,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 			PAddr:      otherPAddr.Add(-offsetWithinChunk),
 			Size:       bg.Size,
 			SizeLocked: true,
-			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
-				OK:  true,
-				Val: bg.Flags,
-			},
+			Flags:      containers.OptionalValue(bg.Flags),
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
 			dlog.Errorf(ctx, "error: adding flags from blockgroup: %v", err)

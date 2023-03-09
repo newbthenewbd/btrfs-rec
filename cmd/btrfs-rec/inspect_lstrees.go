@@ -106,7 +106,7 @@ func init() {
 					}
 					visitedNodes.Insert(laddr)
 					node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
-						LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+						LAddr: containers.OptionalValue(laddr),
 					})
 					if err != nil {
 						treeErrCnt++

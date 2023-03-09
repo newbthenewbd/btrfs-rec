@@ -63,11 +63,11 @@ func FSReadNode(
 	}
 
 	return ReadNode[btrfsvol.LogicalAddr](fs, *sb, path.Node(-1).ToNodeAddr, NodeExpectations{
-		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: path.Node(-1).ToNodeAddr},
-		Level:      containers.Optional[uint8]{OK: true, Val: path.Node(-1).ToNodeLevel},
-		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: path.Node(-1).ToNodeGeneration},
+		LAddr:      containers.OptionalValue(path.Node(-1).ToNodeAddr),
+		Level:      containers.OptionalValue(path.Node(-1).ToNodeLevel),
+		Generation: containers.OptionalValue(path.Node(-1).ToNodeGeneration),
 		Owner:      checkOwner,
-		MinItem:    containers.Optional[btrfsprim.Key]{OK: true, Val: path.Node(-1).ToKey},
-		MaxItem:    containers.Optional[btrfsprim.Key]{OK: true, Val: path.Node(-1).ToMaxKey},
+		MinItem:    containers.OptionalValue(path.Node(-1).ToKey),
+		MaxItem:    containers.OptionalValue(path.Node(-1).ToMaxKey),
 	})
 }
