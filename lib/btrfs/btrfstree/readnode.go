@@ -33,7 +33,7 @@ type NodeFile interface {
 // 'NodeSource' interface.
 func FSReadNode(
 	fs NodeFile,
-	path TreePath,
+	path Path,
 ) (*Node, error) {
 	sb, err := fs.Superblock()
 	if err != nil {

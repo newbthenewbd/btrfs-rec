@@ -17,7 +17,7 @@ import (
 // btrfstree.NodeSource ////////////////////////////////////////////////////////
 
 // ReadNode implements btrfstree.NodeSource.
-func (fs *FS) ReadNode(path btrfstree.TreePath) (*btrfstree.Node, error) {
+func (fs *FS) ReadNode(path btrfstree.Path) (*btrfstree.Node, error) {
 	return btrfstree.FSReadNode(fs, path)
 }
 
@@ -37,7 +37,7 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 			// do nothing
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
 				itemBody, ok := item.Body.(*btrfsitem.Root)
 				if !ok {
 					return nil

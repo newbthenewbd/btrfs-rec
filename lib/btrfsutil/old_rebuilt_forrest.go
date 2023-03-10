@@ -178,7 +178,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 
 	var curNode nodeInfo
 	cbs := btrfstree.TreeWalkHandler{
-		BadNode: func(path btrfstree.TreePath, node *btrfstree.Node, err error) error {
+		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) error {
 			if node != nil {
 				curNode = nodeInfo{
 					LAddr:      path.Node(-1).ToNodeAddr,
@@ -191,7 +191,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 			}
 			return err
 		},
-		Node: func(path btrfstree.TreePath, node *btrfstree.Node) error {
+		Node: func(path btrfstree.Path, node *btrfstree.Node) error {
 			curNode = nodeInfo{
 				LAddr:      path.Node(-1).ToNodeAddr,
 				Level:      node.Head.Level,
@@ -202,7 +202,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 			}
 			return nil
 		},
-		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+		Item: func(path btrfstree.Path, item btrfstree.Item) error {
 			if cacheEntry.Items.Search(func(v oldRebuiltTreeValue) int { return item.Key.Compare(v.Key) }) != nil {
 				// This is a panic because I'm not really sure what the best way to
 				// handle this is, and so if this happens I want the program to crash
@@ -340,7 +340,7 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 	tree := bt.RebuiltTree(treeID)
 	if tree.RootErr != nil {
 		errHandle(&btrfstree.TreeError{
-			Path: btrfstree.TreePath{{
+			Path: btrfstree.Path{{
 				FromTree: treeID,
 				ToMaxKey: btrfsprim.MaxKey,
 			}},
@@ -365,7 +365,7 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		}
 		item := node.BodyLeaf[indexItem.Value.Slot]
 
-		itemPath := btrfstree.TreePath{
+		itemPath := btrfstree.Path{
 			{
 				FromTree:         treeID,
 				ToNodeAddr:       indexItem.Value.Node.LAddr,

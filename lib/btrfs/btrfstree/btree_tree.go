@@ -26,11 +26,11 @@ type TreeOperatorImpl struct {
 func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	sb, err := fs.Superblock()
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 	}
 	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 		return
 	}
 	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
@@ -39,7 +39,7 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 // RawTreeWalk is a utility method to help with implementing the
 // 'TreeOperator' interface.
 func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	path := TreePath{{
+	path := Path{{
 		FromTree:         rootInfo.TreeID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       rootInfo.RootNode,
@@ -50,7 +50,7 @@ func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, e
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
-func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -100,7 +100,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 			if i+1 < len(node.BodyInterior) {
 				toMaxKey = node.BodyInterior[i+1].Key.Mm()
 			}
-			itemPath := append(path, TreePathElem{
+			itemPath := append(path, PathElem{
 				FromTree:         node.Head.Owner,
 				FromItemSlot:     i,
 				ToNodeAddr:       item.BlockPtr,
@@ -128,7 +128,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 			}
 		}
 		for i, item := range node.BodyLeaf {
-			itemPath := append(path, TreePathElem{
+			itemPath := append(path, PathElem{
 				FromTree:     node.Head.Owner,
 				FromItemSlot: i,
 				ToKey:        item.Key,
@@ -167,8 +167,8 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 	}
 }
 
-func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (TreePath, *Node, error) {
-	path := TreePath{{
+func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
+	path := Path{{
 		FromTree:         treeRoot.TreeID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       treeRoot.RootNode,
@@ -209,7 +209,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			if lastGood+1 < len(node.BodyInterior) {
 				toMaxKey = node.BodyInterior[lastGood+1].Key.Mm()
 			}
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:         node.Head.Owner,
 				FromItemSlot:     lastGood,
 				ToNodeAddr:       node.BodyInterior[lastGood].BlockPtr,
@@ -239,7 +239,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				node.Free()
 				return nil, nil, ErrNoItem
 			}
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:     node.Head.Owner,
 				FromItemSlot: slot,
 				ToKey:        node.BodyLeaf[slot].Key,
@@ -250,7 +250,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 	}
 }
 
-func (fs TreeOperatorImpl) prev(path TreePath, node *Node) (TreePath, *Node, error) {
+func (fs TreeOperatorImpl) prev(path Path, node *Node) (Path, *Node, error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -285,7 +285,7 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *Node) (TreePath, *Node, err
 			}
 		}
 		if node.Head.Level > 0 {
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:         node.Head.Owner,
 				FromItemSlot:     len(node.BodyInterior) - 1,
 				ToNodeAddr:       node.BodyInterior[len(node.BodyInterior)-1].BlockPtr,
@@ -295,7 +295,7 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *Node) (TreePath, *Node, err
 				ToMaxKey:         path.Node(-1).ToMaxKey,
 			})
 		} else {
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:     node.Head.Owner,
 				FromItemSlot: len(node.BodyLeaf) - 1,
 				ToKey:        node.BodyLeaf[len(node.BodyLeaf)-1].Key,
@@ -315,7 +315,7 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *Node) (TreePath, *Node, err
 	return path, node, nil
 }
 
-func (fs TreeOperatorImpl) next(path TreePath, node *Node) (TreePath, *Node, error) {
+func (fs TreeOperatorImpl) next(path Path, node *Node) (Path, *Node, error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -373,7 +373,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *Node) (TreePath, *Node, err
 			if len(node.BodyInterior) > 1 {
 				toMaxKey = node.BodyInterior[1].Key.Mm()
 			}
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:         node.Head.Owner,
 				FromItemSlot:     0,
 				ToNodeAddr:       node.BodyInterior[0].BlockPtr,
@@ -383,7 +383,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *Node) (TreePath, *Node, err
 				ToMaxKey:         toMaxKey,
 			})
 		} else {
-			path = append(path, TreePathElem{
+			path = append(path, PathElem{
 				FromTree:     node.Head.Owner,
 				FromItemSlot: 0,
 				ToKey:        node.BodyInterior[0].Key,

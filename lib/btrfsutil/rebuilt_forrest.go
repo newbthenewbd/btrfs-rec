@@ -40,7 +40,7 @@ type RebuiltForrestCallbacks interface {
 //   - it consumes an already-read Graph instead of reading the graph
 //     itself
 //
-//   - it does not use `btrfstree.TreePath`
+//   - it does not use `btrfstree.Path`
 //
 //   - it does not keep track of errors encountered in a tree
 //

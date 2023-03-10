@@ -13,7 +13,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// TreePath is a path from the superblock (i.e. the root of the btrfs
+// Path is a path from the superblock (i.e. the root of the btrfs
 // system) to the a node or item within one of the btrees in the
 // system.
 //
@@ -61,10 +61,10 @@ import (
 //	                                | <--------------- pathElem={from_tree:A, from_slot:1,
 //	                                |                            to_addr:0, to_gen: 0, to_lvl:0}
 //	                              [item]
-type TreePath []TreePathElem
+type Path []PathElem
 
-// A TreePathElem essentially represents a KeyPointer.
-type TreePathElem struct {
+// A PathElem essentially represents a KeyPointer.
+type PathElem struct {
 	// FromTree is the owning tree ID of the parent node; or the
 	// well-known tree ID if this is the root.
 	FromTree btrfsprim.ObjID
@@ -94,17 +94,17 @@ type TreePathElem struct {
 	ToMaxKey btrfsprim.Key
 }
 
-func (elem TreePathElem) writeNodeTo(w io.Writer) {
+func (elem PathElem) writeNodeTo(w io.Writer) {
 	fmt.Fprintf(w, "node:%d@%v", elem.ToNodeLevel, elem.ToNodeAddr)
 }
 
-func (path TreePath) String() string {
+func (path Path) String() string {
 	if len(path) == 0 {
 		return "(empty-path)"
 	}
 	var ret strings.Builder
 	fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
-	if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
+	if len(path) == 1 && path[0] == (PathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
 		ret.WriteString("(empty-path)")
 	} else {
 		path[0].writeNodeTo(&ret)
@@ -119,11 +119,11 @@ func (path TreePath) String() string {
 	return ret.String()
 }
 
-func (path TreePath) DeepCopy() TreePath {
-	return append(TreePath(nil), path...)
+func (path Path) DeepCopy() Path {
+	return append(Path(nil), path...)
 }
 
-func (path TreePath) Parent() TreePath {
+func (path Path) Parent() Path {
 	return path[:len(path)-1]
 }
 
@@ -131,7 +131,7 @@ func (path TreePath) Parent() TreePath {
 // `&path[x]`, but negative values of x move down from the end of path
 // (similar to how lists work in many other languages, such as
 // Python).
-func (path TreePath) Node(x int) *TreePathElem {
+func (path Path) Node(x int) *PathElem {
 	if x < 0 {
 		x += len(path)
 	}
