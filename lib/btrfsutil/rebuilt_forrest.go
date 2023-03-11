@@ -23,23 +23,8 @@ import (
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
 //
-// It is conceptually a btrfstree.Forrest, and adds similar
-// broken-tree handling to OldRebuiltForrest.  However, it is much
-// more efficient than OldRebuiltForrest.
-//
-// The efficiency improvements are possible because of the API
-// differences, which are necessary for how it is used in
-// rebuildtrees:
-//
-//   - it consumes an already-read Graph instead of reading the graph
-//     itself
-//
-//   - it does not use `btrfstree.Path`
-//
-//   - it does not keep track of errors encountered in a tree
-//
-// Additionally, it provides some functionality that OldRebuiltForrest
-// does not:
+// Additionally, it provides some functionality on top of a vanilla
+// btrfs.ReadableFS:
 //
 //   - it provides a RebuiltForrest.RebuiltListRoots() method for
 //     listing how trees have been repaired.
