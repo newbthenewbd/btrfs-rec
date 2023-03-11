@@ -86,10 +86,12 @@ func main() {
 	globalFlags.logLevel.Level = dlog.LogLevelInfo
 	argparser.PersistentFlags().Var(&globalFlags.logLevel, "verbosity", "set the verbosity")
 
-	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil, "open the file `physical_volume` as part of the filesystem")
+	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil,
+		"open the file `physical_volume` as part of the filesystem")
 	noError(argparser.MarkPersistentFlagFilename("pv"))
 
-	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
+	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "",
+		"load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
 	noError(argparser.MarkPersistentFlagFilename("mappings"))
 
 	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
