@@ -25,15 +25,14 @@ import (
 )
 
 func init() {
-	var nodeListFilename string
-	cmd := &cobra.Command{
+	inspectors.AddCommand(&cobra.Command{
 		Use:   "ls-trees",
 		Short: "A brief view what types of items are in each tree",
 		Long: "" +
 			"If no --node-list is given, then a slow sector-by-sector scan " +
 			"will be used to find all lost+found nodes.",
 		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithReadableFSAndNodeList(&nodeListFilename, func(fs btrfs.ReadableFS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, _ []string) error {
+		RunE: runWithReadableFSAndNodeList(func(fs btrfs.ReadableFS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			var treeErrCnt int
@@ -113,10 +112,5 @@ func init() {
 
 			return nil
 		}),
-	}
-	cmd.Flags().StringVar(&nodeListFilename, "node-list", "",
-		"Output of 'btrfs-recs inspect [rebuild-mappings] list-nodes' to use for a lost+found tree")
-	noError(cmd.MarkFlagFilename("node-list"))
-
-	inspectors.AddCommand(cmd)
+	})
 }
