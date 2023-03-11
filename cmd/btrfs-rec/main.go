@@ -107,7 +107,7 @@ func main() {
 	}
 }
 
-func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+func run(runE func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		logger := textui.NewLogger(os.Stderr, globalFlags.logLevel.Level)
@@ -126,37 +126,50 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 					err = _err
 				}
 			}
+
 			defer func() {
 				maybeSetErr(globalFlags.stopProfiling())
 			}()
-			if len(globalFlags.pvs) == 0 {
-				// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
-				// it doesn't interfere with the `help` sub-command.
-				return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
-			}
-			fs, err := btrfsutil.Open(ctx, globalFlags.openFlag, globalFlags.pvs...)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				maybeSetErr(fs.Close())
-			}()
-
-			if globalFlags.mappings != "" {
-				mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, globalFlags.mappings)
-				if err != nil {
-					return err
-				}
-				for _, mapping := range mappingsJSON {
-					if err := fs.LV.AddMapping(mapping); err != nil {
-						return err
-					}
-				}
-			}
-
 			cmd.SetContext(ctx)
-			return runE(fs, cmd, args)
+			return runE(cmd, args)
 		})
 		return grp.Wait()
 	}
+}
+
+func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return run(func(cmd *cobra.Command, args []string) (err error) {
+		maybeSetErr := func(_err error) {
+			if _err != nil && err == nil {
+				err = _err
+			}
+		}
+
+		if len(globalFlags.pvs) == 0 {
+			// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
+			// it doesn't interfere with the `help` sub-command.
+			return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
+		}
+		fs, err := btrfsutil.Open(cmd.Context(), globalFlags.openFlag, globalFlags.pvs...)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			maybeSetErr(fs.Close())
+		}()
+
+		if globalFlags.mappings != "" {
+			mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](cmd.Context(), globalFlags.mappings)
+			if err != nil {
+				return err
+			}
+			for _, mapping := range mappingsJSON {
+				if err := fs.LV.AddMapping(mapping); err != nil {
+					return err
+				}
+			}
+		}
+
+		return runE(fs, cmd, args)
+	})
 }

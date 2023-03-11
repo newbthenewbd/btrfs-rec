@@ -129,7 +129,7 @@ func init() {
 			"advantage of using previously read data from " +
 			"`btrfs-rec inspect rebuild-nodes scan`.",
 		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: run(func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			scanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
@@ -159,7 +159,7 @@ func init() {
 			dlog.Info(ctx, "... done writing")
 
 			return nil
-		},
+		}),
 	})
 
 	inspectors.AddCommand(cmd)
