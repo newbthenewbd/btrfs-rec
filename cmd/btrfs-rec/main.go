@@ -192,3 +192,25 @@ func runWithReadableFS(runE func(btrfs.ReadableFS, *cobra.Command, []string) err
 		return runE(rfs, cmd, args)
 	})
 }
+
+func runWithReadableFSAndNodeList(nodeListFilename *string, runE func(btrfs.ReadableFS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		var nodeList []btrfsvol.LogicalAddr
+		var err error
+		if *nodeListFilename != "" {
+			nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](cmd.Context(), *nodeListFilename)
+		} else {
+			nodeList, err = btrfsutil.ListNodes(cmd.Context(), fs)
+		}
+		if err != nil {
+			return err
+		}
+
+		var rfs btrfs.ReadableFS = fs
+		if globalFlags.rebuild {
+			rfs = btrfsutil.NewOldRebuiltForrest(fs)
+		}
+
+		return runE(rfs, nodeList, cmd, args)
+	})
+}
