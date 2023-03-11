@@ -24,7 +24,7 @@ func init() {
 		Use:   "spew-items",
 		Short: "Spew all items as parsed",
 		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+		RunE: runWithReadableFS(func(fs btrfs.ReadableFS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			spew := spew.NewDefaultConfig()

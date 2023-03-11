@@ -18,7 +18,7 @@ func init() {
 		Use:   "mount MOUNTPOINT",
 		Short: "Mount the filesystem read-only",
 		Args:  cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		RunE: runWithReadableFS(func(fs btrfs.ReadableFS, cmd *cobra.Command, args []string) error {
 			return mount.MountRO(cmd.Context(), fs, args[0], skipFileSums)
 		}),
 	}

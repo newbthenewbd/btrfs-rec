@@ -175,3 +175,9 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 		return runE(fs, cmd, args)
 	})
 }
+
+func runWithReadableFS(runE func(btrfs.ReadableFS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		return runE(btrfsutil.NewOldRebuiltForrest(fs), cmd, args)
+	})
+}
