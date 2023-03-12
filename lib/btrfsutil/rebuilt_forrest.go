@@ -18,7 +18,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type Callbacks interface {
+type RebuiltForrestCallbacks interface {
 	AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
 	AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
 	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
@@ -29,23 +29,23 @@ type Callbacks interface {
 // potentially broken btrees.
 //
 // It is conceptually a btrfstree.TreeOperator, and adds similar
-// broken-tree handling to btrfsutil.BrokenForrest.  However, the API
-// is different thant btrfstree.TreeOperator, and is much more
-// efficient than btrfsutil.BrokenForrest.
+// broken-tree handling to OldRebuiltForrest.  However, the API is
+// different than btrfstree.TreeOperator, and is much more efficient
+// than OldRebuiltForrest.
 //
 // The efficiency improvements are possible because of the API
 // differences, which are necessary for how it is used in
-// rebuildnodes:
+// rebuildtrees:
 //
-//   - it consumes an already-read graph.Graph instead of reading the
-//     graph itself
+//   - it consumes an already-read Graph instead of reading the graph
+//     itself
 //
 //   - it does not use `btrfstree.TreePath`
 //
 //   - it does not keep track of errors encountered in a tree
 //
-// Additionally, it provides some functionality that
-// btrfsutil.BrokenForrest does not:
+// Additionally, it provides some functionality that OldRebuiltForrest
+// does not:
 //
 //   - it provides a .LeafToRoots() method to advise on what
 //     additional roots should be added
@@ -60,7 +60,7 @@ type RebuiltForrest struct {
 	sb    btrfstree.Superblock
 	graph Graph
 	keyIO *KeyIO
-	cb    Callbacks
+	cb    RebuiltForrestCallbacks
 
 	// mutable
 	treesMu  nestedMutex
@@ -72,7 +72,7 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
 // the callbacks must be non-nil.
-func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb Callbacks) *RebuiltForrest {
+func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	return &RebuiltForrest{
 		sb:    sb,
 		graph: graph,

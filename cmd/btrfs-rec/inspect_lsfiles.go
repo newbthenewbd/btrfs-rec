@@ -48,7 +48,7 @@ func init() {
 			ctx := cmd.Context()
 
 			printSubvol(out, "", true, "/", &btrfs.Subvolume{
-				FS:     btrfsutil.NewBrokenTrees(ctx, fs),
+				FS:     btrfsutil.NewOldRebuiltForrest(ctx, fs),
 				TreeID: btrfsprim.FS_TREE_OBJECTID,
 			})
 

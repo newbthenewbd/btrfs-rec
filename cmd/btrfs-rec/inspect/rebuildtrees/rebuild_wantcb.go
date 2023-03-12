@@ -19,12 +19,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
-// fsErr implements rebuildCallbacks.
+// FSErr implements btrfscheck.GraphCallbacks.
 func (o *rebuilder) FSErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 
-// want implements rebuildCallbacks.
+// Want implements btrfscheck.GraphCallbacks.
 func (o *rebuilder) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
@@ -73,7 +73,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 	return btrfsprim.Key{}, false
 }
 
-// wantOff implements rebuildCallbacks.
+// WantOff implements btrfscheck.GraphCallbacks.
 func (o *rebuilder) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
@@ -117,7 +117,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 	return false
 }
 
-// wantDirIndex implements rebuildCallbacks.
+// WantDirIndex implements btrfscheck.GraphCallbacks.
 func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
@@ -350,7 +350,7 @@ func (o *rebuilder) _wantRange(
 	})
 }
 
-// func implements rebuildCallbacks.
+// WantCSum implements btrfscheck.GraphCallbacks.
 //
 // interval is [beg, end)
 func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
@@ -391,7 +391,7 @@ func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inod
 		uint64(roundDown(beg, btrfssum.BlockSize)), uint64(roundUp(end, btrfssum.BlockSize)))
 }
 
-// wantFileExt implements rebuildCallbacks.
+// WantFileExt implements btrfscheck.GraphCallbacks.
 func (o *rebuilder) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	o._wantRange(
 		ctx, reason,

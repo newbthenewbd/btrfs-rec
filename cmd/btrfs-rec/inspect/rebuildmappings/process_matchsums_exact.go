@@ -17,7 +17,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func matchBlockGroupSums(ctx context.Context,
+func matchBlockGroupSumsExact(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],

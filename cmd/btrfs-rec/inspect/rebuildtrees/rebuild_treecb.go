@@ -13,7 +13,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// AddedItem implements btrees.Callbacks.
+// AddedItem implements btrfsutil.RebuiltForrestCallbacks.
 func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	o.addedItemQueue.Insert(keyAndTree{
 		TreeID: tree,
@@ -21,14 +21,14 @@ func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btr
 	})
 }
 
-// AddedRoot implements btrees.Callbacks.
+// AddedRoot implements btrfsutil.RebuiltForrestCallbacks.
 func (o *rebuilder) AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr) {
 	if retries := o.retryItemQueue[tree]; retries != nil {
 		o.addedItemQueue.InsertFrom(retries)
 	}
 }
 
-// LookupRoot implements btrees.Callbacks.
+// LookupRoot implements btrfsutil.RebuiltForrestCallbacks.
 func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
 	wantKey := WantWithTree{
 		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
@@ -59,7 +59,7 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 	}
 }
 
-// LookupUUID implements btrees.Callbacks.
+// LookupUUID implements btrfsutil.RebuiltForrestCallbacks.
 func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
 	wantKey := WantWithTree{
 		TreeID: btrfsprim.UUID_TREE_OBJECTID,

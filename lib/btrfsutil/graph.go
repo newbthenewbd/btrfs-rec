@@ -23,7 +23,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type Node struct {
+type GraphNode struct {
 	Level      uint8
 	Generation btrfsprim.Generation
 	Owner      btrfsprim.ObjID
@@ -33,7 +33,7 @@ type Node struct {
 	Items      []btrfsprim.Key
 }
 
-func (n Node) String() string {
+func (n GraphNode) String() string {
 	if reflect.ValueOf(n).IsZero() {
 		return "{}"
 	}
@@ -43,9 +43,9 @@ func (n Node) String() string {
 		n.MaxItem.ObjectID, n.MaxItem.ItemType, n.MaxItem.Offset)
 }
 
-type Edge struct {
+type GraphEdge struct {
 	// It is invalid for both 'FromRoot' and 'FromNode' to be
-	// non-zero.  If both are zero, then the Edge is from the
+	// non-zero.  If both are zero, then the GraphEdge is from the
 	// superblock.
 	FromRoot btrfsvol.LogicalAddr
 	FromNode btrfsvol.LogicalAddr
@@ -59,7 +59,7 @@ type Edge struct {
 	ToGeneration btrfsprim.Generation
 }
 
-func (kp Edge) String() string {
+func (kp GraphEdge) String() string {
 	var from string
 	switch {
 	case kp.FromRoot != 0:
@@ -80,13 +80,13 @@ func (kp Edge) String() string {
 }
 
 type Graph struct {
-	Nodes     map[btrfsvol.LogicalAddr]Node
+	Nodes     map[btrfsvol.LogicalAddr]GraphNode
 	BadNodes  map[btrfsvol.LogicalAddr]error
-	EdgesFrom map[btrfsvol.LogicalAddr][]*Edge
-	EdgesTo   map[btrfsvol.LogicalAddr][]*Edge
+	EdgesFrom map[btrfsvol.LogicalAddr][]*GraphEdge
+	EdgesTo   map[btrfsvol.LogicalAddr][]*GraphEdge
 }
 
-func (g Graph) insertEdge(ptr *Edge) {
+func (g Graph) insertEdge(ptr *GraphEdge) {
 	if ptr.ToNode == 0 {
 		panic("kp.ToNode should not be zero")
 	}
@@ -112,7 +112,7 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	if treeInfo.RootNode == 0 {
 		return
 	}
-	g.insertEdge(&Edge{
+	g.insertEdge(&GraphEdge{
 		FromTree:     treeID,
 		ToNode:       treeInfo.RootNode,
 		ToLevel:      treeInfo.Level,
@@ -122,10 +122,10 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 
 func NewGraph(sb btrfstree.Superblock) *Graph {
 	g := &Graph{
-		Nodes:     make(map[btrfsvol.LogicalAddr]Node),
+		Nodes:     make(map[btrfsvol.LogicalAddr]GraphNode),
 		BadNodes:  make(map[btrfsvol.LogicalAddr]error),
-		EdgesFrom: make(map[btrfsvol.LogicalAddr][]*Edge),
-		EdgesTo:   make(map[btrfsvol.LogicalAddr][]*Edge),
+		EdgesFrom: make(map[btrfsvol.LogicalAddr][]*GraphEdge),
+		EdgesTo:   make(map[btrfsvol.LogicalAddr][]*GraphEdge),
 	}
 
 	// These 4 trees are mentioned directly in the superblock, so
@@ -139,7 +139,7 @@ func NewGraph(sb btrfstree.Superblock) *Graph {
 }
 
 func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	nodeData := Node{
+	nodeData := GraphNode{
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 		Owner:      nodeRef.Data.Head.Owner,
@@ -155,14 +155,14 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 				cnt++
 			}
 		}
-		kps := make([]Edge, 0, cnt)
+		kps := make([]GraphEdge, 0, cnt)
 		keys := make([]btrfsprim.Key, len(nodeRef.Data.BodyLeaf))
 		nodeData.Items = keys
 		g.Nodes[nodeRef.Addr] = nodeData
 		for i, item := range nodeRef.Data.BodyLeaf {
 			keys[i] = item.Key
 			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
-				kps = append(kps, Edge{
+				kps = append(kps, GraphEdge{
 					FromRoot:     nodeRef.Addr,
 					FromItem:     i,
 					FromTree:     item.Key.ObjectID,
@@ -175,9 +175,9 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 		}
 	} else {
 		g.Nodes[nodeRef.Addr] = nodeData
-		kps := make([]Edge, len(nodeRef.Data.BodyInternal))
+		kps := make([]GraphEdge, len(nodeRef.Data.BodyInternal))
 		for i, kp := range nodeRef.Data.BodyInternal {
-			kps[i] = Edge{
+			kps[i] = GraphEdge{
 				FromNode:     nodeRef.Addr,
 				FromItem:     i,
 				FromTree:     nodeRef.Data.Head.Owner,

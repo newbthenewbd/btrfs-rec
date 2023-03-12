@@ -42,7 +42,7 @@ func (g Graph) renderNode(node btrfsvol.LogicalAddr) []string {
 	}
 }
 
-func (g Graph) renderEdge(kp Edge) []string {
+func (g Graph) renderEdge(kp GraphEdge) []string {
 	a := fmt.Sprintf("[%d]={", kp.FromItem)
 	b := strings.Repeat(" ", len(a))
 	ret := []string{
@@ -110,7 +110,7 @@ func (g Graph) renderLoop(stack []btrfsvol.LogicalAddr) []string {
 	return lines
 }
 
-func checkNodeExpectations(kp Edge, toNode Node) error {
+func checkNodeExpectations(kp GraphEdge, toNode GraphNode) error {
 	var errs derror.MultiError
 	if toNode.Level != kp.ToLevel {
 		errs = append(errs, fmt.Errorf("kp.level=%v != node.level=%v",

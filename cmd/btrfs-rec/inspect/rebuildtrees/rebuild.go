@@ -213,7 +213,7 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 			progress.NumAugments = o.numAugments
 			progress.NumAugmentTrees = len(o.augmentQueue)
 			progressWriter.Set(progress)
-		} else if !btrfscheck.HandleWouldBeNoOp(key.ItemType) {
+		} else if !btrfscheck.HandleItemWouldBeNoOp(key.ItemType) {
 			o.settledItemQueue.Insert(key)
 		}
 	}

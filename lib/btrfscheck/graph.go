@@ -14,7 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-type rebuildCallbacks interface {
+type GraphCallbacks interface {
 	FSErr(ctx context.Context, e error)
 	Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
 	WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
@@ -23,9 +23,9 @@ type rebuildCallbacks interface {
 	WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
 }
 
-// handleWouldBeNoOp returns whether or not a call to handleItem for a
-// given item type would be a no-op.
-func HandleWouldBeNoOp(typ btrfsprim.ItemType) bool {
+// HandleItemWouldBeNoOp returns whether or not a call to HandleItem
+// for a given item type would be a no-op.
+func HandleItemWouldBeNoOp(typ btrfsprim.ItemType) bool {
 	switch typ {
 	case // btrfsitem.Dev
 		btrfsprim.DEV_ITEM_KEY,
@@ -45,7 +45,7 @@ func HandleWouldBeNoOp(typ btrfsprim.ItemType) bool {
 	}
 }
 
-func HandleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
+func HandleItem(o GraphCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
 	// Notionally, just express the relationships shown in
 	// https://btrfs.wiki.kernel.org/index.php/File:References.png (from the page
 	// https://btrfs.wiki.kernel.org/index.php/Data_Structures )
@@ -186,7 +186,7 @@ func HandleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		case btrfsitem.FILE_EXTENT_INLINE:
 			// nothing
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			// NB: o.wantCSum checks inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) for us.
+			// NB: o.WantCSum checks inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) for us.
 			o.WantCSum(ctx, "data sum",
 				treeID, item.Key.ObjectID,
 				body.BodyExtent.DiskByteNr,

@@ -161,14 +161,14 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	dlog.Infof(_ctx, "5/6: Searching for %d block groups in checksum map (exact)...", len(bgs))
 	physicalSums := ExtractPhysicalSums(scanResults)
 	logicalSums := ExtractLogicalSums(ctx, scanResults)
-	if err := matchBlockGroupSums(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
+	if err := matchBlockGroupSumsExact(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
 		return err
 	}
 	dlog.Info(ctx, "... done searching for exact block groups")
 
 	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "6/6")
 	dlog.Infof(_ctx, "6/6: Searching for %d block groups in checksum map (fuzzy)...", len(bgs))
-	if err := fuzzyMatchBlockGroupSums(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
+	if err := matchBlockGroupSumsFuzzy(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
 		return err
 	}
 	dlog.Info(_ctx, "... done searching for fuzzy block groups")

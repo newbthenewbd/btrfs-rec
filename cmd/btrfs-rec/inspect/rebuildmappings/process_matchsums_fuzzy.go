@@ -37,7 +37,7 @@ func (a fuzzyRecord) Compare(b fuzzyRecord) int {
 	}
 }
 
-func fuzzyMatchBlockGroupSums(ctx context.Context,
+func matchBlockGroupSumsFuzzy(ctx context.Context,
 	fs *btrfs.FS,
 	blockgroups map[btrfsvol.LogicalAddr]BlockGroup,
 	physicalSums map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr],
