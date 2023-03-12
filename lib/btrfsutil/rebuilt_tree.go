@@ -327,7 +327,7 @@ func (tree *RebuiltTree) COWDistance(parentID btrfsprim.ObjID) (dist int, ok boo
 func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
 	ptr, ok := tree.Items(ctx).Load(key)
 	if !ok {
-		panic(fmt.Errorf("should not happen: btrees.RebuiltTree.ReadItem called for not-included key: %v", key))
+		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
 	}
 	return tree.forrest.keyIO.ReadItem(ctx, ptr)
 }

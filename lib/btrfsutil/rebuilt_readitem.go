@@ -157,14 +157,14 @@ func (o *KeyIO) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.graph.Nodes[ptr.Node].Level != 0 {
-		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for non-leaf node@%v", ptr.Node))
+		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for non-leaf node@%v", ptr.Node))
 	}
 	if ptr.Idx < 0 {
-		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for negative item index: %v", ptr.Idx))
+		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for negative item index: %v", ptr.Idx))
 	}
 	items := o.readNode(ctx, ptr.Node).Data.BodyLeaf
 	if ptr.Idx >= len(items) {
-		panic(fmt.Errorf("should not happen: keyio.Handle.ReadItem called for out-of-bounds item index: index=%v len=%v",
+		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for out-of-bounds item index: index=%v len=%v",
 			ptr.Idx, len(items)))
 	}
 	return items[ptr.Idx].Body.CloneItem()
