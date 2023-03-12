@@ -32,7 +32,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults rebuildmappings.
 	var stats textui.Portion[int]
 	stats.D = countNodes(scanResults)
 	progressWriter := textui.NewProgress[textui.Portion[int]](
-		dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.read.substep", "read-nodes"),
+		dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-nodes"),
 		dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 
 	nodeGraph := btrfsutil.NewGraph(*sb)
@@ -67,6 +67,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, scanResults rebuildmappings.
 	progressWriter.Done()
 	dlog.Info(ctx, "... done reading node data")
 
+	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.read.substep", "check")
 	if err := nodeGraph.FinalCheck(ctx, fs, *sb); err != nil {
 		return btrfstree.Superblock{}, btrfsutil.Graph{}, nil, err
 	}

@@ -118,7 +118,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 		}
 	}()
 	stack = append(stack, treeID)
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-tree", stack)
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-forrest.add-tree", stack)
 	dlog.Info(ctx, "adding tree...")
 	if slices.Contains(treeID, stack[:len(stack)-1]) {
 		dlog.Errorf(ctx, "failed to add tree: loop detected: %v", stack)

@@ -48,7 +48,7 @@ type RebuiltTree struct {
 // .isOwnerOK, whether or not they're in the tree.
 func (tree *RebuiltTree) leafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
 	return containers.LoadOrElse[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](&tree.forrest.leafs, tree.ID, func(btrfsprim.ObjID) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
-		ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
+		ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
 
 		nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
 
@@ -136,7 +136,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.incItems, tree.Roots.HasAny)
 }
 
@@ -146,7 +146,7 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
 func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.excItems,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
 			return !tree.Roots.HasAny(roots)
@@ -267,7 +267,7 @@ func (s rootStats) String() string {
 func (tree *RebuiltTree) AddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
-	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
 	leafToRoots := tree.leafToRoots(ctx)

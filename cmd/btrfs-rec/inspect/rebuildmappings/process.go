@@ -54,7 +54,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	dlog.Infof(ctx, "plan: 6/6 search for block groups in checksum map (fuzzy)")
 
 	_ctx := ctx
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "1/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "1/6")
 	dlog.Infof(_ctx, "1/6: Processing %d chunks...", numChunks)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
@@ -68,7 +68,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	}
 	dlog.Info(_ctx, "... done processing chunks")
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "2/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "2/6")
 	dlog.Infof(_ctx, "2/6: Processing %d device extents...", numDevExts)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
@@ -84,7 +84,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	// too much.  (Because nodes are numerous and small, while the
 	// others are few and large; so it is likely that many of the
 	// nodes will be subsumed by other things.)
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "3/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "3/6")
 	dlog.Infof(_ctx, "3/6: Processing %d nodes...", numNodes)
 	for _, devID := range devIDs {
 		devResults := scanResults[devID]
@@ -109,7 +109,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 
 	// Use block groups to add missing flags (and as a hint to
 	// combine node entries).
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "4/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "4/6")
 	dlog.Infof(_ctx, "4/6: Processing %d block groups...", numBlockGroups)
 	// First dedup them, because they change for allocations and
 	// CoW means that they'll bounce around a lot, so you likely
@@ -157,7 +157,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	// The fuzzy-search is only fast because the exact-search is so good at getting `physicalBlocks` down.
 	// Empirically: if I remove the exact-search step, then the fuzzy-match step is more than an order of magnitude
 	// slower.
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "5/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "5/6")
 	dlog.Infof(_ctx, "5/6: Searching for %d block groups in checksum map (exact)...", len(bgs))
 	physicalSums := ExtractPhysicalSums(scanResults)
 	logicalSums := ExtractLogicalSums(ctx, scanResults)
@@ -166,14 +166,14 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	}
 	dlog.Info(ctx, "... done searching for exact block groups")
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "6/6")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "6/6")
 	dlog.Infof(_ctx, "6/6: Searching for %d block groups in checksum map (fuzzy)...", len(bgs))
 	if err := matchBlockGroupSumsFuzzy(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
 		return err
 	}
 	dlog.Info(_ctx, "... done searching for fuzzy block groups")
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.step", "report")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "report")
 	dlog.Info(_ctx, "report:")
 
 	unmappedPhysicalRegions := ListUnmappedPhysicalRegions(fs)

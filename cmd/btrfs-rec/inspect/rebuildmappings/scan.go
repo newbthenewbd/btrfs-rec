@@ -110,7 +110,7 @@ var sbSize = btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfstree.Superblock{}))
 // ScanOneDevice mostly mimics btrfs-progs
 // cmds/rescue-chunk-recover.c:scan_one_device().
 func ScanOneDevice(ctx context.Context, dev *btrfs.Device, sb btrfstree.Superblock) (ScanOneDeviceResult, error) {
-	ctx = dlog.WithField(ctx, "btrfsinspect.scandevices.dev", dev.Name())
+	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-mappings.scan.dev", dev.Name())
 
 	result := ScanOneDeviceResult{
 		FoundNodes: make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr),

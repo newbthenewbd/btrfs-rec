@@ -45,7 +45,7 @@ func matchBlockGroupSumsFuzzy(ctx context.Context,
 ) error {
 	_ctx := ctx
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "indexing")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.substep", "indexing")
 	dlog.Info(ctx, "Indexing physical regions...") // O(m)
 	regions := ListUnmappedPhysicalRegions(fs)
 	physicalIndex := make(map[btrfssum.ShortSum][]btrfsvol.QualifiedPhysicalAddr)
@@ -62,7 +62,7 @@ func matchBlockGroupSumsFuzzy(ctx context.Context,
 	}
 	dlog.Info(ctx, "... done indexing")
 
-	ctx = dlog.WithField(_ctx, "btrfsinspect.rebuild-mappings.substep", "searching")
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.substep", "searching")
 	dlog.Info(ctx, "Searching...")
 	numBlockgroups := len(blockgroups)
 	for i, bgLAddr := range maps.SortedKeys(blockgroups) {

@@ -96,8 +96,8 @@ func (o WantWithTree) String() string {
 }
 
 const (
-	logFieldItemWant = "btrfsinspect.rebuild-nodes.rebuild.want"
-	logFieldTreeWant = "btrfsinspect.rebuild-nodes.rebuild.add-tree.want"
+	logFieldItemWant = "btrfs.inspect.rebuild-trees.rebuild.want"
+	logFieldTreeWant = "btrfs.util.rebuilt-forrest.add-tree.want"
 )
 
 func withWant(ctx context.Context, logField, reason string, wantKey WantWithTree) context.Context {
