@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrees
+package btrfsutil
 
 import (
 	"context"
@@ -13,8 +13,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	pkggraph "git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -60,8 +58,8 @@ type Callbacks interface {
 type RebuiltForrest struct {
 	// static
 	sb    btrfstree.Superblock
-	graph pkggraph.Graph
-	keyIO *keyio.Handle
+	graph Graph
+	keyIO *KeyIO
 	cb    Callbacks
 
 	// mutable
@@ -74,7 +72,7 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  All of
 // the callbacks must be non-nil.
-func NewRebuiltForrest(sb btrfstree.Superblock, graph pkggraph.Graph, keyIO *keyio.Handle, cb Callbacks) *RebuiltForrest {
+func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb Callbacks) *RebuiltForrest {
 	return &RebuiltForrest{
 		sb:    sb,
 		graph: graph,

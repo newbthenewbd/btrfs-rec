@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package rebuildtrees
 
 import (
 	"context"
@@ -14,15 +14,14 @@ import (
 	"github.com/datawire/dlib/dgroup"
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/btrees"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfscheck"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -46,10 +45,10 @@ func (o keyAndTree) String() string {
 
 type rebuilder struct {
 	sb    btrfstree.Superblock
-	graph graph.Graph
-	keyIO *keyio.Handle
+	graph btrfsutil.Graph
+	keyIO *btrfsutil.KeyIO
 
-	rebuilt *btrees.RebuiltForrest
+	rebuilt *btrfsutil.RebuiltForrest
 
 	curKey struct {
 		TreeID btrfsprim.ObjID
@@ -75,7 +74,7 @@ type Rebuilder interface {
 	ListRoots(context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]
 }
 
-func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspect.ScanDevicesResult) (Rebuilder, error) {
+func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults rebuildmappings.ScanDevicesResult) (Rebuilder, error) {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.step", "read-fs-data")
 	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeScanResults) // ScanDevices does its own logging
 	if err != nil {
@@ -87,7 +86,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeScanResults btrfsinspec
 		graph: nodeGraph,
 		keyIO: keyIO,
 	}
-	o.rebuilt = btrees.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
+	o.rebuilt = btrfsutil.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
 	return o, nil
 }
 
@@ -214,7 +213,7 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 			progress.NumAugments = o.numAugments
 			progress.NumAugmentTrees = len(o.augmentQueue)
 			progressWriter.Set(progress)
-		} else if !handleWouldBeNoOp(key.ItemType) {
+		} else if !btrfscheck.HandleWouldBeNoOp(key.ItemType) {
 			o.settledItemQueue.Insert(key)
 		}
 	}
@@ -284,7 +283,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.process.item", item.keyAndTree)
 			o.curKey.TreeID = item.TreeID
 			o.curKey.Key.Val = item.Key
-			handleItem(o, ctx, item.TreeID, btrfstree.Item{
+			btrfscheck.HandleItem(o, ctx, item.TreeID, btrfstree.Item{
 				Key:  item.Key,
 				Body: item.Body,
 			})

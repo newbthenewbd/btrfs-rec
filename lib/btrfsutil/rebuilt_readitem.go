@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package keyio
+package btrfsutil
 
 import (
 	"context"
@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/graph"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -40,10 +39,10 @@ type FlagsAndErr struct {
 	Err       error
 }
 
-type Handle struct {
+type KeyIO struct {
 	rawFile diskio.File[btrfsvol.LogicalAddr]
 	sb      btrfstree.Superblock
-	graph   graph.Graph
+	graph   Graph
 
 	Flags map[ItemPtr]FlagsAndErr // INODE_ITEM
 	Names map[ItemPtr][]byte      // DIR_INDEX
@@ -53,8 +52,8 @@ type Handle struct {
 	cache containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
 }
 
-func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *Handle {
-	return &Handle{
+func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *KeyIO {
+	return &KeyIO{
 		rawFile: file,
 		sb:      sb,
 
@@ -71,7 +70,7 @@ func NewHandle(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) 
 	}
 }
 
-func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
+func (o *KeyIO) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
 	for i, item := range nodeRef.Data.BodyLeaf {
 		ptr := ItemPtr{
 			Node: nodeRef.Addr,
@@ -115,11 +114,11 @@ func (o *Handle) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.
 	}
 }
 
-func (o *Handle) SetGraph(graph graph.Graph) {
+func (o *KeyIO) SetGraph(graph Graph) {
 	o.graph = graph
 }
 
-func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
+func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
 	if cached, ok := o.cache.Load(laddr); ok {
 		dlog.Tracef(ctx, "cache-hit node@%v", laddr)
 		return cached
@@ -154,7 +153,7 @@ func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *disk
 	return ref
 }
 
-func (o *Handle) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
+func (o *KeyIO) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.graph.Nodes[ptr.Node].Level != 0 {

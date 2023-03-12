@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -8,8 +8,8 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
+	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/mount"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
 func init() {
@@ -21,7 +21,7 @@ func init() {
 			Args:  cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
-			return btrfsinspect.MountRO(cmd.Context(), fs, args[0], skipFileSums)
+			return mount.MountRO(cmd.Context(), fs, args[0], skipFileSums)
 		},
 	}
 	cmd.Command.Flags().BoolVar(&skipFileSums, "skip-filesums", false,

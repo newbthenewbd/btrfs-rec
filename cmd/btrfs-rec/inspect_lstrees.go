@@ -12,13 +12,13 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
+	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -36,10 +36,10 @@ func init() {
 		},
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			var scanResults btrfsinspect.ScanDevicesResult
+			var scanResults rebuildmappings.ScanDevicesResult
 			if scandevicesFilename != "" {
 				var err error
-				scanResults, err = readJSONFile[btrfsinspect.ScanDevicesResult](ctx, scandevicesFilename)
+				scanResults, err = readJSONFile[rebuildmappings.ScanDevicesResult](ctx, scandevicesFilename)
 				if err != nil {
 					return err
 				}

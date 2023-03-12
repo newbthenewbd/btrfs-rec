@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package btrees
+package btrfsutil
 
 import (
 	"context"
@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
@@ -136,7 +135,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.incItems, tree.Roots.HasAny)
 }
@@ -146,7 +145,7 @@ func (tree *RebuiltTree) Items(ctx context.Context) *containers.SortedMap[btrfsp
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfsinspect.rebuild-nodes.rebuild.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, &tree.forrest.excItems,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
@@ -154,7 +153,7 @@ func (tree *RebuiltTree) PotentialItems(ctx context.Context) *containers.SortedM
 		})
 }
 
-type itemIndex = containers.SortedMap[btrfsprim.Key, keyio.ItemPtr]
+type itemIndex = containers.SortedMap[btrfsprim.Key, ItemPtr]
 
 type itemStats struct {
 	Leafs    textui.Portion[int]
@@ -169,7 +168,7 @@ func (s itemStats) String() string {
 
 func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfsprim.ObjID, *itemIndex],
 	leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool,
-) *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr] {
+) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
@@ -186,12 +185,12 @@ func (tree *RebuiltTree) items(ctx context.Context, cache containers.Map[btrfspr
 		stats.Leafs.D = len(leafs)
 		progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 
-		index := new(containers.SortedMap[btrfsprim.Key, keyio.ItemPtr])
+		index := new(containers.SortedMap[btrfsprim.Key, ItemPtr])
 		for i, leaf := range leafs {
 			stats.Leafs.N = i
 			progressWriter.Set(stats)
 			for j, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-				newPtr := keyio.ItemPtr{
+				newPtr := ItemPtr{
 					Node: leaf,
 					Idx:  j,
 				}

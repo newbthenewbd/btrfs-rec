@@ -1,16 +1,16 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package rebuildtrees
 
 import (
 	"golang.org/x/exp/constraints"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
+	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 )
 
-func countNodes(nodeScanResults btrfsinspect.ScanDevicesResult) int {
+func countNodes(nodeScanResults rebuildmappings.ScanDevicesResult) int {
 	var cnt int
 	for _, devResults := range nodeScanResults {
 		cnt += len(devResults.FoundNodes)

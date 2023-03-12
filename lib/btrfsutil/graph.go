@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package graph
+package btrfsutil
 
 import (
 	"context"
@@ -120,7 +120,7 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	})
 }
 
-func New(sb btrfstree.Superblock) *Graph {
+func NewGraph(sb btrfstree.Superblock) *Graph {
 	g := &Graph{
 		Nodes:     make(map[btrfsvol.LogicalAddr]Node),
 		BadNodes:  make(map[btrfsvol.LogicalAddr]error),

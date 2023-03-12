@@ -12,7 +12,6 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -26,7 +25,7 @@ func getNodeSize(fs *btrfs.FS) (btrfsvol.AddrDelta, error) {
 	return btrfsvol.AddrDelta(sb.NodeSize), nil
 }
 
-func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults btrfsinspect.ScanDevicesResult) error {
+func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesResult) error {
 	nodeSize, err := getNodeSize(fs)
 	if err != nil {
 		return err

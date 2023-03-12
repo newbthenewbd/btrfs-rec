@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -9,7 +9,6 @@ import (
 	"sort"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
@@ -20,7 +19,7 @@ type BlockGroup struct {
 	Flags btrfsvol.BlockGroupFlags
 }
 
-func DedupBlockGroups(scanResults btrfsinspect.ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
+func DedupBlockGroups(scanResults ScanDevicesResult) (map[btrfsvol.LogicalAddr]BlockGroup, error) {
 	// Dedup
 	bgsSet := make(containers.Set[BlockGroup])
 	for _, devResults := range scanResults {

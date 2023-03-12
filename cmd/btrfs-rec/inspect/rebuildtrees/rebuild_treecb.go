@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package rebuildtrees
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 	case *btrfsitem.Root:
 		return btrfsprim.Generation(foundKey.Offset), *itemBody, true
 	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", foundKey, itemBody.Err))
+		o.FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", foundKey, itemBody.Err))
 		return 0, btrfsitem.Root{}, false
 	default:
 		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
@@ -76,7 +76,7 @@ func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btr
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
+		o.FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
 		return 0, false
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but

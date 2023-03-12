@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package rebuildtrees
 
 import (
 	"bytes"
@@ -15,17 +15,17 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect/rebuildnodes/keyio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
 // fsErr implements rebuildCallbacks.
-func (o *rebuilder) fsErr(ctx context.Context, e error) {
+func (o *rebuilder) FSErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 
 // want implements rebuildCallbacks.
-func (o *rebuilder) want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
+func (o *rebuilder) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -47,7 +47,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 	// check if we already have it
 
 	tgt := wantKey.Key.Key()
-	if key, _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Search(func(key btrfsprim.Key, _ keyio.ItemPtr) int {
+	if key, _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Search(func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 		key.Offset = 0
 		return tgt.Compare(key)
 	}); ok {
@@ -61,11 +61,11 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int {
+		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			k.Offset = 0
 			return tgt.Compare(k)
 		},
-		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
+		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
 			return true
 		})
@@ -74,7 +74,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 }
 
 // wantOff implements rebuildCallbacks.
-func (o *rebuilder) wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
+func (o *rebuilder) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -108,8 +108,8 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
-		func(k btrfsprim.Key, _ keyio.ItemPtr) int { return tgt.Compare(k) },
-		func(_ btrfsprim.Key, v keyio.ItemPtr) bool {
+		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int { return tgt.Compare(k) },
+		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
 			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
 			return true
 		})
@@ -118,7 +118,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 }
 
 // wantDirIndex implements rebuildCallbacks.
-func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
+func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
 	wantKey := WantWithTree{
 		TreeID: treeID,
 		Key: Want{
@@ -140,11 +140,11 @@ func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrf
 	tgt := wantKey.Key.Key()
 	found := false
 	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
-		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
+		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
 		},
-		func(_ btrfsprim.Key, ptr keyio.ItemPtr) bool {
+		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
 			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
 				found = true
 			}
@@ -161,11 +161,11 @@ func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrf
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
 	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
-		func(key btrfsprim.Key, _ keyio.ItemPtr) int {
+		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
 		},
-		func(_ btrfsprim.Key, ptr keyio.ItemPtr) bool {
+		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
 			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
 				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, ptr.Node))
 			}
@@ -176,10 +176,10 @@ func (o *rebuilder) wantDirIndex(ctx context.Context, reason string, treeID btrf
 
 func (o *rebuilder) _walkRange(
 	ctx context.Context,
-	items *containers.SortedMap[btrfsprim.Key, keyio.ItemPtr],
+	items *containers.SortedMap[btrfsprim.Key, btrfsutil.ItemPtr],
 	treeID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
 	beg, end uint64,
-	fn func(key btrfsprim.Key, ptr keyio.ItemPtr, beg, end uint64),
+	fn func(key btrfsprim.Key, ptr btrfsutil.ItemPtr, beg, end uint64),
 ) {
 	min := btrfsprim.Key{
 		ObjectID: objID,
@@ -192,7 +192,7 @@ func (o *rebuilder) _walkRange(
 		Offset:   end - 1,
 	}
 	items.Subrange(
-		func(runKey btrfsprim.Key, _ keyio.ItemPtr) int {
+		func(runKey btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			switch {
 			case min.Compare(runKey) < 0:
 				return 1
@@ -202,14 +202,14 @@ func (o *rebuilder) _walkRange(
 				return 0
 			}
 		},
-		func(runKey btrfsprim.Key, runPtr keyio.ItemPtr) bool {
+		func(runKey btrfsprim.Key, runPtr btrfsutil.ItemPtr) bool {
 			runSizeAndErr, ok := o.keyIO.Sizes[runPtr]
 			if !ok {
 				panic(fmt.Errorf("should not happen: %v (%v) did not have a size recorded",
 					runPtr, keyAndTree{TreeID: treeID, Key: runKey}))
 			}
 			if runSizeAndErr.Err != nil {
-				o.fsErr(ctx, fmt.Errorf("get size: %v (%v): %w",
+				o.FSErr(ctx, fmt.Errorf("get size: %v (%v): %w",
 					runPtr, keyAndTree{TreeID: treeID, Key: runKey},
 					runSizeAndErr.Err))
 				return true
@@ -273,7 +273,7 @@ func (o *rebuilder) _wantRange(
 		ctx,
 		o.rebuilt.Tree(ctx, treeID).Items(ctx),
 		treeID, objID, typ, beg, end,
-		func(runKey btrfsprim.Key, _ keyio.ItemPtr, runBeg, runEnd uint64) {
+		func(runKey btrfsprim.Key, _ btrfsutil.ItemPtr, runBeg, runEnd uint64) {
 			var overlappingGaps []*containers.RBNode[gap]
 			gaps.Subrange(
 				func(gap gap) int {
@@ -324,7 +324,7 @@ func (o *rebuilder) _wantRange(
 			ctx,
 			potentialItems,
 			treeID, objID, typ, gap.Beg, gap.End,
-			func(k btrfsprim.Key, v keyio.ItemPtr, runBeg, runEnd uint64) {
+			func(k btrfsprim.Key, v btrfsutil.ItemPtr, runBeg, runEnd uint64) {
 				// TODO: This is dumb and greedy.
 				if last < runBeg {
 					// log an error
@@ -353,7 +353,7 @@ func (o *rebuilder) _wantRange(
 // func implements rebuildCallbacks.
 //
 // interval is [beg, end)
-func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
+func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
 	inodeWant := WantWithTree{
 		TreeID: inodeTree,
 		Key: Want{
@@ -377,7 +377,7 @@ func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inod
 		panic(fmt.Errorf("should not happen: INODE_ITEM did not have flags recorded"))
 	}
 	if inodeFlags.Err != nil {
-		o.fsErr(inodeCtx, inodeFlags.Err)
+		o.FSErr(inodeCtx, inodeFlags.Err)
 		return
 	}
 
@@ -392,7 +392,7 @@ func (o *rebuilder) wantCSum(ctx context.Context, reason string, inodeTree, inod
 }
 
 // wantFileExt implements rebuildCallbacks.
-func (o *rebuilder) wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+func (o *rebuilder) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	o._wantRange(
 		ctx, reason,
 		treeID, ino, btrfsprim.EXTENT_DATA_KEY,

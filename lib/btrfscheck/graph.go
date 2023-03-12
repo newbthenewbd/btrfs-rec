@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package rebuildnodes
+package btrfscheck
 
 import (
 	"context"
@@ -15,17 +15,17 @@ import (
 )
 
 type rebuildCallbacks interface {
-	fsErr(ctx context.Context, e error)
-	want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
-	wantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
-	wantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte)
-	wantCSum(ctx context.Context, reason string, inodeTree, inodeItem btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
-	wantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
+	FSErr(ctx context.Context, e error)
+	Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType)
+	WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64)
+	WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte)
+	WantCSum(ctx context.Context, reason string, inodeTree, inodeItem btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) // interval is [beg, end)
+	WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64)
 }
 
 // handleWouldBeNoOp returns whether or not a call to handleItem for a
 // given item type would be a no-op.
-func handleWouldBeNoOp(typ btrfsprim.ItemType) bool {
+func HandleWouldBeNoOp(typ btrfsprim.ItemType) bool {
 	switch typ {
 	case // btrfsitem.Dev
 		btrfsprim.DEV_ITEM_KEY,
@@ -45,30 +45,30 @@ func handleWouldBeNoOp(typ btrfsprim.ItemType) bool {
 	}
 }
 
-func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
+func HandleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
 	// Notionally, just express the relationships shown in
 	// https://btrfs.wiki.kernel.org/index.php/File:References.png (from the page
 	// https://btrfs.wiki.kernel.org/index.php/Data_Structures )
 	switch body := item.Body.(type) {
 	case *btrfsitem.BlockGroup:
-		o.want(ctx, "Chunk",
+		o.Want(ctx, "Chunk",
 			btrfsprim.CHUNK_TREE_OBJECTID,
 			body.ChunkObjectID,
 			btrfsitem.CHUNK_ITEM_KEY)
-		o.wantOff(ctx, "FreeSpaceInfo",
+		o.WantOff(ctx, "FreeSpaceInfo",
 			btrfsprim.FREE_SPACE_TREE_OBJECTID,
 			item.Key.ObjectID,
 			btrfsitem.FREE_SPACE_INFO_KEY,
 			item.Key.Offset)
 	case *btrfsitem.Chunk:
-		o.want(ctx, "owning Root",
+		o.Want(ctx, "owning Root",
 			btrfsprim.ROOT_TREE_OBJECTID,
 			body.Head.Owner,
 			btrfsitem.ROOT_ITEM_KEY)
 	case *btrfsitem.Dev:
 		// nothing
 	case *btrfsitem.DevExtent:
-		o.wantOff(ctx, "Chunk",
+		o.WantOff(ctx, "Chunk",
 			body.ChunkTree,
 			body.ChunkObjectID,
 			btrfsitem.CHUNK_ITEM_KEY,
@@ -77,7 +77,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		// nothing
 	case *btrfsitem.DirEntry:
 		// containing-directory
-		o.wantOff(ctx, "containing dir inode",
+		o.WantOff(ctx, "containing dir inode",
 			treeID,
 			item.Key.ObjectID,
 			btrfsitem.INODE_ITEM_KEY,
@@ -85,12 +85,12 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		// siblings
 		switch item.Key.ItemType {
 		case btrfsitem.DIR_ITEM_KEY:
-			o.wantDirIndex(ctx, "corresponding DIR_INDEX",
+			o.WantDirIndex(ctx, "corresponding DIR_INDEX",
 				treeID,
 				item.Key.ObjectID,
 				body.Name)
 		case btrfsitem.DIR_INDEX_KEY:
-			o.wantOff(ctx, "corresponding DIR_ITEM",
+			o.WantOff(ctx, "corresponding DIR_ITEM",
 				treeID,
 				item.Key.ObjectID,
 				btrfsitem.DIR_ITEM_KEY,
@@ -107,23 +107,23 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		if body.Location != (btrfsprim.Key{}) {
 			switch body.Location.ItemType {
 			case btrfsitem.INODE_ITEM_KEY:
-				o.wantOff(ctx, "item being pointed to",
+				o.WantOff(ctx, "item being pointed to",
 					treeID,
 					body.Location.ObjectID,
 					body.Location.ItemType,
 					body.Location.Offset)
-				o.wantOff(ctx, "backref from item being pointed to",
+				o.WantOff(ctx, "backref from item being pointed to",
 					treeID,
 					body.Location.ObjectID,
 					btrfsitem.INODE_REF_KEY,
 					uint64(item.Key.ObjectID))
 			case btrfsitem.ROOT_ITEM_KEY:
-				o.want(ctx, "Root of subvolume being pointed to",
+				o.Want(ctx, "Root of subvolume being pointed to",
 					btrfsprim.ROOT_TREE_OBJECTID,
 					body.Location.ObjectID,
 					body.Location.ItemType)
 			default:
-				o.fsErr(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType=%v", body.Location.ItemType))
+				o.FSErr(ctx, fmt.Errorf("DirEntry: unexpected .Location.ItemType=%v", body.Location.ItemType))
 			}
 		}
 	case *btrfsitem.Empty:
@@ -141,12 +141,12 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			case nil:
 				// nothing
 			case *btrfsitem.ExtentDataRef:
-				o.wantOff(ctx, "referencing Inode",
+				o.WantOff(ctx, "referencing Inode",
 					refBody.Root,
 					refBody.ObjectID,
 					btrfsitem.INODE_ITEM_KEY,
 					0)
-				o.wantOff(ctx, "referencing FileExtent",
+				o.WantOff(ctx, "referencing FileExtent",
 					refBody.Root,
 					refBody.ObjectID,
 					btrfsitem.EXTENT_DATA_KEY,
@@ -162,22 +162,22 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 	case *btrfsitem.ExtentCSum:
 		// nothing
 	case *btrfsitem.ExtentDataRef:
-		o.want(ctx, "Extent being referenced",
+		o.Want(ctx, "Extent being referenced",
 			btrfsprim.EXTENT_TREE_OBJECTID,
 			item.Key.ObjectID,
 			btrfsitem.EXTENT_ITEM_KEY)
-		o.wantOff(ctx, "referencing Inode",
+		o.WantOff(ctx, "referencing Inode",
 			body.Root,
 			body.ObjectID,
 			btrfsitem.INODE_ITEM_KEY,
 			0)
-		o.wantOff(ctx, "referencing FileExtent",
+		o.WantOff(ctx, "referencing FileExtent",
 			body.Root,
 			body.ObjectID,
 			btrfsitem.EXTENT_DATA_KEY,
 			uint64(body.Offset))
 	case *btrfsitem.FileExtent:
-		o.wantOff(ctx, "containing Inode",
+		o.WantOff(ctx, "containing Inode",
 			treeID,
 			item.Key.ObjectID,
 			btrfsitem.INODE_ITEM_KEY,
@@ -187,64 +187,64 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			// nothing
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
 			// NB: o.wantCSum checks inodeBody.Flags.Has(btrfsitem.INODE_NODATASUM) for us.
-			o.wantCSum(ctx, "data sum",
+			o.WantCSum(ctx, "data sum",
 				treeID, item.Key.ObjectID,
 				body.BodyExtent.DiskByteNr,
 				body.BodyExtent.DiskByteNr.Add(body.BodyExtent.DiskNumBytes))
 		default:
-			o.fsErr(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
+			o.FSErr(ctx, fmt.Errorf("FileExtent: unexpected body.Type=%v", body.Type))
 		}
 	case *btrfsitem.FreeSpaceBitmap:
-		o.wantOff(ctx, "FreeSpaceInfo",
+		o.WantOff(ctx, "FreeSpaceInfo",
 			treeID,
 			item.Key.ObjectID,
 			btrfsitem.FREE_SPACE_INFO_KEY,
 			item.Key.Offset)
 	case *btrfsitem.FreeSpaceHeader:
-		o.wantOff(ctx, ".Location",
+		o.WantOff(ctx, ".Location",
 			treeID,
 			body.Location.ObjectID,
 			body.Location.ItemType,
 			body.Location.Offset)
 	case *btrfsitem.FreeSpaceInfo:
 		if body.Flags.Has(btrfsitem.FREE_SPACE_USING_BITMAPS) {
-			o.wantOff(ctx, "FreeSpaceBitmap",
+			o.WantOff(ctx, "FreeSpaceBitmap",
 				treeID,
 				item.Key.ObjectID,
 				btrfsitem.FREE_SPACE_BITMAP_KEY,
 				item.Key.Offset)
 		}
 	case *btrfsitem.Inode:
-		o.want(ctx, "backrefs",
+		o.Want(ctx, "backrefs",
 			treeID, // TODO: validate the number of these against body.NLink
 			item.Key.ObjectID,
 			btrfsitem.INODE_REF_KEY)
-		o.wantFileExt(ctx, "FileExtents",
+		o.WantFileExt(ctx, "FileExtents",
 			treeID, item.Key.ObjectID, body.Size)
 		if body.BlockGroup != 0 {
-			o.want(ctx, "BlockGroup",
+			o.Want(ctx, "BlockGroup",
 				btrfsprim.EXTENT_TREE_OBJECTID,
 				body.BlockGroup,
 				btrfsitem.BLOCK_GROUP_ITEM_KEY)
 		}
 	case *btrfsitem.InodeRefs:
-		o.wantOff(ctx, "child Inode",
+		o.WantOff(ctx, "child Inode",
 			treeID,
 			item.Key.ObjectID,
 			btrfsitem.INODE_ITEM_KEY,
 			0)
-		o.wantOff(ctx, "parent Inode",
+		o.WantOff(ctx, "parent Inode",
 			treeID,
 			btrfsprim.ObjID(item.Key.Offset),
 			btrfsitem.INODE_ITEM_KEY,
 			0)
 		for _, ref := range body.Refs {
-			o.wantOff(ctx, "DIR_ITEM",
+			o.WantOff(ctx, "DIR_ITEM",
 				treeID,
 				btrfsprim.ObjID(item.Key.Offset),
 				btrfsitem.DIR_ITEM_KEY,
 				btrfsitem.NameHash(ref.Name))
-			o.wantOff(ctx, "DIR_INDEX",
+			o.WantOff(ctx, "DIR_INDEX",
 				treeID,
 				btrfsprim.ObjID(item.Key.Offset),
 				btrfsitem.DIR_INDEX_KEY,
@@ -256,12 +256,12 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			case nil:
 				// nothing
 			case *btrfsitem.ExtentDataRef:
-				o.wantOff(ctx, "referencing INode",
+				o.WantOff(ctx, "referencing INode",
 					refBody.Root,
 					refBody.ObjectID,
 					btrfsitem.INODE_ITEM_KEY,
 					0)
-				o.wantOff(ctx, "referencing FileExtent",
+				o.WantOff(ctx, "referencing FileExtent",
 					refBody.Root,
 					refBody.ObjectID,
 					btrfsitem.EXTENT_DATA_KEY,
@@ -276,7 +276,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		}
 	case *btrfsitem.Root:
 		if body.RootDirID != 0 {
-			o.wantOff(ctx, "root directory",
+			o.WantOff(ctx, "root directory",
 				item.Key.ObjectID,
 				body.RootDirID,
 				btrfsitem.INODE_ITEM_KEY,
@@ -284,7 +284,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		}
 		if body.UUID != (btrfsprim.UUID{}) {
 			key := btrfsitem.UUIDToKey(body.UUID)
-			o.wantOff(ctx, "uuid",
+			o.WantOff(ctx, "uuid",
 				btrfsprim.UUID_TREE_OBJECTID,
 				key.ObjectID,
 				key.ItemType,
@@ -292,7 +292,7 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 		}
 		if body.ParentUUID != (btrfsprim.UUID{}) {
 			key := btrfsitem.UUIDToKey(body.ParentUUID)
-			o.wantOff(ctx, "parent uuid",
+			o.WantOff(ctx, "parent uuid",
 				btrfsprim.UUID_TREE_OBJECTID,
 				key.ObjectID,
 				key.ItemType,
@@ -317,48 +317,48 @@ func handleItem(o rebuildCallbacks, ctx context.Context, treeID btrfsprim.ObjID,
 			panic(fmt.Errorf("should not happen: RootRef: unexpected ItemType=%v", item.Key.ItemType))
 		}
 		// sibling
-		o.wantOff(ctx, fmt.Sprintf("corresponding %v", otherType),
+		o.WantOff(ctx, fmt.Sprintf("corresponding %v", otherType),
 			treeID,
 			btrfsprim.ObjID(item.Key.Offset),
 			otherType,
 			uint64(item.Key.ObjectID))
 		// parent
-		o.want(ctx, "parent subvolume: Root",
+		o.Want(ctx, "parent subvolume: Root",
 			treeID,
 			parent,
 			btrfsitem.ROOT_ITEM_KEY)
-		o.wantOff(ctx, "parent subvolume: Inode of parent dir",
+		o.WantOff(ctx, "parent subvolume: Inode of parent dir",
 			parent,
 			body.DirID,
 			btrfsitem.INODE_ITEM_KEY,
 			0)
-		o.wantOff(ctx, "parent subvolume: DIR_ITEM in parent dir",
+		o.WantOff(ctx, "parent subvolume: DIR_ITEM in parent dir",
 			parent,
 			body.DirID,
 			btrfsitem.DIR_ITEM_KEY,
 			btrfsitem.NameHash(body.Name))
-		o.wantOff(ctx, "parent subvolume: DIR_INDEX in parent dir",
+		o.WantOff(ctx, "parent subvolume: DIR_INDEX in parent dir",
 			parent,
 			body.DirID,
 			btrfsitem.DIR_INDEX_KEY,
 			uint64(body.Sequence))
 		// child
-		o.want(ctx, "child subvolume: Root",
+		o.Want(ctx, "child subvolume: Root",
 			treeID,
 			child,
 			btrfsitem.ROOT_ITEM_KEY)
 	case *btrfsitem.SharedDataRef:
-		o.want(ctx, "Extent",
+		o.Want(ctx, "Extent",
 			btrfsprim.EXTENT_TREE_OBJECTID,
 			item.Key.ObjectID,
 			btrfsitem.EXTENT_ITEM_KEY)
 	case *btrfsitem.UUIDMap:
-		o.want(ctx, "subvolume Root",
+		o.Want(ctx, "subvolume Root",
 			btrfsprim.ROOT_TREE_OBJECTID,
 			body.ObjID,
 			btrfsitem.ROOT_ITEM_KEY)
 	case *btrfsitem.Error:
-		o.fsErr(ctx, fmt.Errorf("error decoding item: %w", body.Err))
+		o.FSErr(ctx, fmt.Errorf("error decoding item: %w", body.Err))
 	default:
 		// This is a panic because the item decoder should not emit new types without this
 		// code also being updated.

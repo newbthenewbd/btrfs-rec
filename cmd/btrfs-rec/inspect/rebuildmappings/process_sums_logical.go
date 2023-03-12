@@ -15,13 +15,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevicesResult) SumRunWithGaps[btrfsvol.LogicalAddr] {
-	var records []btrfsinspect.SysExtentCSum
+func ExtractLogicalSums(ctx context.Context, scanResults ScanDevicesResult) SumRunWithGaps[btrfsvol.LogicalAddr] {
+	var records []SysExtentCSum
 	for _, devResults := range scanResults {
 		records = append(records, devResults.FoundExtentCSums...)
 	}
@@ -53,10 +52,10 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	// "AAAAAAA" shouldn't be present, and if we just discard "BBBBBBBB"
 	// because it conflicts with "CCCCCCC", then we would erroneously
 	// include "AAAAAAA".
-	addrspace := new(containers.RBTree[btrfsinspect.SysExtentCSum])
+	addrspace := new(containers.RBTree[SysExtentCSum])
 	for _, newRecord := range records {
 		for {
-			conflict := addrspace.Search(func(oldRecord btrfsinspect.SysExtentCSum) int {
+			conflict := addrspace.Search(func(oldRecord SysExtentCSum) int {
 				switch {
 				case newRecord.Sums.Addr.Add(newRecord.Sums.Size()) <= oldRecord.Sums.Addr:
 					// 'newRecord' is wholly to the left of 'oldRecord'.
@@ -128,7 +127,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 			case newRecord.Sums.Addr.Add(newRecord.Sums.Size()) > overlapEnd:
 				suffix = newRecord.Sums.Sums[newOverlapEnd:]
 			}
-			unionRecord := btrfsinspect.SysExtentCSum{
+			unionRecord := SysExtentCSum{
 				Generation: oldRecord.Generation,
 				Sums: btrfsitem.ExtentCSum{
 					SumRun: btrfssum.SumRun[btrfsvol.LogicalAddr]{
@@ -148,7 +147,7 @@ func ExtractLogicalSums(ctx context.Context, scanResults btrfsinspect.ScanDevice
 	var flattened SumRunWithGaps[btrfsvol.LogicalAddr]
 	var curAddr btrfsvol.LogicalAddr
 	var curSums strings.Builder
-	addrspace.Range(func(node *containers.RBNode[btrfsinspect.SysExtentCSum]) bool {
+	addrspace.Range(func(node *containers.RBNode[SysExtentCSum]) bool {
 		curEnd := curAddr + (btrfsvol.LogicalAddr(curSums.Len()/sumSize) * btrfssum.BlockSize)
 		if node.Value.Sums.Addr != curEnd {
 			if curSums.Len() > 0 {

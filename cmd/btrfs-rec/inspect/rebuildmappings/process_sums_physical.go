@@ -13,11 +13,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-func ExtractPhysicalSums(scanResults btrfsinspect.ScanDevicesResult) map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr] {
+func ExtractPhysicalSums(scanResults ScanDevicesResult) map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr] {
 	ret := make(map[btrfsvol.DeviceID]btrfssum.SumRun[btrfsvol.PhysicalAddr], len(scanResults))
 	for devID, devResults := range scanResults {
 		ret[devID] = devResults.Checksums
