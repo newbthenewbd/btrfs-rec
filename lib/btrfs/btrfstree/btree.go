@@ -22,6 +22,25 @@ type TreeSearcher interface {
 	Search(key btrfsprim.Key, size uint32) int
 }
 
+type TreeWalkHandler struct {
+	// Callbacks for entire nodes.
+	//
+	// If any of these return an error that is io/fs.SkipDir, the
+	// node immediately stops getting processed; if PreNode, Node,
+	// or BadNode return io/fs.SkipDir then key pointers and items
+	// within the node are not processed.
+	PreNode  func(Path) error
+	Node     func(Path, *Node) error
+	BadNode  func(Path, *Node, error) error
+	PostNode func(Path, *Node) error
+	// Callbacks for items on interior nodes
+	PreKeyPointer  func(Path, KeyPointer) error
+	PostKeyPointer func(Path, KeyPointer) error
+	// Callbacks for items on leaf nodes
+	Item    func(Path, Item) error
+	BadItem func(Path, Item) error
+}
+
 // TreeOperator is an interface for performing basic btree operations.
 type TreeOperator interface {
 	// TreeWalk walks a tree, triggering callbacks for every node,
@@ -60,25 +79,6 @@ type TreeOperator interface {
 	// If no such item is found, an error that is ErrNoItem is
 	// returned.
 	TreeSearchAll(treeID btrfsprim.ObjID, search TreeSearcher) ([]Item, error)
-}
-
-type TreeWalkHandler struct {
-	// Callbacks for entire nodes.
-	//
-	// If any of these return an error that is io/fs.SkipDir, the
-	// node immediately stops getting processed; if PreNode, Node,
-	// or BadNode return io/fs.SkipDir then key pointers and items
-	// within the node are not processed.
-	PreNode  func(Path) error
-	Node     func(Path, *Node) error
-	BadNode  func(Path, *Node, error) error
-	PostNode func(Path, *Node) error
-	// Callbacks for items on interior nodes
-	PreKeyPointer  func(Path, KeyPointer) error
-	PostKeyPointer func(Path, KeyPointer) error
-	// Callbacks for items on leaf nodes
-	Item    func(Path, Item) error
-	BadItem func(Path, Item) error
 }
 
 type TreeError struct {
