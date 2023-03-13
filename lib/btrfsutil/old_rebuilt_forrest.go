@@ -295,6 +295,9 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		})
 		return
 	}
+	if cbs.Item == nil {
+		return
+	}
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
 	tree.Items.Range(func(indexItem *containers.RBNode[oldRebuiltTreeValue]) bool {
 		if ctx.Err() != nil {
@@ -303,22 +306,20 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		if bt.ctx.Err() != nil {
 			return false
 		}
-		if cbs.Item != nil {
-			itemPath := bt.arena.Inflate(indexItem.Value.Path)
-			if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
-				var err error
+		itemPath := bt.arena.Inflate(indexItem.Value.Path)
+		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
+			var err error
+			btrfstree.FreeNodeRef(node)
+			node, err = bt.inner.ReadNode(itemPath.Parent())
+			if err != nil {
 				btrfstree.FreeNodeRef(node)
-				node, err = bt.inner.ReadNode(itemPath.Parent())
-				if err != nil {
-					btrfstree.FreeNodeRef(node)
-					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-					return true
-				}
-			}
-			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
-			if err := cbs.Item(itemPath, item); err != nil {
 				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
+				return true
 			}
+		}
+		item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		if err := cbs.Item(itemPath, item); err != nil {
+			errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 		}
 		return true
 	})
