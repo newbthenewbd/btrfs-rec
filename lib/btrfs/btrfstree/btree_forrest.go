@@ -17,7 +17,7 @@ import (
 // A TreeRoot is more-or-less a btrfsitem.Root, but simpler; returned by
 // LookupTreeRoot.
 type TreeRoot struct {
-	TreeID     btrfsprim.ObjID
+	ID         btrfsprim.ObjID
 	RootNode   btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
@@ -29,28 +29,28 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
 		return &TreeRoot{
-			TreeID:     treeID,
+			ID:         treeID,
 			RootNode:   sb.RootTree,
 			Level:      sb.RootLevel,
 			Generation: sb.Generation, // XXX: same generation as LOG_TREE?
 		}, nil
 	case btrfsprim.CHUNK_TREE_OBJECTID:
 		return &TreeRoot{
-			TreeID:     treeID,
+			ID:         treeID,
 			RootNode:   sb.ChunkTree,
 			Level:      sb.ChunkLevel,
 			Generation: sb.ChunkRootGeneration,
 		}, nil
 	case btrfsprim.TREE_LOG_OBJECTID:
 		return &TreeRoot{
-			TreeID:     treeID,
+			ID:         treeID,
 			RootNode:   sb.LogTree,
 			Level:      sb.LogLevel,
 			Generation: sb.Generation, // XXX: same generation as ROOT_TREE?
 		}, nil
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
 		return &TreeRoot{
-			TreeID:     treeID,
+			ID:         treeID,
 			RootNode:   sb.BlockGroupRoot,
 			Level:      sb.BlockGroupRootLevel,
 			Generation: sb.BlockGroupRootGeneration,
@@ -66,7 +66,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 		switch rootItemBody := rootItem.Body.(type) {
 		case *btrfsitem.Root:
 			return &TreeRoot{
-				TreeID:     treeID,
+				ID:         treeID,
 				RootNode:   rootItemBody.ByteNr,
 				Level:      rootItemBody.Level,
 				Generation: rootItemBody.Generation,

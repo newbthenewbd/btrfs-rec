@@ -40,7 +40,7 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 // 'TreeOperator' interface.
 func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	path := Path{{
-		FromTree:         rootInfo.TreeID,
+		FromTree:         rootInfo.ID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       rootInfo.RootNode,
 		ToNodeGeneration: rootInfo.Generation,
@@ -169,7 +169,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle fu
 
 func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
 	path := Path{{
-		FromTree:         treeRoot.TreeID,
+		FromTree:         treeRoot.ID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       treeRoot.RootNode,
 		ToNodeGeneration: treeRoot.Generation,

@@ -203,7 +203,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(treeID btrfsprim.ObjID, cacheEntry *old
 				// This is a panic because I'm not really sure what the best way to
 				// handle this is, and so if this happens I want the program to crash
 				// and force me to figure out how to handle it.
-				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, root.TreeID))
+				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, treeID))
 			}
 			cacheEntry.Items.Insert(oldRebuiltTreeValue{
 				Key:      item.Key,
