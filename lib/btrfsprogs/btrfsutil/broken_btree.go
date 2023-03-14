@@ -281,6 +281,7 @@ func (bt *brokenTrees) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.K
 			}
 		}
 		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+		ret[i].Body = ret[i].Body.CloneItem()
 	}
 	btrfstree.FreeNodeRef(node)
 
