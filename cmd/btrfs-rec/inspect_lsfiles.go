@@ -40,9 +40,9 @@ func init() {
 				}
 			}()
 			defer func() {
-				if r := derror.PanicToError(recover()); r != nil {
-					textui.Fprintf(out, "\n\n%+v\n", r)
-					err = fmt.Errorf("panicked")
+				if _err := derror.PanicToError(recover()); _err != nil {
+					textui.Fprintf(out, "\n\n%+v\n", _err)
+					err = _err
 				}
 			}()
 			ctx := cmd.Context()
