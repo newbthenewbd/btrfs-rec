@@ -28,28 +28,29 @@ var _ btrfstree.NodeSource = (*FS)(nil)
 // btrfstree.NodeFile //////////////////////////////////////////////////////////
 
 func (fs *FS) populateTreeUUIDs(ctx context.Context) {
-	if fs.cacheObjID2UUID == nil || fs.cacheUUID2ObjID == nil || fs.cacheTreeParent == nil {
-		fs.cacheObjID2UUID = make(map[btrfsprim.ObjID]btrfsprim.UUID)
-		fs.cacheUUID2ObjID = make(map[btrfsprim.UUID]btrfsprim.ObjID)
-		fs.cacheTreeParent = make(map[btrfsprim.ObjID]btrfsprim.UUID)
-		fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
-			func(err *btrfstree.TreeError) {
-				// do nothing
-			},
-			btrfstree.TreeWalkHandler{
-				Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
-					itemBody, ok := item.Body.(*btrfsitem.Root)
-					if !ok {
-						return nil
-					}
-					fs.cacheObjID2UUID[item.Key.ObjectID] = itemBody.UUID
-					fs.cacheTreeParent[item.Key.ObjectID] = itemBody.ParentUUID
-					fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
-					return nil
-				},
-			},
-		)
+	if fs.cacheObjID2UUID != nil && fs.cacheUUID2ObjID != nil && fs.cacheTreeParent != nil {
+		return
 	}
+	fs.cacheObjID2UUID = make(map[btrfsprim.ObjID]btrfsprim.UUID)
+	fs.cacheUUID2ObjID = make(map[btrfsprim.UUID]btrfsprim.ObjID)
+	fs.cacheTreeParent = make(map[btrfsprim.ObjID]btrfsprim.UUID)
+	fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
+		func(err *btrfstree.TreeError) {
+			// do nothing
+		},
+		btrfstree.TreeWalkHandler{
+			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
+				itemBody, ok := item.Body.(*btrfsitem.Root)
+				if !ok {
+					return nil
+				}
+				fs.cacheObjID2UUID[item.Key.ObjectID] = itemBody.UUID
+				fs.cacheTreeParent[item.Key.ObjectID] = itemBody.ParentUUID
+				fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
+				return nil
+			},
+		},
+	)
 }
 
 // ParentTree implements btrfstree.NodeFile.
