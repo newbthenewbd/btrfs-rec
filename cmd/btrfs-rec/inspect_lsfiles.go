@@ -215,7 +215,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		printPipe(out, prefix, isLast, name, file)
 	default:
-		panic(fmt.Errorf("TODO: I don't know how to handle an fileType=%v: %q",
+		panic(fmt.Errorf("TODO: I don't know how to handle a fileType=%v: %q",
 			entry.Type, name))
 	}
 }
