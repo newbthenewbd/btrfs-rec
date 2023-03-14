@@ -130,7 +130,7 @@ func (o *Handle) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *disk
 		panic(fmt.Errorf("should not happen: node@%v is not mentioned in the in-memory graph", laddr))
 	}
 
-	dlog.Infof(ctx, "cache-miss node@%v, reading...", laddr)
+	dlog.Debugf(ctx, "cache-miss node@%v, reading...", laddr)
 	ref, err := btrfstree.ReadNode(o.rawFile, o.sb, laddr, btrfstree.NodeExpectations{
 		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
