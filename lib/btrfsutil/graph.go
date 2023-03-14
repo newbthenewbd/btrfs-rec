@@ -111,8 +111,8 @@ func (g Graph) insertEdge(ptr *GraphEdge) {
 	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
 }
 
-func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
-	treeInfo, err := btrfstree.LookupTreeRoot(nil, sb, treeID)
+func (g Graph) insertTreeRoot(ctx context.Context, sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
+	treeInfo, err := btrfstree.LookupTreeRoot(ctx, nil, sb, treeID)
 	if err != nil {
 		// This shouldn't ever happen for treeIDs that are
 		// mentioned directly in the superblock; which are the
@@ -131,7 +131,7 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	})
 }
 
-func NewGraph(sb btrfstree.Superblock) Graph {
+func NewGraph(ctx context.Context, sb btrfstree.Superblock) Graph {
 	g := Graph{
 		Nodes:     make(map[btrfsvol.LogicalAddr]GraphNode),
 		BadNodes:  make(map[btrfsvol.LogicalAddr]error),
@@ -141,10 +141,10 @@ func NewGraph(sb btrfstree.Superblock) Graph {
 
 	// These 4 trees are mentioned directly in the superblock, so
 	// they are always seen.
-	g.insertTreeRoot(sb, btrfsprim.ROOT_TREE_OBJECTID)
-	g.insertTreeRoot(sb, btrfsprim.CHUNK_TREE_OBJECTID)
-	g.insertTreeRoot(sb, btrfsprim.TREE_LOG_OBJECTID)
-	g.insertTreeRoot(sb, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
+	g.insertTreeRoot(ctx, sb, btrfsprim.ROOT_TREE_OBJECTID)
+	g.insertTreeRoot(ctx, sb, btrfsprim.CHUNK_TREE_OBJECTID)
+	g.insertTreeRoot(ctx, sb, btrfsprim.TREE_LOG_OBJECTID)
+	g.insertTreeRoot(ctx, sb, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
 
 	return g
 }

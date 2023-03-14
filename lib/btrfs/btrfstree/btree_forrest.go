@@ -5,6 +5,7 @@
 package btrfstree
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -24,7 +25,7 @@ type TreeRoot struct {
 
 // LookupTreeRoot is a utility function to help with implementing the
 // 'TreeOperator' interface.
-func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
+func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
 		return &TreeRoot{

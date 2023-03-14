@@ -153,7 +153,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(treeID btrfsprim.ObjID, cacheEntry *old
 		cacheEntry.RootErr = err
 		return
 	}
-	root, err := btrfstree.LookupTreeRoot(bt, *sb, treeID)
+	root, err := btrfstree.LookupTreeRoot(bt.ctx, bt, *sb, treeID)
 	if err != nil {
 		cacheEntry.RootErr = err
 		return

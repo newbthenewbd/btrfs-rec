@@ -28,7 +28,7 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 	if err != nil {
 		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 	}
-	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
+	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
 	if err != nil {
 		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 		return
@@ -405,11 +405,12 @@ func (fs TreeOperatorImpl) next(path Path, node *Node) (Path, *Node, error) {
 
 // TreeSearch implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
+	ctx := context.TODO()
 	sb, err := fs.Superblock()
 	if err != nil {
 		return Item{}, err
 	}
-	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
+	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -430,11 +431,12 @@ func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key)
 
 // TreeSearchAll implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
+	ctx := context.TODO()
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
 	}
-	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
+	rootInfo, err := LookupTreeRoot(ctx, fs, *sb, treeID)
 	if err != nil {
 		return nil, err
 	}

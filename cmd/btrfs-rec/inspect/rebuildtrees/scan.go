@@ -59,7 +59,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 	ret := ScanDevicesResult{
 		Superblock: *sb,
 
-		Graph: btrfsutil.NewGraph(*sb),
+		Graph: btrfsutil.NewGraph(ctx, *sb),
 
 		Flags: make(map[btrfsutil.ItemPtr]FlagsAndErr),
 		Names: make(map[btrfsutil.ItemPtr][]byte),
