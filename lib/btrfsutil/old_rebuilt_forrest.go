@@ -7,7 +7,6 @@ package btrfsutil
 import (
 	"context"
 	"fmt"
-	iofs "io/fs"
 	"sync"
 
 	"github.com/datawire/dlib/derror"
@@ -226,7 +225,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfspri
 		return fn(indexItem.Key, indexItem.ItemSize)
 	})
 	if indexItem == nil {
-		return btrfstree.Item{}, bt.addErrs(tree, fn, iofs.ErrNotExist)
+		return btrfstree.Item{}, bt.addErrs(tree, fn, btrfstree.ErrNoItem)
 	}
 
 	itemPath := bt.arena.Inflate(indexItem.Value.Path)
@@ -258,7 +257,7 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 			return true
 		})
 	if len(indexItems) == 0 {
-		return nil, bt.addErrs(tree, fn, iofs.ErrNotExist)
+		return nil, bt.addErrs(tree, fn, btrfstree.ErrNoItem)
 	}
 
 	ret := make([]btrfstree.Item, len(indexItems))

@@ -180,7 +180,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 	}}
 	for {
 		if path.Node(-1).ToNodeAddr == 0 {
-			return nil, nil, iofs.ErrNotExist
+			return nil, nil, ErrNoItem
 		}
 		node, err := fs.ReadNode(path)
 		if err != nil {
@@ -204,7 +204,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			})
 			if !ok {
 				FreeNodeRef(node)
-				return nil, nil, iofs.ErrNotExist
+				return nil, nil, ErrNoItem
 			}
 			toMaxKey := path.Node(-1).ToMaxKey
 			if lastGood+1 < len(node.Data.BodyInterior) {
@@ -228,7 +228,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			//
 			//    + + + + 0 - - - -
 			//
-			// Such an item might not exist; in this case, return nil/ErrNotExist.
+			// Such an item might not exist; in this case, return (nil, ErrNoItem).
 			// Multiple such items might exist; in this case, it does not matter which
 			// is returned.
 			//
@@ -238,7 +238,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			})
 			if !ok {
 				FreeNodeRef(node)
-				return nil, nil, iofs.ErrNotExist
+				return nil, nil, ErrNoItem
 			}
 			path = append(path, TreePathElem{
 				FromTree:     node.Data.Head.Owner,

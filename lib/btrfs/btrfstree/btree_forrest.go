@@ -5,6 +5,7 @@
 package btrfstree
 
 import (
+	"errors"
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -69,6 +70,9 @@ func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*Tr
 	default:
 		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, RootItemSearchFn(treeID))
 		if err != nil {
+			if errors.Is(err, ErrNoItem) {
+				err = ErrNoTree
+			}
 			return nil, err
 		}
 		switch rootItemBody := rootItem.Body.(type) {

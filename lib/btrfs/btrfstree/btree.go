@@ -45,7 +45,10 @@ type TreeOperator interface {
 	// If some items are able to be read, but there is an error reading the
 	// full set, then it might return *both* a list of items and an error.
 	//
-	// If no such item is found, an error that is io/fs.ErrNotExist is
+	// If the tree is not found, an error that is ErrNoTree is
+	// returned.
+	//
+	// If no such item is found, an error that is ErrNoItem is
 	// returned.
 	TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
 }
