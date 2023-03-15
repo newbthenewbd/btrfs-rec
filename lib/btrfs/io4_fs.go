@@ -292,7 +292,8 @@ func (dir *Dir) populate() {
 	}
 	entriesWithIndexes := make(containers.Set[string])
 	nextIndex := uint64(2)
-	for index, entry := range dir.ChildrenByIndex {
+	for _, index := range maps.SortedKeys(dir.ChildrenByIndex) {
+		entry := dir.ChildrenByIndex[index]
 		if index+1 > nextIndex {
 			nextIndex = index + 1
 		}
