@@ -20,7 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -48,7 +48,7 @@ func init() {
 			ctx := cmd.Context()
 
 			printSubvol(out, "", true, "/", &btrfs.Subvolume{
-				FS:     btrfsutil.NewBrokenTrees(ctx, fs),
+				FS:     btrfsutil.NewOldRebuiltForrest(ctx, fs),
 				TreeID: btrfsprim.FS_TREE_OBJECTID,
 			})
 

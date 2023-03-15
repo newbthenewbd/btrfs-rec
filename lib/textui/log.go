@@ -289,57 +289,59 @@ func fieldOrd(key string) int {
 	case "dexec.err":
 		return -95
 
-	// btrfsinspect scandevices ////////////////////////////////////////////
-	case "btrfsinspect.scandevices.dev":
+	// btrfs inspect rebuild-mappings scan /////////////////////////////////
+	case "btrfs.inspect.rebuild-mappings.scan.dev":
 		return -1
 
-	// btrfsinspect rebuild-mappings ///////////////////////////////////////
-	case "btrfsinspect.rebuild-mappings.step":
+	// btrfs inspect rebuild-mappings process //////////////////////////////
+	case "btrfs.inspect.rebuild-mappings.process.step":
 		return -2
-	case "btrfsinspect.rebuild-mappings.substep":
+	case "btrfs.inspect.rebuild-mappings.process.substep":
 		return -1
 
-	// btrfsinspect rebuild-nodes //////////////////////////////////////////
-	case "btrfsinspect.rebuild-nodes.step":
+	// btrfs inspect rebuild-trees /////////////////////////////////////////
+	case "btrfs.inspect.rebuild-trees.step":
 		return -50
 	// step=read-fs-data
-	case "btrfsinspect.rebuild-nodes.read.substep":
+	case "btrfs.inspect.rebuild-trees.read.substep":
 		return -1
 	// step=rebuild
-	case "btrfsinspect.rebuild-nodes.rebuild.pass":
+	case "btrfs.inspect.rebuild-trees.rebuild.pass":
 		return -49
-	case "btrfsinspect.rebuild-nodes.rebuild.substep":
+	case "btrfs.inspect.rebuild-trees.rebuild.substep":
 		return -48
-	case "btrfsinspect.rebuild-nodes.rebuild.substep.progress":
+	case "btrfs.inspect.rebuild-trees.rebuild.substep.progress":
 		return -47
 	// step=rebuild, substep=collect-items (1/3)
 	// step=rebuild, substep=settle-items (2a/3)
-	case "btrfsinspect.rebuild-nodes.rebuild.settle.item":
+	case "btrfs.inspect.rebuild-trees.rebuild.settle.item":
 		return -25
 	// step=rebuild, substep=process-items (2b/3)
-	case "btrfsinspect.rebuild-nodes.rebuild.process.item":
+	case "btrfs.inspect.rebuild-trees.rebuild.process.item":
 		return -25
 	// step=rebuild, substep=apply-augments (3/3)
-	case "btrfsinspect.rebuild-nodes.rebuild.augment.tree":
+	case "btrfs.inspect.rebuild-trees.rebuild.augment.tree":
 		return -25
 	// step=rebuild (any substep)
-	case "btrfsinspect.rebuild-nodes.rebuild.want.key":
+	case "btrfs.inspect.rebuild-trees.rebuild.want.key":
 		return -9
-	case "btrfsinspect.rebuild-nodes.rebuild.want.reason":
+	case "btrfs.inspect.rebuild-trees.rebuild.want.reason":
 		return -8
-	case "btrfsinspect.rebuild-nodes.rebuild.add-tree":
+
+	// btrfsutil.RebuiltForrest ////////////////////////////////////////////
+	case "btrfs.util.rebuilt-forrest.add-tree":
 		return -7
-	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.key":
+	case "btrfs.util.rebuilt-forrest.add-tree.want.key":
 		return -6
-	case "btrfsinspect.rebuild-nodes.rebuild.add-tree.want.reason":
+	case "btrfs.util.rebuilt-forrest.add-tree.want.reason":
 		return -5
-	case "btrfsinspect.rebuild-nodes.rebuild.add-root":
+	case "btrfs.util.rebuilt-tree.add-root":
 		return -4
-	case "btrfsinspect.rebuild-nodes.rebuild.index-inc-items":
+	case "btrfs.util.rebuilt-tree.index-inc-items":
 		return -3
-	case "btrfsinspect.rebuild-nodes.rebuild.index-exc-items":
+	case "btrfs.util.rebuilt-tree.index-exc-items":
 		return -2
-	case "btrfsinspect.rebuild-nodes.rebuild.index-nodes":
+	case "btrfs.util.rebuilt-tree.index-nodes":
 		return -1
 
 	// other ///////////////////////////////////////////////////////////////
@@ -398,27 +400,37 @@ func writeField(w io.Writer, key string, val any) {
 	case strings.HasSuffix(name, ".pass"):
 		fmt.Fprintf(w, "/pass-%s", valStr)
 		return
-	case strings.HasSuffix(name, ".substep") && name != "btrfsinspect.rebuild-nodes.rebuild.add-tree.substep":
+	case strings.HasSuffix(name, ".substep") && name != "btrfs.util.rebuilt-forrest.add-tree.substep":
 		fmt.Fprintf(w, "/%s", valStr)
 		return
-	case strings.HasPrefix(name, "btrfsinspect."):
-		name = strings.TrimPrefix(name, "btrfsinspect.")
-		switch {
-		case strings.HasPrefix(name, "scandevices."):
-			name = strings.TrimPrefix(name, "scandevices.")
-		case strings.HasPrefix(name, "rebuild-mappings."):
-			name = strings.TrimPrefix(name, "rebuild-mappings.")
-		case strings.HasPrefix(name, "rebuild-nodes."):
-			name = strings.TrimPrefix(name, "rebuild-nodes.")
-			switch {
-			case strings.HasPrefix(name, "read."):
-				name = strings.TrimPrefix(name, "read.")
-			case strings.HasPrefix(name, "rebuild."):
-				name = strings.TrimPrefix(name, "rebuild.")
-			}
-		}
 	case strings.HasPrefix(name, "btrfs."):
 		name = strings.TrimPrefix(name, "btrfs.")
+		switch {
+		case strings.HasPrefix(name, "inspect."):
+			name = strings.TrimPrefix(name, "inspect.")
+			switch {
+			case strings.HasPrefix(name, "rebuild-mappings."):
+				name = strings.TrimPrefix(name, "rebuild-mappings.")
+				switch {
+				case strings.HasPrefix(name, "scan."):
+					name = strings.TrimPrefix(name, "scan.")
+				case strings.HasPrefix(name, "process."):
+					name = strings.TrimPrefix(name, "process.")
+				}
+			case strings.HasPrefix(name, "rebuild-trees."):
+				name = strings.TrimPrefix(name, "rebuild-trees.")
+				switch {
+				case strings.HasPrefix(name, "read."):
+					name = strings.TrimPrefix(name, "read.")
+				case strings.HasPrefix(name, "rebuild."):
+					name = strings.TrimPrefix(name, "rebuild.")
+				}
+			}
+		case strings.HasPrefix(name, "util.rebuilt-forrest."):
+			name = strings.TrimPrefix(name, "util.rebuilt-forrest.")
+		case strings.HasPrefix(name, "util.rebuilt-tree."):
+			name = strings.TrimPrefix(name, "util.rebuilt-tree.")
+		}
 	}
 
 	fmt.Fprintf(w, " %s=%s", name, valStr)

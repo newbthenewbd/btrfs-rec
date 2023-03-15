@@ -12,8 +12,8 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
+	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsprogs/btrfsinspect"
 )
 
 func init() {
@@ -25,7 +25,7 @@ func init() {
 		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			ctx := cmd.Context()
 
-			results, err := btrfsinspect.ScanDevices(ctx, fs)
+			results, err := rebuildmappings.ScanDevices(ctx, fs)
 			if err != nil {
 				return err
 			}
