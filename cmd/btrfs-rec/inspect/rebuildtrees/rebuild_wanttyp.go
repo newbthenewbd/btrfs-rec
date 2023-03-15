@@ -23,6 +23,7 @@ const (
 	offsetName
 )
 
+// TODO(lukeshu): Delete the 'Want' type in favor of btrfstree.Search.
 type Want struct {
 	ObjectID   btrfsprim.ObjID
 	ItemType   btrfsprim.ItemType

@@ -13,6 +13,15 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
+type TreeSearcher interface {
+	// How the search should be described in the event of an
+	// error.
+	fmt.Stringer
+
+	// size is math.MaxUint32 for key-pointers
+	Search(key btrfsprim.Key, size uint32) int
+}
+
 // TreeOperator is an interface for performing basic btree operations.
 type TreeOperator interface {
 	// TreeWalk walks a tree, triggering callbacks for every node,
@@ -40,7 +49,7 @@ type TreeOperator interface {
 	TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
 
 	TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error)
-	TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (Item, error) // size is math.MaxUint32 for key-pointers
+	TreeSearch(treeID btrfsprim.ObjID, search TreeSearcher) (Item, error)
 
 	// If some items are able to be read, but there is an error reading the
 	// full set, then it might return *both* a list of items and an error.
@@ -50,7 +59,7 @@ type TreeOperator interface {
 	//
 	// If no such item is found, an error that is ErrNoItem is
 	// returned.
-	TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
+	TreeSearchAll(treeID btrfsprim.ObjID, search TreeSearcher) ([]Item, error)
 }
 
 type TreeWalkHandler struct {

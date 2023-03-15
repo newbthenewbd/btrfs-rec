@@ -48,19 +48,7 @@ func ChecksumQualifiedPhysical(fs *FS, alg btrfssum.CSumType, paddr btrfsvol.Qua
 }
 
 func LookupCSum(fs btrfstree.TreeOperator, alg btrfssum.CSumType, laddr btrfsvol.LogicalAddr) (btrfssum.SumRun[btrfsvol.LogicalAddr], error) {
-	item, err := fs.TreeSearch(btrfsprim.CSUM_TREE_OBJECTID, func(key btrfsprim.Key, size uint32) int {
-		itemBeg := btrfsvol.LogicalAddr(key.Offset)
-		numSums := int64(size) / int64(alg.Size())
-		itemEnd := itemBeg + btrfsvol.LogicalAddr(numSums*btrfssum.BlockSize)
-		switch {
-		case itemEnd <= laddr:
-			return 1
-		case laddr < itemBeg:
-			return -1
-		default:
-			return 0
-		}
-	})
+	item, err := fs.TreeSearch(btrfsprim.CSUM_TREE_OBJECTID, btrfstree.SearchCSum(laddr, alg.Size()))
 	if err != nil {
 		return btrfssum.SumRun[btrfsvol.LogicalAddr]{}, err
 	}

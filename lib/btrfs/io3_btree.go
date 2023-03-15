@@ -92,13 +92,13 @@ func (fs *FS) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.I
 }
 
 // TreeSearch implements btrfstree.TreeOperator.
-func (fs *FS) TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (btrfstree.Item, error) {
-	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearch(treeID, fn)
+func (fs *FS) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
+	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearch(treeID, searcher)
 }
 
 // TreeSearchAll implements btrfstree.TreeOperator.
-func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]btrfstree.Item, error) {
-	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, fn)
+func (fs *FS) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
+	return btrfstree.TreeOperatorImpl{NodeSource: fs}.TreeSearchAll(treeID, searcher)
 }
 
 var _ btrfstree.TreeOperator = (*FS)(nil)
