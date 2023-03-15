@@ -34,8 +34,8 @@ func RootItemSearchFn(treeID btrfsprim.ObjID) func(btrfsprim.Key, uint32) int {
 	}
 }
 
-// LookupTreeRoot is a utility function to help with implementing the 'Trees'
-// interface.
+// LookupTreeRoot is a utility function to help with implementing the
+// 'TreeOperator' interface.
 func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*TreeRoot, error) {
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:

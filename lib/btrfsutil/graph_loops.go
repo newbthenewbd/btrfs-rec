@@ -22,15 +22,15 @@ func (g Graph) renderNode(node btrfsvol.LogicalAddr) []string {
 			fmt.Sprintf("{addr:      %v,", node),
 			fmt.Sprintf(" level:     %v,", nodeData.Level),
 			fmt.Sprintf(" gen:       %v,", nodeData.Generation),
-			fmt.Sprintf(" num_items: %v,", nodeData.NumItems),
+			fmt.Sprintf(" num_items: %v,", len(nodeData.Items)),
 			fmt.Sprintf(" min_item:  {%d,%v,%d},",
-				nodeData.MinItem.ObjectID,
-				nodeData.MinItem.ItemType,
-				nodeData.MinItem.Offset),
+				nodeData.MinItem().ObjectID,
+				nodeData.MinItem().ItemType,
+				nodeData.MinItem().Offset),
 			fmt.Sprintf(" max_item:  {%d,%v,%d}}",
-				nodeData.MaxItem.ObjectID,
-				nodeData.MaxItem.ItemType,
-				nodeData.MaxItem.Offset),
+				nodeData.MaxItem().ObjectID,
+				nodeData.MaxItem().ItemType,
+				nodeData.MaxItem().Offset),
 		}
 	} else if nodeErr, ok := g.BadNodes[node]; ok {
 		return []string{
@@ -120,11 +120,12 @@ func checkNodeExpectations(kp GraphEdge, toNode GraphNode) error {
 		errs = append(errs, fmt.Errorf("kp.generation=%v != node.generation=%v",
 			kp.ToGeneration, toNode.Generation))
 	}
-	if toNode.NumItems == 0 {
+	switch {
+	case len(toNode.Items) == 0:
 		errs = append(errs, fmt.Errorf("node.num_items=0"))
-	} else if kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem != kp.ToKey {
+	case kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem() != kp.ToKey:
 		errs = append(errs, fmt.Errorf("kp.key=%v != node.items[0].key=%v",
-			kp.ToKey, toNode.MinItem))
+			kp.ToKey, toNode.MinItem()))
 	}
 	if len(errs) > 0 {
 		return errs

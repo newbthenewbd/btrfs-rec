@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -17,7 +17,7 @@ import (
 // system) to the a node or item within one of the btrees in the
 // system.
 //
-//   - The first element will always have an ItemIdx of -1.
+//   - The first element will always have an ItemSlot of -1.
 //
 //   - For .Item() callbacks, the last element will always have a
 //     NodeAddr of 0.
@@ -26,7 +26,7 @@ import (
 //
 //	[superblock: tree=B, lvl=3, gen=6]
 //	     |
-//	     | <------------------------------------------ pathElem={from_tree:B, from_idx=-1,
+//	     | <------------------------------------------ pathElem={from_tree:B, from_slot=-1,
 //	     |                                                       to_addr:0x01, to_gen=6, to_lvl=3}
 //	  +[0x01]-------------+
 //	  | lvl=3 gen=6 own=B |
@@ -34,7 +34,7 @@ import (
 //	  |0|1|2|3|4|5|6|7|8|9|
 //	  +-+-+-+-+-+-+-+-+-+-+
 //	                 |
-//	                 | <------------------------------ pathElem:{from_tree:B, from_idx:7,
+//	                 | <------------------------------ pathElem:{from_tree:B, from_slot:7,
 //	                 |                                           to_addr:0x02, to_gen:5, to_lvl:2}
 //	              +[0x02]--------------+
 //	              | lvl=2 gen=5 own=B  |
@@ -42,7 +42,7 @@ import (
 //	              |0|1|2|3|4|5|6|7|8|9|
 //	              +-+-+-+-+-+-+-+-+-+-+
 //	                           |
-//	                           | <-------------------- pathElem={from_tree:B, from_idx:6,
+//	                           | <-------------------- pathElem={from_tree:B, from_slot:6,
 //	                           |                                 to_addr:0x03, to_gen:5, to_lvl:1}
 //	                        +[0x03]-------------+
 //	                        | lvl=1 gen=5 own=A |
@@ -50,7 +50,7 @@ import (
 //	                        |0|1|2|3|4|5|6|7|8|9|
 //	                        +-+-+-+-+-+-+-+-+-+-+
 //	                               |
-//	                               | <---------------- pathElem={from_tree:A, from_idx:3,
+//	                               | <---------------- pathElem={from_tree:A, from_slot:3,
 //	                               |                             to_addr:0x04, to_gen:2, lvl:0}
 //	                             +[0x04]-------------+
 //	                             | lvl=0 gen=2 own=A |
@@ -58,7 +58,7 @@ import (
 //	                             |0|1|2|3|4|5|6|7|8|9|
 //	                             +-+-+-+-+-+-+-+-+-+-+
 //	                                |
-//	                                | <--------------- pathElem={from_tree:A, from_idx:1,
+//	                                | <--------------- pathElem={from_tree:A, from_slot:1,
 //	                                |                            to_addr:0, to_gen: 0, to_lvl:0}
 //	                              [item]
 type TreePath []TreePathElem
@@ -68,9 +68,9 @@ type TreePathElem struct {
 	// FromTree is the owning tree ID of the parent node; or the
 	// well-known tree ID if this is the root.
 	FromTree btrfsprim.ObjID
-	// FromItemIdx is the index of this KeyPointer in the parent
+	// FromItemSlot is the index of this KeyPointer in the parent
 	// Node; or -1 if this is the root and there is no KeyPointer.
-	FromItemIdx int
+	FromItemSlot int
 
 	// ToNodeAddr is the address of the node that the KeyPointer
 	// points at, or 0 if this is a leaf item and nothing is being
@@ -104,13 +104,13 @@ func (path TreePath) String() string {
 	} else {
 		var ret strings.Builder
 		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
-		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemIdx: -1}) {
+		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
 			ret.WriteString("(empty-path)")
 		} else {
 			path[0].writeNodeTo(&ret)
 		}
 		for _, elem := range path[1:] {
-			fmt.Fprintf(&ret, "[%v]", elem.FromItemIdx)
+			fmt.Fprintf(&ret, "[%v]", elem.FromItemSlot)
 			if elem.ToNodeAddr != 0 {
 				ret.WriteString("->")
 				elem.writeNodeTo(&ret)

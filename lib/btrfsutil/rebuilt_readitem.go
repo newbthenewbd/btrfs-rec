@@ -22,11 +22,11 @@ import (
 
 type ItemPtr struct {
 	Node btrfsvol.LogicalAddr
-	Idx  int
+	Slot int
 }
 
 func (ptr ItemPtr) String() string {
-	return fmt.Sprintf("node@%v[%v]", ptr.Node, ptr.Idx)
+	return fmt.Sprintf("node@%v[%v]", ptr.Node, ptr.Slot)
 }
 
 type SizeAndErr struct {
@@ -74,7 +74,7 @@ func (o *KeyIO) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 	for i, item := range nodeRef.Data.BodyLeaf {
 		ptr := ItemPtr{
 			Node: nodeRef.Addr,
-			Idx:  i,
+			Slot: i,
 		}
 		switch itemBody := item.Body.(type) {
 		case *btrfsitem.Inode:
@@ -141,8 +141,8 @@ func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diski
 			}
 			return nil
 		},
-		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem},
-		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem},
+		MinItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MinItem()},
+		MaxItem: containers.Optional[btrfsprim.Key]{OK: true, Val: graphInfo.MaxItem()},
 	})
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
@@ -159,13 +159,13 @@ func (o *KeyIO) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
 	if o.graph.Nodes[ptr.Node].Level != 0 {
 		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for non-leaf node@%v", ptr.Node))
 	}
-	if ptr.Idx < 0 {
-		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for negative item index: %v", ptr.Idx))
+	if ptr.Slot < 0 {
+		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for negative item slot: %v", ptr.Slot))
 	}
 	items := o.readNode(ctx, ptr.Node).Data.BodyLeaf
-	if ptr.Idx >= len(items) {
-		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for out-of-bounds item index: index=%v len=%v",
-			ptr.Idx, len(items)))
+	if ptr.Slot >= len(items) {
+		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for out-of-bounds item slot: slot=%v len=%v",
+			ptr.Slot, len(items)))
 	}
-	return items[ptr.Idx].Body.CloneItem()
+	return items[ptr.Slot].Body.CloneItem()
 }

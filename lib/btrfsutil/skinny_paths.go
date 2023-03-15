@@ -39,8 +39,8 @@ func (a *SkinnyPathArena) init() {
 	}
 }
 
-func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfstree.TreePathElem, error) {
-	if itemIdx < 0 {
+func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemSlot int) (btrfstree.TreePathElem, error) {
+	if itemSlot < 0 {
 		panic("should not happen")
 	}
 
@@ -48,7 +48,7 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 
 	ret, ok := a.fatItems.Load(skinnyItem{
 		Node: parent.Node(-1).ToNodeAddr,
-		Item: itemIdx,
+		Item: itemSlot,
 	})
 	if ok {
 		return ret, nil
@@ -60,17 +60,17 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 		return btrfstree.TreePathElem{}, err
 	}
 	if node.Data.Head.Level > 0 {
-		if itemIdx >= len(node.Data.BodyInternal) {
+		if itemSlot >= len(node.Data.BodyInterior) {
 			panic("should not happen")
 		}
-		for i, item := range node.Data.BodyInternal {
+		for i, item := range node.Data.BodyInterior {
 			toMaxKey := parent.Node(-1).ToMaxKey
-			if i+1 < len(node.Data.BodyInternal) {
-				toMaxKey = node.Data.BodyInternal[i+1].Key.Mm()
+			if i+1 < len(node.Data.BodyInterior) {
+				toMaxKey = node.Data.BodyInterior[i+1].Key.Mm()
 			}
 			elem := btrfstree.TreePathElem{
 				FromTree:         node.Data.Head.Owner,
-				FromItemIdx:      i,
+				FromItemSlot:     i,
 				ToNodeAddr:       item.BlockPtr,
 				ToNodeGeneration: item.Generation,
 				ToNodeLevel:      node.Data.Head.Level - 1,
@@ -78,23 +78,23 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemIdx int) (btrfs
 				ToMaxKey:         toMaxKey,
 			}
 			a.fatItems.Store(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
-			if i == itemIdx {
+			if i == itemSlot {
 				ret = elem
 			}
 		}
 	} else {
-		if itemIdx >= len(node.Data.BodyLeaf) {
+		if itemSlot >= len(node.Data.BodyLeaf) {
 			panic("should not happen")
 		}
 		for i, item := range node.Data.BodyLeaf {
 			elem := btrfstree.TreePathElem{
-				FromTree:    node.Data.Head.Owner,
-				FromItemIdx: i,
-				ToKey:       item.Key,
-				ToMaxKey:    item.Key,
+				FromTree:     node.Data.Head.Owner,
+				FromItemSlot: i,
+				ToKey:        item.Key,
+				ToMaxKey:     item.Key,
 			}
 			a.fatItems.Store(skinnyItem{Node: parent.Node(-1).ToNodeAddr, Item: i}, elem)
-			if i == itemIdx {
+			if i == itemSlot {
 				ret = elem
 			}
 		}
@@ -114,8 +114,8 @@ func (a *SkinnyPathArena) Deflate(fat btrfstree.TreePath) SkinnyPath {
 			a.fatRoots[elem.ToNodeAddr] = elem
 			ret.Root = elem.ToNodeAddr
 		} else {
-			a.fatItems.Store(skinnyItem{Node: prevNode, Item: elem.FromItemIdx}, elem)
-			ret.Items = append(ret.Items, elem.FromItemIdx)
+			a.fatItems.Store(skinnyItem{Node: prevNode, Item: elem.FromItemSlot}, elem)
+			ret.Items = append(ret.Items, elem.FromItemSlot)
 		}
 		prevNode = elem.ToNodeAddr
 	}
@@ -134,8 +134,8 @@ func (a *SkinnyPathArena) Inflate(skinny SkinnyPath) btrfstree.TreePath {
 	}
 	ret = append(ret, root)
 
-	for _, itemIdx := range skinny.Items {
-		elem, err := a.getItem(ret, itemIdx)
+	for _, itemSlot := range skinny.Items {
+		elem, err := a.getItem(ret, itemSlot)
 		if err != nil {
 			panic(err)
 		}

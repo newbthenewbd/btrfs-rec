@@ -113,7 +113,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 		},
 		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
 			treeID := path[0].FromTree
-			i := path.Node(-1).FromItemIdx
+			i := path.Node(-1).FromItemSlot
 			bs, _ := binstruct.Marshal(item.Body)
 			itemSize := uint32(len(bs))
 			itemOffset -= itemSize
@@ -375,7 +375,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
 func printHeaderInfo(out io.Writer, node btrfstree.Node) {
 	var typename string
-	if node.Head.Level > 0 { // internal node
+	if node.Head.Level > 0 { // interior node
 		typename = "node"
 		textui.Fprintf(out, "node %v level %v items %v free space %v",
 			node.Head.Addr,

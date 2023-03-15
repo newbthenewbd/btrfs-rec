@@ -27,10 +27,21 @@ type GraphNode struct {
 	Level      uint8
 	Generation btrfsprim.Generation
 	Owner      btrfsprim.ObjID
-	NumItems   uint32
-	MinItem    btrfsprim.Key
-	MaxItem    btrfsprim.Key
 	Items      []btrfsprim.Key
+}
+
+func (n GraphNode) MinItem() btrfsprim.Key {
+	if len(n.Items) == 0 {
+		return btrfsprim.Key{}
+	}
+	return n.Items[0]
+}
+
+func (n GraphNode) MaxItem() btrfsprim.Key {
+	if len(n.Items) == 0 {
+		return btrfsprim.Key{}
+	}
+	return n.Items[len(n.Items)-1]
 }
 
 func (n GraphNode) String() string {
@@ -38,9 +49,9 @@ func (n GraphNode) String() string {
 		return "{}"
 	}
 	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v, min:(%v,%v,%v), max:(%v,%v,%v)}`,
-		n.Level, n.Generation, n.Owner, n.NumItems,
-		n.MinItem.ObjectID, n.MinItem.ItemType, n.MinItem.Offset,
-		n.MaxItem.ObjectID, n.MaxItem.ItemType, n.MaxItem.Offset)
+		n.Level, n.Generation, n.Owner, len(n.Items),
+		n.MinItem().ObjectID, n.MinItem().ItemType, n.MinItem().Offset,
+		n.MaxItem().ObjectID, n.MaxItem().ItemType, n.MaxItem().Offset)
 }
 
 type GraphEdge struct {
@@ -143,9 +154,6 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 		Level:      nodeRef.Data.Head.Level,
 		Generation: nodeRef.Data.Head.Generation,
 		Owner:      nodeRef.Data.Head.Owner,
-		NumItems:   nodeRef.Data.Head.NumItems,
-		MinItem:    discardOK(nodeRef.Data.MinItem()),
-		MaxItem:    discardOK(nodeRef.Data.MaxItem()),
 	}
 
 	if nodeRef.Data.Head.Level == 0 {
@@ -175,8 +183,8 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 		}
 	} else {
 		g.Nodes[nodeRef.Addr] = nodeData
-		kps := make([]GraphEdge, len(nodeRef.Data.BodyInternal))
-		for i, kp := range nodeRef.Data.BodyInternal {
+		kps := make([]GraphEdge, len(nodeRef.Data.BodyInterior))
+		for i, kp := range nodeRef.Data.BodyInterior {
 			kps[i] = GraphEdge{
 				FromNode:     nodeRef.Addr,
 				FromItem:     i,
@@ -255,8 +263,4 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	dlog.Info(ctx, "... done checking for loops")
 
 	return nil
-}
-
-func discardOK[T any](val T, _ bool) T {
-	return val
 }

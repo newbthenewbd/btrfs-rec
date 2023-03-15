@@ -153,40 +153,39 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 }
 
 func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry oldRebuiltTree, walked *[]btrfsprim.Key) {
-	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(
-		bt.ctx,
-		root,
-		func(err *btrfstree.TreeError) {
-			if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
-				// This is a panic because on the filesystems I'm working with it more likely
-				// indicates a bug in my item parser than a problem with the filesystem.
-				panic(fmt.Errorf("TODO: error parsing item: %w", err))
+	errHandle := func(err *btrfstree.TreeError) {
+		if len(err.Path) > 0 && err.Path.Node(-1).ToNodeAddr == 0 {
+			// This is a panic because on the filesystems I'm working with it more likely
+			// indicates a bug in my item parser than a problem with the filesystem.
+			panic(fmt.Errorf("TODO: error parsing item: %w", err))
+		}
+		cacheEntry.Errors.Insert(oldRebuiltTreeError{
+			Path: bt.arena.Deflate(err.Path),
+			Err:  err.Err,
+		})
+	}
+
+	cbs := btrfstree.TreeWalkHandler{
+		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+			if cacheEntry.Items.Search(func(v oldRebuiltTreeValue) int { return item.Key.Compare(v.Key) }) != nil {
+				// This is a panic because I'm not really sure what the best way to
+				// handle this is, and so if this happens I want the program to crash
+				// and force me to figure out how to handle it.
+				panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, root.TreeID))
 			}
-			cacheEntry.Errors.Insert(oldRebuiltTreeError{
-				Path: bt.arena.Deflate(err.Path),
-				Err:  err.Err,
+			cacheEntry.Items.Insert(oldRebuiltTreeValue{
+				Path:     bt.arena.Deflate(path),
+				Key:      item.Key,
+				ItemSize: item.BodySize,
 			})
+			if walked != nil {
+				*walked = append(*walked, item.Key)
+			}
+			return nil
 		},
-		btrfstree.TreeWalkHandler{
-			Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
-				if cacheEntry.Items.Search(func(v oldRebuiltTreeValue) int { return item.Key.Compare(v.Key) }) != nil {
-					// This is a panic because I'm not really sure what the best way to
-					// handle this is, and so if this happens I want the program to crash
-					// and force me to figure out how to handle it.
-					panic(fmt.Errorf("dup key=%v in tree=%v", item.Key, root.TreeID))
-				}
-				cacheEntry.Items.Insert(oldRebuiltTreeValue{
-					Path:     bt.arena.Deflate(path),
-					Key:      item.Key,
-					ItemSize: item.BodySize,
-				})
-				if walked != nil {
-					*walked = append(*walked, item.Key)
-				}
-				return nil
-			},
-		},
-	)
+	}
+
+	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(bt.ctx, root, errHandle, cbs)
 }
 
 func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
@@ -237,7 +236,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfspri
 		return btrfstree.Item{}, bt.addErrs(tree, fn, err)
 	}
 
-	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 	item.Body = item.Body.CloneItem()
 
 	// Since we were only asked to return 1 item, it isn't
@@ -275,7 +274,7 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 				return nil, bt.addErrs(tree, fn, err)
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
+		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 		ret[i].Body = ret[i].Body.CloneItem()
 	}
 	btrfstree.FreeNodeRef(node)
@@ -295,6 +294,9 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		})
 		return
 	}
+	if cbs.Item == nil {
+		return
+	}
 	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
 	tree.Items.Range(func(indexItem *containers.RBNode[oldRebuiltTreeValue]) bool {
 		if ctx.Err() != nil {
@@ -303,22 +305,20 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		if bt.ctx.Err() != nil {
 			return false
 		}
-		if cbs.Item != nil {
-			itemPath := bt.arena.Inflate(indexItem.Value.Path)
-			if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
-				var err error
+		itemPath := bt.arena.Inflate(indexItem.Value.Path)
+		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
+			var err error
+			btrfstree.FreeNodeRef(node)
+			node, err = bt.inner.ReadNode(itemPath.Parent())
+			if err != nil {
 				btrfstree.FreeNodeRef(node)
-				node, err = bt.inner.ReadNode(itemPath.Parent())
-				if err != nil {
-					btrfstree.FreeNodeRef(node)
-					errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
-					return true
-				}
-			}
-			item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemIdx]
-			if err := cbs.Item(itemPath, item); err != nil {
 				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
+				return true
 			}
+		}
+		item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		if err := cbs.Item(itemPath, item); err != nil {
+			errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 		}
 		return true
 	})
