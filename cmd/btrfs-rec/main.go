@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/datawire/dlib/dgroup"
@@ -20,19 +21,46 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type subcommand struct {
-	cobra.Command
-	RunE func(*btrfs.FS, *cobra.Command, []string) error
+var (
+	inspectors = &cobra.Command{
+		Use:   "inspect {[flags]|SUBCOMMAND}",
+		Short: "Inspect (but don't modify) a broken btrfs filesystem",
+
+		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
+		RunE: cliutil.RunSubcommands,
+	}
+	repairers = &cobra.Command{
+		Use:   "repair {[flags]|SUBCOMMAND}",
+		Short: "Repair a broken btrfs filesystem",
+
+		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
+		RunE: cliutil.RunSubcommands,
+
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			globalFlags.openFlag = os.O_RDWR
+			return nil
+		},
+	}
+)
+
+var globalFlags struct {
+	logLevel textui.LogLevelFlag
+	pvs      []string
+	mappings string
+
+	stopProfiling profile.StopFunc
+
+	openFlag int
 }
 
-var inspectors, repairers []subcommand
+func noError(err error) {
+	if err != nil {
+		panic(fmt.Errorf("should not happen: %w", err))
+	}
+}
 
 func main() {
-	logLevelFlag := textui.LogLevelFlag{
-		Level: dlog.LogLevelInfo,
-	}
-	var pvsFlag []string
-	var mappingsFlag string
+	// Base argparser
 
 	argparser := &cobra.Command{
 		Use:   "btrfs-rec {[flags]|SUBCOMMAND}",
@@ -50,107 +78,98 @@ func main() {
 	}
 	argparser.SetFlagErrorFunc(cliutil.FlagErrorFunc)
 	argparser.SetHelpTemplate(cliutil.HelpTemplate)
-	argparser.PersistentFlags().Var(&logLevelFlag, "verbosity", "set the verbosity")
-	argparser.PersistentFlags().StringArrayVar(&pvsFlag, "pv", nil, "open the file `physical_volume` as part of the filesystem")
-	if err := argparser.MarkPersistentFlagFilename("pv"); err != nil {
-		panic(err)
-	}
-	if err := argparser.MarkPersistentFlagRequired("pv"); err != nil {
-		panic(err)
-	}
-	argparser.PersistentFlags().StringVar(&mappingsFlag, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
-	if err := argparser.MarkPersistentFlagFilename("mappings"); err != nil {
-		panic(err)
-	}
-	stopProfiling := profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
-	openFlag := os.O_RDONLY
+	// Global flags
 
-	argparserInspect := &cobra.Command{
-		Use:   "inspect {[flags]|SUBCOMMAND}",
-		Short: "Inspect (but don't modify) a broken btrfs filesystem",
+	globalFlags.logLevel.Level = dlog.LogLevelInfo
+	argparser.PersistentFlags().Var(&globalFlags.logLevel, "verbosity", "set the verbosity")
 
-		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
-		RunE: cliutil.RunSubcommands,
-	}
-	argparser.AddCommand(argparserInspect)
+	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil, "open the file `physical_volume` as part of the filesystem")
+	noError(argparser.MarkPersistentFlagFilename("pv"))
 
-	argparserRepair := &cobra.Command{
-		Use:   "repair {[flags]|SUBCOMMAND}",
-		Short: "Repair a broken btrfs filesystem",
+	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
+	noError(argparser.MarkPersistentFlagFilename("mappings"))
 
-		Args: cliutil.WrapPositionalArgs(cliutil.OnlySubcommands),
-		RunE: cliutil.RunSubcommands,
+	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			openFlag = os.O_RDWR
-			return nil
-		},
-	}
-	argparser.AddCommand(argparserRepair)
+	globalFlags.openFlag = os.O_RDONLY
 
-	for _, cmdgrp := range []struct {
-		parent   *cobra.Command
-		children []subcommand
-	}{
-		{argparserInspect, inspectors},
-		{argparserRepair, repairers},
-	} {
-		for _, child := range cmdgrp.children {
-			cmd := child.Command
-			runE := child.RunE
-			cmd.RunE = func(cmd *cobra.Command, args []string) error {
-				ctx := cmd.Context()
-				logger := textui.NewLogger(os.Stderr, logLevelFlag.Level)
-				ctx = dlog.WithLogger(ctx, logger)
-				if logLevelFlag.Level >= dlog.LogLevelDebug {
-					ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
-				}
-				dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
+	// Sub-commands
 
-				grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
-					EnableSignalHandling: true,
-				})
-				grp.Go("main", func(ctx context.Context) (err error) {
-					maybeSetErr := func(_err error) {
-						if _err != nil && err == nil {
-							err = _err
-						}
-					}
-					defer func() {
-						maybeSetErr(stopProfiling())
-					}()
-					fs, err := btrfsutil.Open(ctx, openFlag, pvsFlag...)
-					if err != nil {
-						return err
-					}
-					defer func() {
-						maybeSetErr(fs.Close())
-					}()
+	argparser.AddCommand(inspectors)
+	argparser.AddCommand(repairers)
 
-					if mappingsFlag != "" {
-						mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, mappingsFlag)
-						if err != nil {
-							return err
-						}
-						for _, mapping := range mappingsJSON {
-							if err := fs.LV.AddMapping(mapping); err != nil {
-								return err
-							}
-						}
-					}
-
-					cmd.SetContext(ctx)
-					return runE(fs, cmd, args)
-				})
-				return grp.Wait()
-			}
-			cmdgrp.parent.AddCommand(&cmd)
-		}
-	}
+	// Run
 
 	if err := argparser.ExecuteContext(context.Background()); err != nil {
 		textui.Fprintf(os.Stderr, "%v: error: %v\n", argparser.CommandPath(), err)
 		os.Exit(1)
 	}
+}
+
+func run(runE func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		logger := textui.NewLogger(os.Stderr, globalFlags.logLevel.Level)
+		ctx = dlog.WithLogger(ctx, logger)
+		if globalFlags.logLevel.Level >= dlog.LogLevelDebug {
+			ctx = dlog.WithField(ctx, "mem", new(textui.LiveMemUse))
+		}
+		dlog.SetFallbackLogger(logger.WithField("btrfs-progs.THIS_IS_A_BUG", true))
+
+		grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{
+			EnableSignalHandling: true,
+		})
+		grp.Go("main", func(ctx context.Context) (err error) {
+			maybeSetErr := func(_err error) {
+				if _err != nil && err == nil {
+					err = _err
+				}
+			}
+
+			defer func() {
+				maybeSetErr(globalFlags.stopProfiling())
+			}()
+			cmd.SetContext(ctx)
+			return runE(cmd, args)
+		})
+		return grp.Wait()
+	}
+}
+
+func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return run(func(cmd *cobra.Command, args []string) (err error) {
+		maybeSetErr := func(_err error) {
+			if _err != nil && err == nil {
+				err = _err
+			}
+		}
+
+		if len(globalFlags.pvs) == 0 {
+			// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
+			// it doesn't interfere with the `help` sub-command.
+			return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
+		}
+		fs, err := btrfsutil.Open(cmd.Context(), globalFlags.openFlag, globalFlags.pvs...)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			maybeSetErr(fs.Close())
+		}()
+
+		if globalFlags.mappings != "" {
+			mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](cmd.Context(), globalFlags.mappings)
+			if err != nil {
+				return err
+			}
+			for _, mapping := range mappingsJSON {
+				if err := fs.LV.AddMapping(mapping); err != nil {
+					return err
+				}
+			}
+		}
+
+		return runE(fs, cmd, args)
+	})
 }

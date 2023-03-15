@@ -32,9 +32,11 @@ export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
 ######################################################################
 
 run-btrfs-rec $gendir/0.scandevices.json \
-    inspect scandevices
+    inspect rebuild-mappings scan
+run-btrfs-rec $gendir/0.nodes.json \
+    inspect rebuild-mappings list-nodes $gendir/0.scandevices.json
 run-btrfs-rec $gendir/1.mappings.json \
-    inspect rebuild-mappings $gendir/0.scandevices.json
+    inspect rebuild-mappings process $gendir/0.scandevices.json
 
 # 1.mappings.log says:
 #
@@ -52,21 +54,21 @@ run-btrfs-rec $gendir/1.mappings.json \
 # matter which order we put the 2 block groups in within that physical
 # region.  So just put them in laddr order.
 #
-# And then run that through `rebuild-mappings` again to fill in the
+# And then run that through `rebuild-mappings process` again to fill in the
 # flags and normalize it.
 run-btrfs-rec $gendir/2.mappings.json \
     --mappings=<(sed <$gendir/1.mappings.json \
       -e '2a{"LAddr":5242880,"PAddr":{"Dev":1,"Addr":5242880},"Size":1},' \
       -e '2a{"LAddr":13631488,"PAddr":{"Dev":1,"Addr":13631488},"Size":1},') \
-    inspect rebuild-mappings $gendir/0.scandevices.json
+    inspect rebuild-mappings process $gendir/0.scandevices.json
 
-run-btrfs-rec $gendir/3.nodes.json \
+run-btrfs-rec $gendir/3.trees.json \
     --mappings=$gendir/2.mappings.json \
-    inspect rebuild-nodes $gendir/0.scandevices.json
+    inspect rebuild-trees --node-list=$gendir/0.nodes.json
 
 run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
     inspect ls-files
 run-btrfs-rec $gendir/4.ls-trees.txt \
     --mappings=$gendir/2.mappings.json \
-    inspect ls-trees --scandevices=$gendir/0.scandevices.json
+    inspect ls-trees --node-list=$gendir/0.nodes.json

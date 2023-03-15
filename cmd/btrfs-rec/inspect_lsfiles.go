@@ -26,13 +26,11 @@ import (
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:   "ls-files",
-			Short: "A listing of all files in the filesystem",
-			Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+	inspectors.AddCommand(&cobra.Command{
+		Use:   "ls-files",
+		Short: "A listing of all files in the filesystem",
+		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			out := bufio.NewWriter(os.Stdout)
 			defer func() {
 				if _err := out.Flush(); _err != nil && err == nil {
@@ -53,7 +51,7 @@ func init() {
 			})
 
 			return nil
-		},
+		}),
 	})
 }
 

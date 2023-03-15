@@ -5,7 +5,6 @@
 package main
 
 import (
-	"context"
 	"os"
 	"runtime"
 	"time"
@@ -15,33 +14,41 @@ import (
 	"github.com/datawire/ocibuild/pkg/cliutil"
 	"github.com/spf13/cobra"
 
-	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildmappings"
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildtrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
-	inspectors = append(inspectors, subcommand{
-		Command: cobra.Command{
-			Use:  "rebuild-nodes NODESCAN.json",
-			Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		},
-		RunE: func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+	var nodeListFilename string
+	cmd := &cobra.Command{
+		Use: "rebuild-trees",
+		Long: "" +
+			"Rebuild broken btrees based on missing items that are implied " +
+			"by present items.  This requires functioning " +
+			"chunk/dev-extent/blockgroup trees, which can be rebuilt " +
+			"separately with `btrfs-rec inspect rebuild-mappings`.\n" +
+			"\n" +
+			"If no --node-list is given, then a slow sector-by-sector scan " +
+			"will be used to find all nodes.",
+		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
+		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			// This is wrapped in a func in order to *ensure* that `nodeScanResults` goes out of scope once
-			// `rebuilder` has been created.
-			rebuilder, err := func(ctx context.Context) (rebuildtrees.Rebuilder, error) {
-				dlog.Infof(ctx, "Reading %q...", args[0])
-				nodeScanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
-				if err != nil {
-					return nil, err
-				}
-				dlog.Infof(ctx, "... done reading %q", args[0])
+			var nodeList []btrfsvol.LogicalAddr
+			var err error
+			if nodeListFilename != "" {
+				nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](ctx, nodeListFilename)
+			} else {
+				nodeList, err = btrfsutil.ListNodes(ctx, fs)
+			}
+			if err != nil {
+				return err
+			}
 
-				return rebuildtrees.NewRebuilder(ctx, fs, nodeScanResults)
-			}(ctx)
+			rebuilder, err := rebuildtrees.NewRebuilder(ctx, fs, nodeList)
 			if err != nil {
 				return err
 			}
@@ -70,6 +77,11 @@ func init() {
 			dlog.Info(ctx, "... done writing")
 
 			return rebuildErr
-		},
-	})
+		}),
+	}
+	cmd.Flags().StringVar(&nodeListFilename, "node-list", "",
+		"Output of 'btrfs-recs inspect [rebuild-mappings] list-nodes' to use for the node list")
+	noError(cmd.MarkFlagFilename("node-list"))
+
+	inspectors.AddCommand(cmd)
 }
