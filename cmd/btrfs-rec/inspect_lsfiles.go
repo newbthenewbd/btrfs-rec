@@ -40,9 +40,9 @@ func init() {
 				}
 			}()
 			defer func() {
-				if r := derror.PanicToError(recover()); r != nil {
-					textui.Fprintf(out, "\n\n%+v\n", r)
-					err = fmt.Errorf("panicked")
+				if _err := derror.PanicToError(recover()); _err != nil {
+					textui.Fprintf(out, "\n\n%+v\n", _err)
+					err = _err
 				}
 			}()
 			ctx := cmd.Context()
@@ -215,7 +215,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 		}
 		printPipe(out, prefix, isLast, name, file)
 	default:
-		panic(fmt.Errorf("TODO: I don't know how to handle an fileType=%v: %q",
+		panic(fmt.Errorf("TODO: I don't know how to handle a fileType=%v: %q",
 			entry.Type, name))
 	}
 }
