@@ -499,10 +499,13 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 			list = containers.NewSet[btrfsvol.LogicalAddr](o.augmentQueue[treeID].single[wantKey])
 		}
 		chose := list.Intersection(ret)
-		if len(chose) == 0 {
+		switch {
+		case len(chose) == 0:
 			dlog.Infof(ctx, "lists[%q]: chose (none) from %v", wantKey, maps.SortedKeys(list))
-		} else {
+		case len(list) > 1:
 			dlog.Infof(ctx, "lists[%q]: chose %v from %v", wantKey, chose.TakeOne(), maps.SortedKeys(list))
+		default:
+			dlog.Debugf(ctx, "lists[%q]: chose %v from %v", wantKey, chose.TakeOne(), maps.SortedKeys(list))
 		}
 	}
 
@@ -571,10 +574,10 @@ func (o *rebuilder) wantAugment(ctx context.Context, wantKey WantWithTree, choic
 	}
 	o.augmentQueue[wantKey.TreeID].store(wantKey.Key, choices)
 	if len(choices) == 0 {
-		dlog.Error(ctx, "could not find wanted item")
 		o.numAugmentFailures++
+		dlog.Debug(ctx, "ERR: could not find wanted item")
 	} else {
-		dlog.Infof(ctx, "choices=%v", maps.SortedKeys(choices))
 		o.numAugments++
+		dlog.Debugf(ctx, "choices=%v", maps.SortedKeys(choices))
 	}
 }

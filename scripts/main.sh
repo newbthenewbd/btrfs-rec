@@ -64,9 +64,9 @@ run-btrfs-rec $gendir/3.nodes.json \
     --mappings=$gendir/2.mappings.json \
     inspect rebuild-nodes $gendir/0.scandevices.json
 
-# run-btrfs-rec $gendir/4.ls-files.txt \
-#     --mappings=$gendir/2.mappings.json \
-#     inspect ls-files
-# run-btrfs-rec $gendir/4.ls-trees.txt \
-#     --mappings=$gendir/2.mappings.json \
-#     inspect ls-trees --scandevices=$gendir/0.scandevices.json
+run-btrfs-rec $gendir/4.ls-files.txt \
+    --mappings=$gendir/2.mappings.json \
+    inspect ls-files
+run-btrfs-rec $gendir/4.ls-trees.txt \
+    --mappings=$gendir/2.mappings.json \
+    inspect ls-trees --scandevices=$gendir/0.scandevices.json
