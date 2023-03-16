@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package binstruct implements simple struct-tag-based conversion
+// between Go structures and binary on-disk representations of that
+// data.
 package binstruct
 
 import (

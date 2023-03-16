@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package textui implements utilities for emitting human-friendly
+// text on stdout and stderr.
 package textui
 
 import (

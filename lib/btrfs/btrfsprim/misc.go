@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfsprim contains primitive btrfs datatypes, that all
+// other btrfs sub-packages may make use of.
 package btrfsprim
 
 import (

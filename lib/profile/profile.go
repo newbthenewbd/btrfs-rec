@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package profile implements a uniform interface for getting
+// profiling information from the Go runtime.
 package profile
 
 import (

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfssum contains the checksum types and algorithms that
+// btrfs uses.
 package btrfssum
 
 import (

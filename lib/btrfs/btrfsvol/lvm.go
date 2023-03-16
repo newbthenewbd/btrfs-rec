@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfsvol contains core logical-volume-management layer of
+// btrfs.
 package btrfsvol
 
 import (

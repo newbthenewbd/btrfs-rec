@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package dumptrees is the guts of the `btrfs-rec inspect dump-trees`
+// command, which is a clone of `btrfs inspect-internal dump-tree`.
 package dumptrees
 
 import (

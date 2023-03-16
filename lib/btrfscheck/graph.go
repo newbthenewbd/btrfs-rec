@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfscheck implements userspace utilities for checking
+// btrfs filesystems.
 package btrfscheck
 
 import (

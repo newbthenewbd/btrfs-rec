@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package rebuildtrees is the guts of the `btrfs-rec inspect
+// rebuild-trees` command, which rebuilds broken trees, but requires
+// already-functioning chunk/dev-extent/blockgroup trees.
+// chunk/dev-extent/blockgroup trees.
 package rebuildtrees
 
 import (

@@ -1,7 +1,9 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package slices implements generic (type-parameterized) utilities
+// for working with simple Go slices.
 package slices
 
 import (

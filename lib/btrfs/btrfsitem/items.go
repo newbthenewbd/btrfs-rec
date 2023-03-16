@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfsitem contains the definitions of all "items" that may
+// be stored in a btrfs tree.
 package btrfsitem
 
 import (

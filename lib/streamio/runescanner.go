@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package streamio implements utilities for working with streaming
+// I/O.
 package streamio
 
 import (

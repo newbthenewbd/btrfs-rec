@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfs (and its sub-packages) are the core implementation of
+// the btrfs filesystem.
 package btrfs
 
 import (
