@@ -7,7 +7,7 @@ linters:
   disable:
     # Deprecated
     - deadcode         # deprecated, replaced by 'unused'
-    - exhaustivestruct # deprecated, replaced by 'exhauststruct'
+    - exhaustivestruct # deprecated, replaced by 'exhaustruct'
     - golint           # deprecated, replaced by 'revive'
     - ifshort          # deprecated
     - interfacer       # deprecated
@@ -19,7 +19,6 @@ linters:
 
     # Don't support Go 1.18 generics yet
     - rowserrcheck
-    - sqlclosecheck
     - wastedassign
     - ireturn # golangci-lint doesn't claim it doesn't, but it doesn't
 
@@ -48,7 +47,7 @@ linters:
     - exhaustruct
     - gochecknoglobals
     - gochecknoinits
-    - revive
+    - revive # TODO: get this to pass
     - testpackage
     - thelper
     - varnamelen
@@ -90,9 +89,9 @@ linters-settings:
     checks:
       - "all"
       - "-ST1003" # CONST_VAL names for consistency with other btrfs code
-      - "-ST1000" # TODO: get this to pass
-      - "-ST1020" # TODO: get this to pass
-      - "-ST1021" # TODO: get this to pass
+      - "-ST1000" # TODO: get this to pass: "at least one file in a package should have a package comment"
+      - "-ST1020" # TODO: get this to pass: "comment on exported method XXX should be of the form "XXX ...""
+      - "-ST1021" # TODO: get this to pass: "comment on exported type XXX should be of the form "XXX ...""
   tagliatelle:
     case:
       use-field-name: true
