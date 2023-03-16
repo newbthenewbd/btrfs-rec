@@ -64,8 +64,26 @@ func (key Key) Mm() Key {
 		key.Offset--
 	case key.ItemType > 0:
 		key.ItemType--
+		key.Offset = MaxOffset
 	case key.ObjectID > 0:
 		key.ObjectID--
+		key.ItemType = MAX_KEY
+		key.Offset = MaxOffset
+	}
+	return key
+}
+
+func (key Key) Pp() Key {
+	switch {
+	case key.Offset < MaxOffset:
+		key.Offset++
+	case key.ItemType < MAX_KEY:
+		key.ItemType++
+		key.Offset = 0
+	case key.ObjectID < MAX_OBJECTID:
+		key.ObjectID++
+		key.ItemType = 0
+		key.Offset = 0
 	}
 	return key
 }
