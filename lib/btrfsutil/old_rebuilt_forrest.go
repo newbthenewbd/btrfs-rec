@@ -196,10 +196,10 @@ func (bt *OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key,
 	tree.Errors.Subrange(
 		func(k btrfsprim.Key) int { return fn(k, 0) },
 		func(v oldRebuiltTreeError) bool {
-			errs = append(errs, &btrfstree.TreeError{
-				Path: bt.arena.Inflate(v.Path),
-				Err:  v.Err,
-			})
+			path := bt.arena.Inflate(v.Path)
+			minKey := path.Node(-1).ToKey
+			maxKey := path.Node(-1).ToMaxKey
+			errs = append(errs, fmt.Errorf("keys %v-%v: %w", minKey, maxKey, v.Err))
 			return true
 		})
 	if len(errs) == 0 {
