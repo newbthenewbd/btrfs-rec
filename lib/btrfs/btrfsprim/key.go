@@ -19,6 +19,8 @@ type Key struct {
 	binstruct.End `bin:"off=0x11"`
 }
 
+const MaxOffset uint64 = math.MaxUint64
+
 // mimics print-tree.c:btrfs_print_key()
 func (key Key) Format(tree ObjID) string {
 	switch tree {
