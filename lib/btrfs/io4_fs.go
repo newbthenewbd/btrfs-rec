@@ -83,7 +83,7 @@ type Subvolume struct {
 
 func (sv *Subvolume) init() {
 	sv.initOnce.Do(func() {
-		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.RootItemSearchFn(sv.TreeID))
+		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.SearchRootItem(sv.TreeID))
 		if err != nil {
 			sv.rootErr = err
 		} else {
@@ -152,9 +152,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 			},
 			XAttrs: make(map[string]string),
 		}
-		items, err := sv.FS.TreeSearchAll(sv.TreeID, func(key btrfsprim.Key, _ uint32) int {
-			return containers.NativeCompare(inode, key.ObjectID)
-		})
+		items, err := sv.FS.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			if len(items) == 0 {

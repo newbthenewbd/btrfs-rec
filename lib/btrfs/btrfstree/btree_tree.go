@@ -20,78 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-// TreeOperator is an interface for performing basic btree operations.
-type TreeOperator interface {
-	// TreeWalk walks a tree, triggering callbacks for every node,
-	// key-pointer, and item; as well as for any errors encountered.
-	//
-	// If the tree is valid, then everything is walked in key-order; but if
-	// the tree is broken, then ordering is not guaranteed.
-	//
-	// Canceling the Context causes TreeWalk to return early; no
-	// values from the Context are used.
-	//
-	// The lifecycle of callbacks is:
-	//
-	//     001 .PreNode()
-	//     002 (read node)
-	//     003 .Node() (or .BadNode())
-	//         for item in node.items:
-	//           if interior:
-	//     004     .PreKeyPointer()
-	//     005     (recurse)
-	//     006     .PostKeyPointer()
-	//           else:
-	//     004     .Item() (or .BadItem())
-	//     007 .PostNode()
-	TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler)
-
-	TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error)
-	TreeSearch(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) (Item, error) // size is math.MaxUint32 for key-pointers
-
-	// If some items are able to be read, but there is an error reading the
-	// full set, then it might return *both* a list of items and an error.
-	//
-	// If no such item is found, an error that is io/fs.ErrNotExist is
-	// returned.
-	TreeSearchAll(treeID btrfsprim.ObjID, fn func(key btrfsprim.Key, size uint32) int) ([]Item, error) // size is math.MaxUint32 for key-pointers
-}
-
-type TreeWalkHandler struct {
-	// Callbacks for entire nodes.
-	//
-	// If any of these return an error that is io/fs.SkipDir, the
-	// node immediately stops getting processed; if PreNode, Node,
-	// or BadNode return io/fs.SkipDir then key pointers and items
-	// within the node are not processed.
-	PreNode  func(TreePath) error
-	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
-	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	// Callbacks for items on interior nodes
-	PreKeyPointer  func(TreePath, KeyPointer) error
-	PostKeyPointer func(TreePath, KeyPointer) error
-	// Callbacks for items on leaf nodes
-	Item    func(TreePath, Item) error
-	BadItem func(TreePath, Item) error
-}
-
-type TreeError struct {
-	Path TreePath
-	Err  error
-}
-
-func (e *TreeError) Unwrap() error { return e.Err }
-
-func (e *TreeError) Error() string {
-	return fmt.Sprintf("%v: %v", e.Path, e.Err)
-}
-
-type NodeSource interface {
-	Superblock() (*Superblock, error)
-	ReadNode(TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error)
-}
-
 type TreeOperatorImpl struct {
 	NodeSource
 }
@@ -252,7 +180,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 	}}
 	for {
 		if path.Node(-1).ToNodeAddr == 0 {
-			return nil, nil, iofs.ErrNotExist
+			return nil, nil, ErrNoItem
 		}
 		node, err := fs.ReadNode(path)
 		if err != nil {
@@ -276,7 +204,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			})
 			if !ok {
 				FreeNodeRef(node)
-				return nil, nil, iofs.ErrNotExist
+				return nil, nil, ErrNoItem
 			}
 			toMaxKey := path.Node(-1).ToMaxKey
 			if lastGood+1 < len(node.Data.BodyInterior) {
@@ -300,7 +228,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			//
 			//    + + + + 0 - - - -
 			//
-			// Such an item might not exist; in this case, return nil/ErrNotExist.
+			// Such an item might not exist; in this case, return (nil, ErrNoItem).
 			// Multiple such items might exist; in this case, it does not matter which
 			// is returned.
 			//
@@ -310,7 +238,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			})
 			if !ok {
 				FreeNodeRef(node)
-				return nil, nil, iofs.ErrNotExist
+				return nil, nil, ErrNoItem
 			}
 			path = append(path, TreePathElem{
 				FromTree:     node.Data.Head.Owner,
@@ -477,7 +405,7 @@ func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.Logical
 }
 
 // TreeSearch implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) (Item, error) {
+func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearcher) (Item, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return Item{}, err
@@ -486,9 +414,9 @@ func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.
 	if err != nil {
 		return Item{}, err
 	}
-	path, node, err := fs.treeSearch(*rootInfo, fn)
+	path, node, err := fs.treeSearch(*rootInfo, searcher.Search)
 	if err != nil {
-		return Item{}, err
+		return Item{}, fmt.Errorf("item with %s: %w", searcher, err)
 	}
 	item := node.Data.BodyLeaf[path.Node(-1).FromItemSlot]
 	item.Body = item.Body.CloneItem()
@@ -496,24 +424,13 @@ func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.
 	return item, nil
 }
 
-// KeySearch returns a comparator suitable to be passed to TreeSearch.
-func KeySearch(fn func(btrfsprim.Key) int) func(btrfsprim.Key, uint32) int {
-	return func(key btrfsprim.Key, _ uint32) int {
-		return fn(key)
-	}
-}
-
 // TreeLookup implements the 'TreeOperator' interface.
 func (fs TreeOperatorImpl) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (Item, error) {
-	item, err := fs.TreeSearch(treeID, KeySearch(key.Compare))
-	if err != nil {
-		err = fmt.Errorf("item with key=%v: %w", key, err)
-	}
-	return item, err
+	return fs.TreeSearch(treeID, SearchExactKey(key))
 }
 
 // TreeSearchAll implements the 'TreeOperator' interface.
-func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) ([]Item, error) {
+func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSearcher) ([]Item, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, err
@@ -522,9 +439,9 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 	if err != nil {
 		return nil, err
 	}
-	middlePath, middleNode, err := fs.treeSearch(*rootInfo, fn)
+	middlePath, middleNode, err := fs.treeSearch(*rootInfo, searcher.Search)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("items with %s: %w", searcher, err)
 	}
 	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).FromItemSlot]
 
@@ -541,7 +458,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 			break
 		}
 		prevItem := prevNode.Data.BodyLeaf[prevPath.Node(-1).FromItemSlot]
-		if fn(prevItem.Key, prevItem.BodySize) != 0 {
+		if searcher.Search(prevItem.Key, prevItem.BodySize) != 0 {
 			break
 		}
 		item := prevItem
@@ -554,7 +471,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 		middleNode, err = fs.ReadNode(middlePath)
 		if err != nil {
 			FreeNodeRef(middleNode)
-			return nil, err
+			return nil, fmt.Errorf("items with %s: %w", searcher, err)
 		}
 	}
 	nextPath, nextNode := middlePath, middleNode
@@ -568,7 +485,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfspr
 			break
 		}
 		nextItem := nextNode.Data.BodyLeaf[nextPath.Node(-1).FromItemSlot]
-		if fn(nextItem.Key, nextItem.BodySize) != 0 {
+		if searcher.Search(nextItem.Key, nextItem.BodySize) != 0 {
 			break
 		}
 		item := nextItem

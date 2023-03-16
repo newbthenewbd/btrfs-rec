@@ -5,6 +5,7 @@
 package btrfstree
 
 import (
+	"errors"
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
@@ -19,19 +20,6 @@ type TreeRoot struct {
 	RootNode   btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
-}
-
-func RootItemSearchFn(treeID btrfsprim.ObjID) func(btrfsprim.Key, uint32) int {
-	return func(key btrfsprim.Key, _ uint32) int {
-		if key.ObjectID == treeID && key.ItemType == btrfsitem.ROOT_ITEM_KEY {
-			return 0
-		}
-		return btrfsprim.Key{
-			ObjectID: treeID,
-			ItemType: btrfsitem.ROOT_ITEM_KEY,
-			Offset:   0,
-		}.Compare(key)
-	}
 }
 
 // LookupTreeRoot is a utility function to help with implementing the
@@ -67,9 +55,12 @@ func LookupTreeRoot(fs TreeOperator, sb Superblock, treeID btrfsprim.ObjID) (*Tr
 			Generation: sb.BlockGroupRootGeneration,
 		}, nil
 	default:
-		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, RootItemSearchFn(treeID))
+		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, SearchRootItem(treeID))
 		if err != nil {
-			return nil, err
+			if errors.Is(err, ErrNoItem) {
+				err = ErrNoTree
+			}
+			return nil, fmt.Errorf("tree %s: %w", treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), err)
 		}
 		switch rootItemBody := rootItem.Body.(type) {
 		case *btrfsitem.Root:

@@ -7,7 +7,6 @@ package btrfsutil
 import (
 	"context"
 	"fmt"
-	iofs "io/fs"
 	"sync"
 
 	"github.com/datawire/dlib/derror"
@@ -189,11 +188,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 }
 
 func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	item, err := bt.TreeSearch(treeID, btrfstree.KeySearch(key.Compare))
-	if err != nil {
-		err = fmt.Errorf("item with key=%v: %w", key, err)
-	}
-	return item, err
+	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
 }
 
 func (bt *OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key, uint32) int, err error) error {
@@ -201,10 +196,10 @@ func (bt *OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key,
 	tree.Errors.Subrange(
 		func(k btrfsprim.Key) int { return fn(k, 0) },
 		func(v oldRebuiltTreeError) bool {
-			errs = append(errs, &btrfstree.TreeError{
-				Path: bt.arena.Inflate(v.Path),
-				Err:  v.Err,
-			})
+			path := bt.arena.Inflate(v.Path)
+			minKey := path.Node(-1).ToKey
+			maxKey := path.Node(-1).ToMaxKey
+			errs = append(errs, fmt.Errorf("keys %v-%v: %w", minKey, maxKey, v.Err))
 			return true
 		})
 	if len(errs) == 0 {
@@ -216,24 +211,24 @@ func (bt *OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key,
 	return errs
 }
 
-func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) (btrfstree.Item, error) {
+func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
 	tree := bt.RebuiltTree(treeID)
 	if tree.RootErr != nil {
 		return btrfstree.Item{}, tree.RootErr
 	}
 
 	indexItem := tree.Items.Search(func(indexItem oldRebuiltTreeValue) int {
-		return fn(indexItem.Key, indexItem.ItemSize)
+		return searcher.Search(indexItem.Key, indexItem.ItemSize)
 	})
 	if indexItem == nil {
-		return btrfstree.Item{}, bt.addErrs(tree, fn, iofs.ErrNotExist)
+		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, bt.addErrs(tree, searcher.Search, btrfstree.ErrNoItem))
 	}
 
 	itemPath := bt.arena.Inflate(indexItem.Value.Path)
 	node, err := bt.inner.ReadNode(itemPath.Parent())
 	defer btrfstree.FreeNodeRef(node)
 	if err != nil {
-		return btrfstree.Item{}, bt.addErrs(tree, fn, err)
+		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, bt.addErrs(tree, searcher.Search, err))
 	}
 
 	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
@@ -244,7 +239,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, fn func(btrfspri
 	return item, nil
 }
 
-func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfsprim.Key, uint32) int) ([]btrfstree.Item, error) {
+func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
 	tree := bt.RebuiltTree(treeID)
 	if tree.RootErr != nil {
 		return nil, tree.RootErr
@@ -252,13 +247,15 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 
 	var indexItems []oldRebuiltTreeValue
 	tree.Items.Subrange(
-		func(indexItem oldRebuiltTreeValue) int { return fn(indexItem.Key, indexItem.ItemSize) },
+		func(indexItem oldRebuiltTreeValue) int {
+			return searcher.Search(indexItem.Key, indexItem.ItemSize)
+		},
 		func(node *containers.RBNode[oldRebuiltTreeValue]) bool {
 			indexItems = append(indexItems, node.Value)
 			return true
 		})
 	if len(indexItems) == 0 {
-		return nil, bt.addErrs(tree, fn, iofs.ErrNotExist)
+		return nil, fmt.Errorf("items with %s: %w", searcher, bt.addErrs(tree, searcher.Search, btrfstree.ErrNoItem))
 	}
 
 	ret := make([]btrfstree.Item, len(indexItems))
@@ -271,7 +268,7 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
 				btrfstree.FreeNodeRef(node)
-				return nil, bt.addErrs(tree, fn, err)
+				return nil, fmt.Errorf("items with %s: %w", searcher, bt.addErrs(tree, searcher.Search, err))
 			}
 		}
 		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
@@ -279,7 +276,11 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, fn func(btrfs
 	}
 	btrfstree.FreeNodeRef(node)
 
-	return ret, bt.addErrs(tree, fn, nil)
+	err := bt.addErrs(tree, searcher.Search, nil)
+	if err != nil {
+		err = fmt.Errorf("items with %s: %w", searcher, err)
+	}
+	return ret, err
 }
 
 func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {

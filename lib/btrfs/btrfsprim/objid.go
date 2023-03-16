@@ -6,6 +6,7 @@ package btrfsprim
 
 import (
 	"fmt"
+	"math"
 )
 
 type ObjID uint64
@@ -52,6 +53,8 @@ const (
 
 	// ???
 	EMPTY_SUBVOL_DIR_OBJECTID ObjID = 2
+
+	MAX_OBJECTID ObjID = math.MaxUint64
 )
 
 var (

@@ -2,7 +2,10 @@
 
 package btrfsprim
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 type ItemType uint8
 
@@ -39,6 +42,8 @@ const (
 	UUID_RECEIVED_SUBVOL_KEY ItemType = 252
 	UUID_SUBVOL_KEY          ItemType = 251
 	XATTR_ITEM_KEY           ItemType = 24
+
+	MAX_KEY ItemType = math.MaxUint8
 )
 
 func (t ItemType) String() string {
