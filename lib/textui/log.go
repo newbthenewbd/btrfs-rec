@@ -37,7 +37,7 @@ var _ pflag.Value = (*LogLevelFlag)(nil)
 // Type implements pflag.Value.
 func (lvl *LogLevelFlag) Type() string { return "loglevel" }
 
-// Type implements pflag.Value.
+// Set implements pflag.Value.
 func (lvl *LogLevelFlag) Set(str string) error {
 	switch strings.ToLower(str) {
 	case "error":
@@ -56,7 +56,7 @@ func (lvl *LogLevelFlag) Set(str string) error {
 	return nil
 }
 
-// Type implements pflag.Value.
+// String implements fmt.Stringer (and pflag.Value).
 func (lvl *LogLevelFlag) String() string {
 	switch lvl.Level {
 	case dlog.LogLevelError:

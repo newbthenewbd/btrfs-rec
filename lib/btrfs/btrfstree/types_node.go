@@ -456,6 +456,8 @@ func newNodeRef[Addr ~int64]() *diskio.Ref[Addr, Node] {
 	return (*diskio.Ref[Addr, Node])(unsafe.Pointer(ret)) //nolint:gosec // I know it's unsafe.
 }
 
+// ReadNode reads a node from the given file.
+//
 // It is possible that both a non-nil diskio.Ref and an error are
 // returned.  The error returned (if non-nil) is always of type
 // *NodeError[Addr].  Notable errors that may be inside of the

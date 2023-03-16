@@ -128,9 +128,10 @@ func (path TreePath) Parent() TreePath {
 	return path[:len(path)-1]
 }
 
-// path.Node(x) is like &path[x], but negative values of x move down
-// from the end of path (similar to how lists work in many other
-// languages, such as Python).
+// Node is returns an element from the path; `path.Node(x)` is like
+// `&path[x]`, but negative values of x move down from the end of path
+// (similar to how lists work in many other languages, such as
+// Python).
 func (path TreePath) Node(x int) *TreePathElem {
 	if x < 0 {
 		x += len(path)
