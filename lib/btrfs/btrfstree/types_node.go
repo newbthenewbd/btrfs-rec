@@ -523,6 +523,16 @@ func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr, e
 
 	// sanity checking (that doesn't prevent parsing)
 
+	if err := exp.Check(node); err != nil {
+		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
+	}
+
+	// return
+
+	return node, nil
+}
+
+func (exp NodeExpectations) Check(node *Node) error {
 	var errs derror.MultiError
 	if exp.LAddr.OK && node.Head.Addr != exp.LAddr.Val {
 		errs = append(errs, fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
@@ -554,10 +564,7 @@ func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr, e
 		}
 	}
 	if len(errs) > 0 {
-		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: errs}
+		return errs
 	}
-
-	// return
-
-	return node, nil
+	return nil
 }
