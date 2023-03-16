@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"unsafe"
 
 	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/derror"
@@ -308,12 +307,16 @@ type ItemHeader struct {
 var itemPool containers.SlicePool[Item]
 
 func (node *Node) Free() {
+	if node == nil {
+		return
+	}
 	for i := range node.BodyLeaf {
 		node.BodyLeaf[i].Body.Free()
 		node.BodyLeaf[i] = Item{}
 	}
 	itemPool.Put(node.BodyLeaf)
 	*node = Node{}
+	nodePool.Put(node)
 }
 
 func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
@@ -440,23 +443,10 @@ func (e *IOError) Unwrap() error { return e.Err }
 
 var bytePool containers.SlicePool[byte]
 
-var nodePool = typedsync.Pool[*diskio.Ref[int64, Node]]{
-	New: func() *diskio.Ref[int64, Node] {
-		return new(diskio.Ref[int64, Node])
+var nodePool = typedsync.Pool[*Node]{
+	New: func() *Node {
+		return new(Node)
 	},
-}
-
-func FreeNodeRef[Addr ~int64](ref *diskio.Ref[Addr, Node]) {
-	if ref == nil {
-		return
-	}
-	ref.Data.Free()
-	nodePool.Put((*diskio.Ref[int64, Node])(unsafe.Pointer(ref))) //nolint:gosec // I know it's unsafe.
-}
-
-func newNodeRef[Addr ~int64]() *diskio.Ref[Addr, Node] {
-	ret, _ := nodePool.Get()
-	return (*diskio.Ref[Addr, Node])(unsafe.Pointer(ret)) //nolint:gosec // I know it's unsafe.
 }
 
 // ReadNode reads a node from the given file.
@@ -465,7 +455,7 @@ func newNodeRef[Addr ~int64]() *diskio.Ref[Addr, Node] {
 // returned.  The error returned (if non-nil) is always of type
 // *NodeError[Addr].  Notable errors that may be inside of the
 // NodeError are ErrNotANode and *IOError.
-func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*diskio.Ref[Addr, Node], error) {
+func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*Node, error) {
 	if int(sb.NodeSize) < nodeHeaderSize {
 		return nil, &NodeError[Addr]{
 			Op: "btrfstree.ReadNode", NodeAddr: addr,
@@ -481,16 +471,10 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 
 	// parse (early)
 
-	nodeRef := newNodeRef[Addr]()
-	*nodeRef = diskio.Ref[Addr, Node]{
-		File: fs,
-		Addr: addr,
-		Data: Node{
-			Size:         sb.NodeSize,
-			ChecksumType: sb.ChecksumType,
-		},
-	}
-	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data.Head); err != nil {
+	node, _ := nodePool.Get()
+	node.Size = sb.NodeSize
+	node.ChecksumType = sb.ChecksumType
+	if _, err := binstruct.Unmarshal(nodeBuf, &node.Head); err != nil {
 		// If there are enough bytes there (and we checked
 		// that above), then it shouldn't be possible for this
 		// unmarshal to fail.
@@ -499,20 +483,20 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 
 	// sanity checking (that prevents the main parse)
 
-	if nodeRef.Data.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
+	if node.Head.MetadataUUID != sb.EffectiveMetadataUUID() {
 		bytePool.Put(nodeBuf)
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: ErrNotANode}
+		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: ErrNotANode}
 	}
 
-	stored := nodeRef.Data.Head.Checksum
-	calced, err := nodeRef.Data.ChecksumType.Sum(nodeBuf[csumSize:])
+	stored := node.Head.Checksum
+	calced, err := node.ChecksumType.Sum(nodeBuf[csumSize:])
 	if err != nil {
 		bytePool.Put(nodeBuf)
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
+		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 	if stored != calced {
 		bytePool.Put(nodeBuf)
-		return nodeRef, &NodeError[Addr]{
+		return node, &NodeError[Addr]{
 			Op: "btrfstree.ReadNode", NodeAddr: addr,
 			Err: fmt.Errorf("looks like a node but is corrupt: checksum mismatch: stored=%v calculated=%v",
 				stored, calced),
@@ -530,9 +514,9 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	// garbage data that is was never a valid node, so parsing it
 	// isn't useful.
 
-	if _, err := binstruct.Unmarshal(nodeBuf, &nodeRef.Data); err != nil {
+	if _, err := binstruct.Unmarshal(nodeBuf, node); err != nil {
 		bytePool.Put(nodeBuf)
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
+		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
 	}
 
 	bytePool.Put(nodeBuf)
@@ -540,40 +524,40 @@ func ReadNode[Addr ~int64](fs diskio.File[Addr], sb Superblock, addr Addr, exp N
 	// sanity checking (that doesn't prevent parsing)
 
 	var errs derror.MultiError
-	if exp.LAddr.OK && nodeRef.Data.Head.Addr != exp.LAddr.Val {
+	if exp.LAddr.OK && node.Head.Addr != exp.LAddr.Val {
 		errs = append(errs, fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
-			exp.LAddr.Val, nodeRef.Data.Head.Addr))
+			exp.LAddr.Val, node.Head.Addr))
 	}
-	if exp.Level.OK && nodeRef.Data.Head.Level != exp.Level.Val {
+	if exp.Level.OK && node.Head.Level != exp.Level.Val {
 		errs = append(errs, fmt.Errorf("expected level=%v but claims to be level=%v",
-			exp.Level.Val, nodeRef.Data.Head.Level))
+			exp.Level.Val, node.Head.Level))
 	}
-	if exp.Generation.OK && nodeRef.Data.Head.Generation != exp.Generation.Val {
+	if exp.Generation.OK && node.Head.Generation != exp.Generation.Val {
 		errs = append(errs, fmt.Errorf("expected generation=%v but claims to be generation=%v",
-			exp.Generation.Val, nodeRef.Data.Head.Generation))
+			exp.Generation.Val, node.Head.Generation))
 	}
 	if exp.Owner != nil {
-		if err := exp.Owner(nodeRef.Data.Head.Owner); err != nil {
+		if err := exp.Owner(node.Head.Owner); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if nodeRef.Data.Head.NumItems == 0 {
+	if node.Head.NumItems == 0 {
 		errs = append(errs, fmt.Errorf("has no items"))
 	} else {
-		if minItem, _ := nodeRef.Data.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
+		if minItem, _ := node.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
 			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
 				exp.MinItem, minItem))
 		}
-		if maxItem, _ := nodeRef.Data.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
+		if maxItem, _ := node.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
 			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
 				exp.MaxItem, maxItem))
 		}
 	}
 	if len(errs) > 0 {
-		return nodeRef, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: errs}
+		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: errs}
 	}
 
 	// return
 
-	return nodeRef, nil
+	return node, nil
 }

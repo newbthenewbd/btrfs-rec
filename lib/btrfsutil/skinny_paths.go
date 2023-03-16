@@ -54,26 +54,26 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemSlot int) (btrf
 		return ret, nil
 	}
 
-	node, err := btrfstree.ReadNode(a.FS, a.SB, parent.Node(-1).ToNodeAddr, btrfstree.NodeExpectations{})
-	defer btrfstree.FreeNodeRef(node)
+	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](a.FS, a.SB, parent.Node(-1).ToNodeAddr, btrfstree.NodeExpectations{})
+	defer node.Free()
 	if err != nil {
 		return btrfstree.TreePathElem{}, err
 	}
-	if node.Data.Head.Level > 0 {
-		if itemSlot >= len(node.Data.BodyInterior) {
+	if node.Head.Level > 0 {
+		if itemSlot >= len(node.BodyInterior) {
 			panic("should not happen")
 		}
-		for i, item := range node.Data.BodyInterior {
+		for i, item := range node.BodyInterior {
 			toMaxKey := parent.Node(-1).ToMaxKey
-			if i+1 < len(node.Data.BodyInterior) {
-				toMaxKey = node.Data.BodyInterior[i+1].Key.Mm()
+			if i+1 < len(node.BodyInterior) {
+				toMaxKey = node.BodyInterior[i+1].Key.Mm()
 			}
 			elem := btrfstree.TreePathElem{
-				FromTree:         node.Data.Head.Owner,
+				FromTree:         node.Head.Owner,
 				FromItemSlot:     i,
 				ToNodeAddr:       item.BlockPtr,
 				ToNodeGeneration: item.Generation,
-				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToNodeLevel:      node.Head.Level - 1,
 				ToKey:            item.Key,
 				ToMaxKey:         toMaxKey,
 			}
@@ -83,12 +83,12 @@ func (a *SkinnyPathArena) getItem(parent btrfstree.TreePath, itemSlot int) (btrf
 			}
 		}
 	} else {
-		if itemSlot >= len(node.Data.BodyLeaf) {
+		if itemSlot >= len(node.BodyLeaf) {
 			panic("should not happen")
 		}
-		for i, item := range node.Data.BodyLeaf {
+		for i, item := range node.BodyLeaf {
 			elem := btrfstree.TreePathElem{
-				FromTree:     node.Data.Head.Owner,
+				FromTree:     node.Head.Owner,
 				FromItemSlot: i,
 				ToKey:        item.Key,
 				ToMaxKey:     item.Key,

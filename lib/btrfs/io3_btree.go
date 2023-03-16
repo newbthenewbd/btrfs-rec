@@ -10,8 +10,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 // This file is ordered from low-level to high-level.
@@ -19,7 +17,7 @@ import (
 // btrfstree.NodeSource ////////////////////////////////////////////////////////
 
 // ReadNode implements btrfstree.NodeSource.
-func (fs *FS) ReadNode(path btrfstree.TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], error) {
+func (fs *FS) ReadNode(path btrfstree.TreePath) (*btrfstree.Node, error) {
 	return btrfstree.FSReadNode(fs, path)
 }
 

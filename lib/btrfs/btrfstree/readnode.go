@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -34,7 +34,7 @@ type NodeFile interface {
 func FSReadNode(
 	fs NodeFile,
 	path TreePath,
-) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+) (*Node, error) {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)

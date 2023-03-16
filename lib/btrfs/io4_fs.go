@@ -20,6 +20,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -65,7 +66,7 @@ type Subvolume struct {
 	FS interface {
 		btrfstree.TreeOperator
 		Superblock() (*btrfstree.Superblock, error)
-		ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+		diskio.ReaderAt[btrfsvol.LogicalAddr]
 	}
 	TreeID      btrfsprim.ObjID
 	NoChecksums bool

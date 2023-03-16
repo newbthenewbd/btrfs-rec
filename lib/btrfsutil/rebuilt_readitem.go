@@ -49,7 +49,7 @@ type KeyIO struct {
 	Sizes map[ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
 
 	mu    sync.Mutex
-	cache containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]
+	cache containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
 }
 
 func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *KeyIO {
@@ -61,19 +61,19 @@ func NewKeyIO(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) *
 		Names: make(map[ItemPtr][]byte),
 		Sizes: make(map[ItemPtr]SizeAndErr),
 
-		cache: containers.ARCache[btrfsvol.LogicalAddr, *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]]{
+		cache: containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]{
 			MaxLen: textui.Tunable(8),
-			OnRemove: func(_ btrfsvol.LogicalAddr, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-				btrfstree.FreeNodeRef(nodeRef)
+			OnRemove: func(_ btrfsvol.LogicalAddr, node *btrfstree.Node) {
+				node.Free()
 			},
 		},
 	}
 }
 
-func (o *KeyIO) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
-	for i, item := range nodeRef.Data.BodyLeaf {
+func (o *KeyIO) InsertNode(node *btrfstree.Node) {
+	for i, item := range node.BodyLeaf {
 		ptr := ItemPtr{
-			Node: nodeRef.Addr,
+			Node: node.Head.Addr,
 			Slot: i,
 		}
 		switch itemBody := item.Body.(type) {
@@ -102,12 +102,12 @@ func (o *KeyIO) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.N
 			case btrfsprim.INODE_ITEM_KEY:
 				o.Flags[ptr] = FlagsAndErr{
 					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
-						ptr, nodeRef.Data.Head.Owner, item.Key, itemBody.Err),
+						ptr, node.Head.Owner, item.Key, itemBody.Err),
 				}
 			case btrfsprim.EXTENT_CSUM_KEY, btrfsprim.EXTENT_DATA_KEY:
 				o.Sizes[ptr] = SizeAndErr{
 					Err: fmt.Errorf("error decoding item: ptr=%v (tree=%v key=%v): %w",
-						ptr, nodeRef.Data.Head.Owner, item.Key, itemBody.Err),
+						ptr, node.Head.Owner, item.Key, itemBody.Err),
 				}
 			}
 		}
@@ -118,7 +118,7 @@ func (o *KeyIO) SetGraph(graph Graph) {
 	o.graph = graph
 }
 
-func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node] {
+func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *btrfstree.Node {
 	if cached, ok := o.cache.Load(laddr); ok {
 		dlog.Tracef(ctx, "cache-hit node@%v", laddr)
 		return cached
@@ -130,7 +130,7 @@ func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diski
 	}
 
 	dlog.Debugf(ctx, "cache-miss node@%v, reading...", laddr)
-	ref, err := btrfstree.ReadNode(o.rawFile, o.sb, laddr, btrfstree.NodeExpectations{
+	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](o.rawFile, o.sb, laddr, btrfstree.NodeExpectations{
 		LAddr:      containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 		Level:      containers.Optional[uint8]{OK: true, Val: graphInfo.Level},
 		Generation: containers.Optional[btrfsprim.Generation]{OK: true, Val: graphInfo.Generation},
@@ -148,9 +148,9 @@ func (o *KeyIO) readNode(ctx context.Context, laddr btrfsvol.LogicalAddr) *diski
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
 	}
 
-	o.cache.Store(laddr, ref)
+	o.cache.Store(laddr, node)
 
-	return ref
+	return node
 }
 
 func (o *KeyIO) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
@@ -162,7 +162,7 @@ func (o *KeyIO) ReadItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
 	if ptr.Slot < 0 {
 		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for negative item slot: %v", ptr.Slot))
 	}
-	items := o.readNode(ctx, ptr.Node).Data.BodyLeaf
+	items := o.readNode(ctx, ptr.Node).BodyLeaf
 	if ptr.Slot >= len(items) {
 		panic(fmt.Errorf("should not happen: btrfsutil.KeyIO.ReadItem called for out-of-bounds item slot: slot=%v len=%v",
 			ptr.Slot, len(items)))

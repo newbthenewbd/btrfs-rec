@@ -41,18 +41,18 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 		if err := ctx.Err(); err != nil {
 			return btrfstree.Superblock{}, btrfsutil.Graph{}, nil, err
 		}
-		nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
+		node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
 			LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
 		})
 		if err != nil {
-			btrfstree.FreeNodeRef(nodeRef)
+			node.Free()
 			return btrfstree.Superblock{}, btrfsutil.Graph{}, nil, err
 		}
 
-		nodeGraph.InsertNode(nodeRef)
-		keyIO.InsertNode(nodeRef)
+		nodeGraph.InsertNode(node)
+		keyIO.InsertNode(node)
 
-		btrfstree.FreeNodeRef(nodeRef)
+		node.Free()
 
 		stats.N++
 		progressWriter.Set(stats)

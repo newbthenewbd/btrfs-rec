@@ -19,7 +19,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -121,22 +120,22 @@ func (scanner *deviceScanner) ScanSector(_ context.Context, dev *btrfs.Device, p
 	return nil
 }
 
-func (scanner *deviceScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Node]) error {
-	scanner.result.FoundNodes[nodeRef.Data.Head.Addr] = append(scanner.result.FoundNodes[nodeRef.Data.Head.Addr], nodeRef.Addr)
-	for i, item := range nodeRef.Data.BodyLeaf {
+func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.PhysicalAddr, node *btrfstree.Node) error {
+	scanner.result.FoundNodes[node.Head.Addr] = append(scanner.result.FoundNodes[node.Head.Addr], addr)
+	for i, item := range node.BodyLeaf {
 		switch item.Key.ItemType {
 		case btrfsitem.CHUNK_ITEM_KEY:
 			switch itemBody := item.Body.(type) {
 			case *btrfsitem.Chunk:
 				dlog.Tracef(ctx, "node@%v: item %v: found chunk",
-					nodeRef.Addr, i)
+					addr, i)
 				scanner.result.FoundChunks = append(scanner.result.FoundChunks, btrfstree.SysChunk{
 					Key:   item.Key,
 					Chunk: *itemBody,
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed CHUNK_ITEM: %v",
-					nodeRef.Addr, i, itemBody.Err)
+					addr, i, itemBody.Err)
 			default:
 				panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
 			}
@@ -144,14 +143,14 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[
 			switch itemBody := item.Body.(type) {
 			case *btrfsitem.BlockGroup:
 				dlog.Tracef(ctx, "node@%v: item %v: found block group",
-					nodeRef.Addr, i)
+					addr, i)
 				scanner.result.FoundBlockGroups = append(scanner.result.FoundBlockGroups, SysBlockGroup{
 					Key: item.Key,
 					BG:  *itemBody,
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed BLOCK_GROUP_ITEM: %v",
-					nodeRef.Addr, i, itemBody.Err)
+					addr, i, itemBody.Err)
 			default:
 				panic(fmt.Errorf("should not happen: BLOCK_GROUP_ITEM has unexpected item type: %T", itemBody))
 			}
@@ -159,14 +158,14 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[
 			switch itemBody := item.Body.(type) {
 			case *btrfsitem.DevExtent:
 				dlog.Tracef(ctx, "node@%v: item %v: found dev extent",
-					nodeRef.Addr, i)
+					addr, i)
 				scanner.result.FoundDevExtents = append(scanner.result.FoundDevExtents, SysDevExtent{
 					Key:    item.Key,
 					DevExt: *itemBody,
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed DEV_EXTENT: %v",
-					nodeRef.Addr, i, itemBody.Err)
+					addr, i, itemBody.Err)
 			default:
 				panic(fmt.Errorf("should not happen: DEV_EXTENT has unexpected item type: %T", itemBody))
 			}
@@ -174,14 +173,14 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[
 			switch itemBody := item.Body.(type) {
 			case *btrfsitem.ExtentCSum:
 				dlog.Tracef(ctx, "node@%v: item %v: found csums",
-					nodeRef.Addr, i)
+					addr, i)
 				scanner.result.FoundExtentCSums = append(scanner.result.FoundExtentCSums, SysExtentCSum{
-					Generation: nodeRef.Data.Head.Generation,
+					Generation: node.Head.Generation,
 					Sums:       *itemBody,
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed is EXTENT_CSUM: %v",
-					nodeRef.Addr, i, itemBody.Err)
+					addr, i, itemBody.Err)
 			default:
 				panic(fmt.Errorf("should not happen: EXTENT_CSUM has unexpected item type: %T", itemBody))
 			}

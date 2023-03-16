@@ -19,7 +19,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -76,8 +75,8 @@ func init() {
 					treeErrCnt++
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
-					Node: func(_ btrfstree.TreePath, ref *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-						visitedNodes.Insert(ref.Addr)
+					Node: func(path btrfstree.TreePath, node *btrfstree.Node) error {
+						visitedNodes.Insert(path.Node(-1).ToNodeAddr)
 						return nil
 					},
 					Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
@@ -113,7 +112,7 @@ func init() {
 						treeErrCnt++
 						continue
 					}
-					for _, item := range node.Data.BodyLeaf {
+					for _, item := range node.BodyLeaf {
 						typ := item.Key.ItemType
 						treeItemCnt[typ]++
 					}

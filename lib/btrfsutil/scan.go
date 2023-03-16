@@ -19,7 +19,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -30,7 +29,7 @@ type DeviceScannerFactory[Stats comparable, Result any] func(ctx context.Context
 type DeviceScanner[Stats comparable, Result any] interface {
 	ScanStats() Stats
 	ScanSector(ctx context.Context, dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) error
-	ScanNode(ctx context.Context, nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Node]) error
+	ScanNode(ctx context.Context, addr btrfsvol.PhysicalAddr, node *btrfstree.Node) error
 	ScanDone(ctx context.Context) (Result, error)
 }
 
@@ -123,19 +122,19 @@ func ScanOneDevice[Stats comparable, Result any](ctx context.Context, dev *btrfs
 		}
 
 		if checkForNode {
-			nodeRef, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, *sb, pos, btrfstree.NodeExpectations{})
+			node, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, *sb, pos, btrfstree.NodeExpectations{})
 			if err != nil {
 				if !errors.Is(err, btrfstree.ErrNotANode) {
 					dlog.Errorf(ctx, "error: %v", err)
 				}
 			} else {
-				if err := scanner.ScanNode(ctx, nodeRef); err != nil {
+				if err := scanner.ScanNode(ctx, pos, node); err != nil {
 					var zero Result
 					return zero, err
 				}
 				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)
 			}
-			btrfstree.FreeNodeRef(nodeRef)
+			node.Free()
 		}
 	}
 

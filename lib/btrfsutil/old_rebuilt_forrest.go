@@ -17,7 +17,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type oldRebuiltTree struct {
@@ -226,12 +225,12 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstr
 
 	itemPath := bt.arena.Inflate(indexItem.Value.Path)
 	node, err := bt.inner.ReadNode(itemPath.Parent())
-	defer btrfstree.FreeNodeRef(node)
+	defer node.Free()
 	if err != nil {
 		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, bt.addErrs(tree, searcher.Search, err))
 	}
 
-	item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+	item := node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 	item.Body = item.Body.CloneItem()
 
 	// Since we were only asked to return 1 item, it isn't
@@ -259,22 +258,22 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrf
 	}
 
 	ret := make([]btrfstree.Item, len(indexItems))
-	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
+	var node *btrfstree.Node
 	for i := range indexItems {
 		itemPath := bt.arena.Inflate(indexItems[i].Path)
-		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
+		if node == nil || node.Head.Addr != itemPath.Node(-2).ToNodeAddr {
 			var err error
-			btrfstree.FreeNodeRef(node)
+			node.Free()
 			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
-				btrfstree.FreeNodeRef(node)
+				node.Free()
 				return nil, fmt.Errorf("items with %s: %w", searcher, bt.addErrs(tree, searcher.Search, err))
 			}
 		}
-		ret[i] = node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		ret[i] = node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 		ret[i].Body = ret[i].Body.CloneItem()
 	}
-	btrfstree.FreeNodeRef(node)
+	node.Free()
 
 	err := bt.addErrs(tree, searcher.Search, nil)
 	if err != nil {
@@ -298,7 +297,7 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 	if cbs.Item == nil {
 		return
 	}
-	var node *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]
+	var node *btrfstree.Node
 	tree.Items.Range(func(indexItem *containers.RBNode[oldRebuiltTreeValue]) bool {
 		if ctx.Err() != nil {
 			return false
@@ -307,23 +306,23 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 			return false
 		}
 		itemPath := bt.arena.Inflate(indexItem.Value.Path)
-		if node == nil || node.Addr != itemPath.Node(-2).ToNodeAddr {
+		if node == nil || node.Head.Addr != itemPath.Node(-2).ToNodeAddr {
 			var err error
-			btrfstree.FreeNodeRef(node)
+			node.Free()
 			node, err = bt.inner.ReadNode(itemPath.Parent())
 			if err != nil {
-				btrfstree.FreeNodeRef(node)
+				node.Free()
 				errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 				return true
 			}
 		}
-		item := node.Data.BodyLeaf[itemPath.Node(-1).FromItemSlot]
+		item := node.BodyLeaf[itemPath.Node(-1).FromItemSlot]
 		if err := cbs.Item(itemPath, item); err != nil {
 			errHandle(&btrfstree.TreeError{Path: itemPath, Err: err})
 		}
 		return true
 	})
-	btrfstree.FreeNodeRef(node)
+	node.Free()
 }
 
 func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
@@ -343,8 +342,8 @@ func (bt *OldRebuiltForrest) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.L
 	if tree.RootErr != nil {
 		return nil, tree.RootErr
 	}
-	nodeRef, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeAddr, btrfstree.NodeExpectations{})
-	defer btrfstree.FreeNodeRef(nodeRef)
+	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeAddr, btrfstree.NodeExpectations{})
+	defer node.Free()
 	if err != nil {
 		return nil, err
 	}
@@ -352,8 +351,8 @@ func (bt *OldRebuiltForrest) Augment(treeID btrfsprim.ObjID, nodeAddr btrfsvol.L
 	bt.rawTreeWalk(btrfstree.TreeRoot{
 		TreeID:     treeID,
 		RootNode:   nodeAddr,
-		Level:      nodeRef.Data.Head.Level,
-		Generation: nodeRef.Data.Head.Generation,
+		Level:      node.Head.Level,
+		Generation: node.Head.Generation,
 	}, tree, &ret)
 	return ret, nil
 }
