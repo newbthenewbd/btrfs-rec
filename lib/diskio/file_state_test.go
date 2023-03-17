@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -21,11 +21,11 @@ func (r byteReaderWithName) Name() string {
 	return r.name
 }
 
-func (r byteReaderWithName) Close() error {
+func (byteReaderWithName) Close() error {
 	return nil
 }
 
-func (r byteReaderWithName) WriteAt([]byte, int64) (int, error) {
+func (byteReaderWithName) WriteAt([]byte, int64) (int, error) {
 	panic("not implemented")
 }
 

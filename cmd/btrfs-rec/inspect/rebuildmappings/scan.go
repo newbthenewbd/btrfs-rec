@@ -103,7 +103,7 @@ func (scanner *deviceScanner) ScanStats() scanStats {
 	}
 }
 
-func newDeviceScanner(ctx context.Context, sb btrfstree.Superblock, numBytes btrfsvol.PhysicalAddr, numSectors int) btrfsutil.DeviceScanner[scanStats, ScanOneDeviceResult] {
+func newDeviceScanner(_ context.Context, sb btrfstree.Superblock, _ btrfsvol.PhysicalAddr, numSectors int) btrfsutil.DeviceScanner[scanStats, ScanOneDeviceResult] {
 	scanner := new(deviceScanner)
 	scanner.alg = sb.ChecksumType
 	scanner.result.FoundNodes = make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr)
@@ -112,7 +112,7 @@ func newDeviceScanner(ctx context.Context, sb btrfstree.Superblock, numBytes btr
 	return scanner
 }
 
-func (scanner *deviceScanner) ScanSector(ctx context.Context, dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) error {
+func (scanner *deviceScanner) ScanSector(_ context.Context, dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) error {
 	sum, err := btrfs.ChecksumPhysical(dev, scanner.alg, paddr)
 	if err != nil {
 		return err
@@ -190,7 +190,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[
 	return nil
 }
 
-func (scanner *deviceScanner) ScanDone(ctx context.Context) (ScanOneDeviceResult, error) {
+func (scanner *deviceScanner) ScanDone(_ context.Context) (ScanOneDeviceResult, error) {
 	scanner.result.Checksums.Sums = btrfssum.ShortSum(scanner.sums.String())
 	return scanner.result, nil
 }

@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package mount is the guts of the `btrfs-rec inspect mount` command,
+// which mounts the filesystem read-only using FUSE; providing better
+// tolerance of filesystem corruption than the in-kernel btrfs driver.
 package mount
 
 import (
@@ -479,4 +482,4 @@ func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error {
 	return nil
 }
 
-func (sv *subvolume) Destroy() {}
+func (*subvolume) Destroy() {}

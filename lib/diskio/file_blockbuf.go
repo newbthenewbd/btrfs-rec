@@ -99,5 +99,5 @@ func (bf *bufferedFile[A]) WriteAt(dat []byte, off A) (n int, err error) {
 		bf.blockCache.Delete(blockOffset)
 	}
 
-	return
+	return n, err
 }

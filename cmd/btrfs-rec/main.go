@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Command btrfs-rec is used to recover (data from) a broken btrfs
+// filesystem.
 package main
 
 import (

@@ -35,9 +35,9 @@ type LogLevelFlag struct {
 var _ pflag.Value = (*LogLevelFlag)(nil)
 
 // Type implements pflag.Value.
-func (lvl *LogLevelFlag) Type() string { return "loglevel" }
+func (*LogLevelFlag) Type() string { return "loglevel" }
 
-// Type implements pflag.Value.
+// Set implements pflag.Value.
 func (lvl *LogLevelFlag) Set(str string) error {
 	switch strings.ToLower(str) {
 	case "error":
@@ -56,7 +56,7 @@ func (lvl *LogLevelFlag) Set(str string) error {
 	return nil
 }
 
-// Type implements pflag.Value.
+// String implements fmt.Stringer (and pflag.Value).
 func (lvl *LogLevelFlag) String() string {
 	switch lvl.Level {
 	case dlog.LogLevelError:
@@ -94,7 +94,7 @@ func NewLogger(out io.Writer, lvl dlog.LogLevel) dlog.Logger {
 }
 
 // Helper implements dlog.Logger.
-func (l *logger) Helper() {}
+func (*logger) Helper() {}
 
 // WithField implements dlog.Logger.
 func (l *logger) WithField(key string, value any) dlog.Logger {
@@ -127,7 +127,7 @@ func (l *logger) StdLogger(lvl dlog.LogLevel) *log.Logger {
 }
 
 // Log implements dlog.Logger.
-func (l *logger) Log(lvl dlog.LogLevel, msg string) {
+func (*logger) Log(dlog.LogLevel, string) {
 	panic("should not happen: optimized log methods should be used instead")
 }
 

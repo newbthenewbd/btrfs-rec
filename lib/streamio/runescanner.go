@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package streamio implements utilities for working with streaming
+// I/O.
 package streamio
 
 import (
@@ -87,7 +89,7 @@ func (rs *runeScanner) ReadRune() (r rune, size int, err error) {
 			rs.progressWriter.Set(rs.progress)
 		}
 	}
-	return
+	return r, size, err
 }
 
 // ReadRune implements io.RuneScanner.

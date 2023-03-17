@@ -7,7 +7,7 @@ linters:
   disable:
     # Deprecated
     - deadcode         # deprecated, replaced by 'unused'
-    - exhaustivestruct # deprecated, replaced by 'exhauststruct'
+    - exhaustivestruct # deprecated, replaced by 'exhaustruct'
     - golint           # deprecated, replaced by 'revive'
     - ifshort          # deprecated
     - interfacer       # deprecated
@@ -19,7 +19,6 @@ linters:
 
     # Don't support Go 1.18 generics yet
     - rowserrcheck
-    - sqlclosecheck
     - wastedassign
     - ireturn # golangci-lint doesn't claim it doesn't, but it doesn't
 
@@ -48,7 +47,6 @@ linters:
     - exhaustruct
     - gochecknoglobals
     - gochecknoinits
-    - revive
     - testpackage
     - thelper
     - varnamelen
@@ -86,13 +84,38 @@ linters-settings:
     require-specific: true
     allow-no-explanation:
       - dupword
+  revive:
+    enable-all-rules: true
+    rules:
+      - { name: call-to-gc, disabled: true }
+      - { name: exported, disabled: true } # TODO: Add doc comments to exported identifiers
+      - { name: file-header, disabled: true } # TODO: This might actually be useful for copyright
+      - { name: flag-parameter, disabled: true }
+      - { name: modifies-value-receiver, disabled: true }
+      - { name: unexported-return, disabled: true }
+      # Style.
+      - { name: banned-characters, disabled: true }
+      - { name: line-length-limit, disabled: true }
+      - { name: nested-structs, disabled: true }
+      - { name: var-naming, disabled: true }
+      # Complexity; sometimes code is just complex.
+      - { name: argument-limit, disabled: true }
+      - { name: cognitive-complexity, disabled: true }
+      - { name: cyclomatic, disabled: true }
+      - { name: function-length, disabled: true }
+      - { name: function-result-limit, disabled: true }
+      - { name: max-public-structs, disabled: true }
+      # Duplicates.
+      - { name: add-constant, disabled: true } # duplicates gomnd
+      - { name: receiver-naming, disabled: true } # duplicates stylecheck ST1016
+      - { name: unhandled-error, disabled: true } # duplicates errcheck
+      # Buggy.
+      - { name: confusing-naming, disabled: true } # false positive on methods implementing interfaces
+      - { name: import-shadowing, disabled: true } # false positive on methods
   stylecheck:
     checks:
       - "all"
       - "-ST1003" # CONST_VAL names for consistency with other btrfs code
-      - "-ST1000" # TODO: get this to pass
-      - "-ST1020" # TODO: get this to pass
-      - "-ST1021" # TODO: get this to pass
   tagliatelle:
     case:
       use-field-name: true

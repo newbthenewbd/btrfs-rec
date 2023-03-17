@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package rebuildtrees is the guts of the `btrfs-rec inspect
+// rebuild-trees` command, which rebuilds broken trees, but requires
+// already-functioning chunk/dev-extent/blockgroup trees.
+// chunk/dev-extent/blockgroup trees.
 package rebuildtrees
 
 import (
@@ -282,7 +286,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", item.keyAndTree)
 			o.curKey.TreeID = item.TreeID
 			o.curKey.Key.Val = item.Key
-			btrfscheck.HandleItem(o, ctx, item.TreeID, btrfstree.Item{
+			btrfscheck.HandleItem(ctx, o, item.TreeID, btrfstree.Item{
 				Key:  item.Key,
 				Body: item.Body,
 			})

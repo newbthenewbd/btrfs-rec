@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package rebuildmappings is the guts of the `btrfs-rec inspect
+// rebuild-mappings` command, which rebuilds broken
+// chunk/dev-extent/blockgroup trees.
 package rebuildmappings
 
 import (

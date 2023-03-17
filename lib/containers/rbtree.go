@@ -167,9 +167,8 @@ func (t *RBTree[T]) Subrange(rangeFn func(T) int, handleFn func(*RBNode[T]) bool
 	_, node := t.root.search(func(v T) int {
 		if rangeFn(v) <= 0 {
 			return -1
-		} else {
-			return 1
 		}
+		return 1
 	})
 	for node != nil && rangeFn(node.Value) > 0 {
 		node = node.Next()

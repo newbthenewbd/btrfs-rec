@@ -8,7 +8,7 @@ import (
 	"git.lukeshu.com/go/typedsync"
 )
 
-// LinkedListEntry[T] is an entry in a LinkedList[T].
+// LinkedListEntry [T] is an entry in a LinkedList [T].
 type LinkedListEntry[T any] struct {
 	older, newer *LinkedListEntry[T]
 	Value        T

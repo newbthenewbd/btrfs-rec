@@ -12,9 +12,11 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
-// RootRefs link subvolumes parent→child for normal subvolumes and
+// A RootRef links subvolumes parent→child for normal subvolumes and
 // base→snapshot for snapshot subvolumes.  BACKREF items go the other
 // direction; child→parent and snapshot→base.
+//
+// Key:
 //
 //	               ROOT_REF                   | ROOT_BACKREF
 //	key.objectid = ID of the parent subvolume | ID of the child subvolume

@@ -12,7 +12,7 @@ type _Ordered[T any] interface {
 	Compare(T) int
 }
 
-// An Ordered[T] is a type that has a
+// An Ordered is a type that has a
 //
 //	func (a T) Compare(b T) int
 //
@@ -36,10 +36,10 @@ type NativeOrdered[T constraints.Ordered] struct {
 	Val T
 }
 
-// NativeCompare[T] implements the Ordered[T] Compare operation for
+// NativeCompare implements the Ordered[T] Compare operation for
 // natively-ordered (integer types, float types, and string types).
-// While this operation be conceptualized as subtration,
-// NativeCompare[T] is careful to avoid integer overflow.
+// While this operation be conceptualized as subtration, NativeCompare
+// is careful to avoid integer overflow.
 func NativeCompare[T constraints.Ordered](a, b T) int {
 	switch {
 	case a < b:

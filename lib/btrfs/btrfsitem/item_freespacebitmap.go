@@ -4,8 +4,13 @@
 
 package btrfsitem
 
-// key.objectid = object ID of the FreeSpaceInfo (logical_addr)
-// key.offset = offset of the FreeSpaceInfo (size)
+// FreeSpaceBitmap is used in conjunction with FreeSpaceInfo for
+// highly-fragmented blockgroups.
+//
+// Key:
+//
+//	key.objectid = object ID of the FreeSpaceInfo (logical_addr)
+//	key.offset   = offset of the FreeSpaceInfo (size)
 type FreeSpaceBitmap struct { // complex FREE_SPACE_BITMAP=200
 	Bitmap []byte
 }

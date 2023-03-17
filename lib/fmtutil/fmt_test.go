@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -53,11 +53,11 @@ func (st FmtState) Flag(b int) bool {
 	return false
 }
 
-func (st FmtState) Write([]byte) (int, error) {
+func (FmtState) Write([]byte) (int, error) {
 	panic("not implemented")
 }
 
-func (dst *FmtState) Format(src fmt.State, verb rune) {
+func (dst *FmtState) Format(src fmt.State, _ rune) {
 	if width, ok := src.Width(); ok {
 		dst.MWidth = width
 	}

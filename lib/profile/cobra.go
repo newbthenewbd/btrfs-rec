@@ -67,7 +67,7 @@ func (fv *flagValue) Set(filename string) error {
 }
 
 // Type implements pflag.Value.
-func (fv *flagValue) Type() string { return "filename" }
+func (*flagValue) Type() string { return "filename" }
 
 func pStart(name string) startFunc {
 	return func(w io.Writer) (StopFunc, error) {

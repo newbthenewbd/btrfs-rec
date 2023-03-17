@@ -9,8 +9,13 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
-// key.objectid = 0
-// key.offset = ID of the qgroup
+// QGroupInfo tracks the amount of space used by a given qgroup in the
+// containing subvolume.
+//
+// Key:
+//
+//	key.objectid = 0
+//	key.offset   = ID of the qgroup
 type QGroupInfo struct { // trivial QGROUP_INFO=242
 	Generation                btrfsprim.Generation `bin:"off=0, siz=8"`
 	ReferencedBytes           uint64               `bin:"off=8, siz=8"`

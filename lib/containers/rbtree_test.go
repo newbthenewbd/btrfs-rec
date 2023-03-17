@@ -108,25 +108,25 @@ func checkRBTree[T constraints.Ordered](t *testing.T, expectedSet Set[T], tree *
 }
 
 func FuzzRBTree(f *testing.F) {
-	Ins := uint8(0b0100_0000)
-	Del := uint8(0)
+	ins := uint8(0b0100_0000)
+	del := uint8(0)
 
 	f.Add([]uint8{})
-	f.Add([]uint8{Ins | 5, Del | 5})
-	f.Add([]uint8{Ins | 5, Del | 6})
-	f.Add([]uint8{Del | 6})
+	f.Add([]uint8{ins | 5, del | 5})
+	f.Add([]uint8{ins | 5, del | 6})
+	f.Add([]uint8{del | 6})
 
 	f.Add([]uint8{ // CLRS Figure 14.4
-		Ins | 1,
-		Ins | 2,
-		Ins | 5,
-		Ins | 7,
-		Ins | 8,
-		Ins | 11,
-		Ins | 14,
-		Ins | 15,
+		ins | 1,
+		ins | 2,
+		ins | 5,
+		ins | 7,
+		ins | 8,
+		ins | 11,
+		ins | 14,
+		ins | 15,
 
-		Ins | 4,
+		ins | 4,
 	})
 
 	f.Fuzz(func(t *testing.T, dat []uint8) {

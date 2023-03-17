@@ -12,11 +12,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
-// key.objectid = inode number of the file
-// key.offset = inode number of the parent directory
+// An InodeRefs item is a set of back-references that point to a given
+// Inode.
 //
-// Might have multiple entries if the same file has multiple hardlinks
-// in the same directory.
+// Key:
+//
+//	key.objectid = inode number of the file
+//	key.offset   = inode number of the parent directory
+//
+// There might be multiple back-references in a single InodeRef item
+// if the same file has multiple hardlinks in the same directory.
 type InodeRefs struct { // complex INODE_REF=12
 	Refs []InodeRef
 }

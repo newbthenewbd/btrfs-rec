@@ -21,7 +21,10 @@ type Key struct {
 
 const MaxOffset uint64 = math.MaxUint64
 
-// mimics print-tree.c:btrfs_print_key()
+// Format returns a human-friendly string representation of the Key,
+// according to which tree it appears in.
+//
+// The formatting of the key mimics print-tree.c:btrfs_print_key().
 func (key Key) Format(tree ObjID) string {
 	switch tree {
 	case UUID_TREE_OBJECTID:
@@ -39,12 +42,11 @@ func (key Key) Format(tree ObjID) string {
 			return fmt.Sprintf("(%v %v -1)",
 				key.ObjectID.Format(tree),
 				key.ItemType)
-		} else {
-			return fmt.Sprintf("(%v %v %v)",
-				key.ObjectID.Format(tree),
-				key.ItemType,
-				key.Offset)
 		}
+		return fmt.Sprintf("(%v %v %v)",
+			key.ObjectID.Format(tree),
+			key.ItemType,
+			key.Offset)
 	}
 }
 

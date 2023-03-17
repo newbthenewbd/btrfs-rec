@@ -11,10 +11,20 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
-// Maps logical address to physical.
+// A Chunk maps logical addresses to physical addresses.
 //
-// key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID
-// key.offset = logical_addr
+// Compare with:
+//   - DevExtents, which track allocation of the physical address space.
+//   - BlockGroups, which track allocation of the logical address space.
+//
+// The relationship between the three is
+//
+//	DevExtent---[many:one]---Chunk---[one:one]---BlockGroup
+//
+// Key:
+//
+//	key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID
+//	key.offset   = logical_addr
 type Chunk struct { // complex CHUNK_ITEM=228
 	Head    ChunkHeader
 	Stripes []ChunkStripe

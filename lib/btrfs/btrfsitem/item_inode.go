@@ -10,8 +10,10 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
-// key.objectid = inode number
-// key.offset = 0
+// Inode is a file/dir/whatever in the filesystem.
+//
+//	key.objectid = inode number
+//	key.offset   = 0
 type Inode struct { // trivial INODE_ITEM=1
 	Generation    btrfsprim.Generation `bin:"off=0x00, siz=0x08"`
 	TransID       int64                `bin:"off=0x08, siz=0x08"`

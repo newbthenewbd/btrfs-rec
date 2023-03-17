@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfsitem contains the definitions of all "items" that may
+// be stored in a btrfs tree.
 package btrfsitem
 
 import (
@@ -56,7 +58,11 @@ func (o *Error) UnmarshalBinary(dat []byte) (int, error) {
 	return len(dat), nil
 }
 
-// Rather than returning a separate error value, return an Error item.
+// UnmarshalItem consumes the byte slice `dat`, unmarshaling it in to
+// the item type specified by `key`.
+//
+// If there is an error, rather than returning a separate error value,
+// return an Error item.
 func UnmarshalItem(key btrfsprim.Key, csumType btrfssum.CSumType, dat []byte) Item {
 	var gotyp reflect.Type
 	if key.ItemType == UNTYPED_KEY {

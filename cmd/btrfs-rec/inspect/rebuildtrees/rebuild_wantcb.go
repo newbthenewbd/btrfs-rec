@@ -20,7 +20,7 @@ import (
 )
 
 // FSErr implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) FSErr(ctx context.Context, e error) {
+func (*rebuilder) FSErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 

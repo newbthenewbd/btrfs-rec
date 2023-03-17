@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package btrfstree contains core b+-tree implementation and
+// interfaces.
 package btrfstree
 
 import (

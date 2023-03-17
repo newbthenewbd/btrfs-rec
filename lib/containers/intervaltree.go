@@ -39,7 +39,7 @@ type IntervalTree[K Ordered[K], V any] struct {
 	inner RBTree[intervalValue[K, V]]
 }
 
-func (t *IntervalTree[K, V]) attrFn(node *RBNode[intervalValue[K, V]]) {
+func (*IntervalTree[K, V]) attrFn(node *RBNode[intervalValue[K, V]]) {
 	max := node.Value.ValSpan.Max
 	if node.Left != nil && node.Left.Value.ChildSpan.Max.Compare(max) > 0 {
 		max = node.Left.Value.ChildSpan.Max

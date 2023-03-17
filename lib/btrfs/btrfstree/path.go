@@ -101,23 +101,22 @@ func (elem TreePathElem) writeNodeTo(w io.Writer) {
 func (path TreePath) String() string {
 	if len(path) == 0 {
 		return "(empty-path)"
-	} else {
-		var ret strings.Builder
-		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
-		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
-			ret.WriteString("(empty-path)")
-		} else {
-			path[0].writeNodeTo(&ret)
-		}
-		for _, elem := range path[1:] {
-			fmt.Fprintf(&ret, "[%v]", elem.FromItemSlot)
-			if elem.ToNodeAddr != 0 {
-				ret.WriteString("->")
-				elem.writeNodeTo(&ret)
-			}
-		}
-		return ret.String()
 	}
+	var ret strings.Builder
+	fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
+	if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
+		ret.WriteString("(empty-path)")
+	} else {
+		path[0].writeNodeTo(&ret)
+	}
+	for _, elem := range path[1:] {
+		fmt.Fprintf(&ret, "[%v]", elem.FromItemSlot)
+		if elem.ToNodeAddr != 0 {
+			ret.WriteString("->")
+			elem.writeNodeTo(&ret)
+		}
+	}
+	return ret.String()
 }
 
 func (path TreePath) DeepCopy() TreePath {
@@ -128,9 +127,10 @@ func (path TreePath) Parent() TreePath {
 	return path[:len(path)-1]
 }
 
-// path.Node(x) is like &path[x], but negative values of x move down
-// from the end of path (similar to how lists work in many other
-// languages, such as Python).
+// Node is returns an element from the path; `path.Node(x)` is like
+// `&path[x]`, but negative values of x move down from the end of path
+// (similar to how lists work in many other languages, such as
+// Python).
 func (path TreePath) Node(x int) *TreePathElem {
 	if x < 0 {
 		x += len(path)

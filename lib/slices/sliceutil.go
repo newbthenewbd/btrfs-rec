@@ -1,7 +1,9 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// Package slices implements generic (type-parameterized) utilities
+// for working with simple Go slices.
 package slices
 
 import (
@@ -93,7 +95,7 @@ func max(a, b int) int {
 	return b
 }
 
-// Search the slice for a value for which `fn(slice[i]) = 0`.
+// Search searches the slice for a value for which `fn(slice[i]) = 0`.
 //
 //	: + + + 0 0 0 - - -
 //	:       ^ ^ ^
@@ -121,7 +123,8 @@ func Search[T any](slice []T, fn func(T) int) (int, bool) {
 	return 0, false
 }
 
-// Search the slice for the left-most value for which `fn(slice[i]) = 0`.
+// SearchLowest searches the slice for the left-most value for which
+// `fn(slice[i]) = 0`.
 //
 //	: + + + 0 0 0 - - -
 //	:       ^
@@ -151,7 +154,8 @@ func SearchLowest[T any](slice []T, fn func(T) int) (int, bool) {
 	return firstGood, true
 }
 
-// Search the slice for the right-most value for which `fn(slice[i]) = 0`.
+// SearchHighest searches the slice for the right-most value for which
+// `fn(slice[i]) = 0`.
 //
 //	: + + + 0 0 0 - - -
 //	:           ^

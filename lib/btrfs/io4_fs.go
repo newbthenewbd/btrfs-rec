@@ -122,7 +122,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 		})
 		if err != nil {
 			val.Errs = append(val.Errs, err)
-			return
+			return val
 		}
 
 		switch itemBody := item.Body.(type) {
@@ -135,7 +135,7 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 			panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
 		}
 
-		return
+		return val
 	})
 	if val.InodeItem == nil {
 		return nil, val.Errs
@@ -156,7 +156,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			if len(items) == 0 {
-				return
+				return val
 			}
 		}
 		for _, item := range items {
@@ -190,7 +190,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 				val.OtherItems = append(val.OtherItems, item)
 			}
 		}
-		return
+		return val
 	})
 	if val.InodeItem == nil && val.OtherItems == nil {
 		return nil, val.Errs
@@ -205,12 +205,12 @@ func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
 		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {
 			val.Errs = append(val.Errs, err)
-			return
+			return val
 		}
 		val.FullInode = *fullInode
 		val.SV = sv
 		val.populate()
-		return
+		return val
 	})
 	if val.Inode == 0 {
 		return nil, val.Errs
@@ -342,12 +342,12 @@ func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
 		fullInode, err := sv.LoadFullInode(inode)
 		if err != nil {
 			val.Errs = append(val.Errs, err)
-			return
+			return val
 		}
 		val.FullInode = *fullInode
 		val.SV = sv
 		val.populate()
-		return
+		return val
 	})
 	if val.Inode == 0 {
 		return nil, val.Errs
