@@ -34,8 +34,14 @@ func (f QGroupLimitFlags) String() string {
 	return fmtutil.BitfieldString(f, qgroupLimitFlagNames, fmtutil.HexNone)
 }
 
-// key.objectid = 0
-// key.offset = ID of the qgroup
+// QGroupLimit configures the maximum permissible amount of space that
+// a given qgroup can consume (tracked in a QGroupInfo item) on the
+// containing subvolume.
+//
+// Key:
+//
+//	key.objectid = 0
+//	key.offset   = ID of the qgroup
 type QGroupLimit struct { // trivial QGROUP_LIMIT=244
 	Flags         QGroupLimitFlags `bin:"off=0, siz=8"`
 	MaxReferenced uint64           `bin:"off=8, siz=8"`

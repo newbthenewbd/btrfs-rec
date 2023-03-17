@@ -10,8 +10,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// key.objectid = BTRFS_DEV_ITEMS_OBJECTID
-// key.offset = device_id (starting at 1)
+// A Dev describes a physical volume that is part of the filesystem.
+//
+// Key:
+//
+//	key.objectid = BTRFS_DEV_ITEMS_OBJECTID
+//	key.offset   = device_id (starting at 1)
 type Dev struct { // trivial DEV_ITEM=216
 	DevID btrfsvol.DeviceID `bin:"off=0x0,    siz=0x8"`
 

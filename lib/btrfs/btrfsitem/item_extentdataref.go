@@ -9,8 +9,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
-// key.objectid = laddr of the extent being referenced
-// key.offset = crc32c([root,objectid,offset])
+// ExtentDataRef is part of an Extent.
+//
+// Key:
+//
+//	key.objectid = laddr of the extent being referenced
+//	key.offset   = crc32c([root,objectid,offset])
 type ExtentDataRef struct { // trivial EXTENT_DATA_REF=178
 	Root          btrfsprim.ObjID `bin:"off=0, siz=8"`  // subvolume tree ID that references this extent
 	ObjectID      btrfsprim.ObjID `bin:"off=8, siz=8"`  // inode number that references this extent within the .Root subvolume

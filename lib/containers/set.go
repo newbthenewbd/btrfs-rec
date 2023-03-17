@@ -14,7 +14,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
-// Set[T] is an unordered set of T.
+// Set is an unordered set of T.
 type Set[T comparable] map[T]struct{}
 
 var (

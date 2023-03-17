@@ -11,8 +11,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// key.objectid = BTRFS_EXTENT_CSUM_OBJECTID
-// key.offset = laddr of checksummed region
+// An ExtentCSum checksums regions of the logical address space.
+//
+// Key:
+//
+//	key.objectid = BTRFS_EXTENT_CSUM_OBJECTID
+//	key.offset   = laddr of checksummed region
 type ExtentCSum struct { // trivial EXTENT_CSUM=128
 	// Checksum of each sector starting at key.offset
 	btrfssum.SumRun[btrfsvol.LogicalAddr]

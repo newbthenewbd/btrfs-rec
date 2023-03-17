@@ -32,8 +32,14 @@ func (f QGroupStatusFlags) String() string {
 
 const QGroupStatusVersion uint64 = 1
 
-// key.objectid = 0
-// key.offset = 0
+// A QGroupStatus holds the qgroup state of a subvolume (I think that
+// implies that the QGroupStatus goes in the subvolume tree that it is
+// describing?).
+//
+// Key:
+//
+//	key.objectid = 0
+//	key.offset   = 0
 type QGroupStatus struct { // trivial QGROUP_STATUS=240
 	Version        uint64               `bin:"off=0, siz=8"`
 	Generation     btrfsprim.Generation `bin:"off=8, siz=8"`

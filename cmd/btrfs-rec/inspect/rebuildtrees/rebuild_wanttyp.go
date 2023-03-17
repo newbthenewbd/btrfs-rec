@@ -23,8 +23,9 @@ const (
 	offsetName
 )
 
-// TODO(lukeshu): Delete the 'Want' type in favor of btrfstree.Search.
 type Want struct {
+	// TODO(lukeshu): Delete the 'Want' type in favor of
+	// btrfstree.Search.
 	ObjectID   btrfsprim.ObjID
 	ItemType   btrfsprim.ItemType
 	OffsetType wantOffsetType

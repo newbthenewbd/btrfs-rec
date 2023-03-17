@@ -13,8 +13,22 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
-// key.objectid = laddr of the extent
-// key.offset = length of the extent
+// Extent items map from regions in the logical address space to
+// regions in a file.
+//
+// Compare with:
+//
+//   - Metadata, which are like Extents but without .Info.
+//   - FileExtents, which map from regions in a file to regions in the
+//     logical address space.
+//
+// An Extent may contain (inline or not) several ExtentDataRef items
+// and/or ShareDataRef items.
+//
+// Key:
+//
+//	key.objectid = laddr of the extent
+//	key.offset   = length of the extent
 type Extent struct { // complex EXTENT_ITEM=168
 	Head ExtentHeader
 	Info TreeBlockInfo // only if .Head.Flags.Has(EXTENT_FLAG_TREE_BLOCK)

@@ -89,7 +89,6 @@ linters-settings:
     checks:
       - "all"
       - "-ST1003" # CONST_VAL names for consistency with other btrfs code
-      - "-ST1021" # TODO: get this to pass: "comment on exported type XXX should be of the form "XXX ...""
   tagliatelle:
     case:
       use-field-name: true

@@ -8,7 +8,22 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/binstruct"
 )
 
+// Metadata items map from regions in the logical address space to
+// regions in a file.
+//
 // Metadata is like Extent, but doesn't have .Info.
+//
+// Compare with:
+//
+//   - Extents, which are the same as Metadata, but have an extra
+//     .Info member.
+//   - FileExtents, which map from regions in a file to regions in the
+//     logical address space.
+//
+// Key:
+//
+//	key.objectid = laddr of the extent
+//	key.offset   = length of the extent
 type Metadata struct { // complex METADATA_ITEM=169
 	Head ExtentHeader
 	Refs []ExtentInlineRef

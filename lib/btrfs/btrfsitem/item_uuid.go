@@ -11,11 +11,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 )
 
-// The Key for this item is a UUID, and the item is a subvolume IDs
+// A UUIDMap item goes in the UUID_TREE and maps from a UUID to a
+// btrfsprim.ObjID.
+//
+// The Key for this item is a UUID, and the item is a subvolume ID
 // that UUID maps to.
 //
-// key.objectid = first half of UUID
-// key.offset = second half of UUID
+// Key:
+//
+//	key.objectid = first half of UUID
+//	key.offset   = second half of UUID
 type UUIDMap struct { // trivial UUID_SUBVOL=251 UUID_RECEIVED_SUBVOL=252
 	ObjID         btrfsprim.ObjID `bin:"off=0, siz=8"`
 	binstruct.End `bin:"off=8"`

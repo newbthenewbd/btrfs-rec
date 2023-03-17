@@ -11,10 +11,17 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
-// key.objectid = tree ID
-// key.offset = either
-//   - 0 if objectid is one of the BTRFS_*_TREE_OBJECTID defines or a non-snapshot volume; or
-//   - transaction_id of when this snapshot was created
+// A Root goes in the ROOT_TREE and defines one of the other trees in
+// the filesystem.  All trees have a Root item describing them, except
+// for the ROOT_TREE, CHUNK_TREE, TREE_LOG, and BLOCK_GROUP_TREE,
+// which are defined directly in the superblock.
+//
+// Key:
+//
+//	key.objectid = tree ID
+//	key.offset   = one of:
+//	   - 0 if objectid is one of the BTRFS_*_TREE_OBJECTID defines or a non-snapshot volume; or
+//	   - transaction_id of when this snapshot was created
 type Root struct { // trivial ROOT_ITEM=132
 	Inode         Inode                `bin:"off=0x000, siz=0xa0"` // ???
 	Generation    btrfsprim.Generation `bin:"off=0x0a0, siz=0x08"`

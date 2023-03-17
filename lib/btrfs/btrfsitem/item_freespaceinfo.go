@@ -9,8 +9,14 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/fmtutil"
 )
 
-// key.objectid = object ID of the BlockGroup (logical_addr)
-// key.offset = offset of the BlockGroup (size)
+// FreeSpaceInfo is the main way (v2) that free space is tracked in a
+// BlockGroup.  For highly-fragmented blockgorups, it may be augmented
+// by a FreeSpaceBitmap.
+//
+// Key:
+//
+//	key.objectid = object ID of the BlockGroup (logical_addr)
+//	key.offset   = offset of the BlockGroup (size)
 type FreeSpaceInfo struct { // trivial FREE_SPACE_INFO=198
 	ExtentCount   int32          `bin:"off=0, siz=4"`
 	Flags         FreeSpaceFlags `bin:"off=4, siz=4"`

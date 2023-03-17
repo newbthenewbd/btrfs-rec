@@ -12,8 +12,19 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
-// key.objectid = inode
-// key.offset = offset within file
+// FileExtent items map from regions in a file to regions in the
+// logical address space.
+//
+// Compare with:
+//
+//   - Extents, which map from regions in the logical address space to
+//     regions in a file.
+//   - Metadata, which are like Extents but without .Info.
+//
+// Key:
+//
+//	key.objectid = inode
+//	key.offset   = offset within file
 type FileExtent struct { // complex EXTENT_DATA=108
 	Generation btrfsprim.Generation `bin:"off=0x0, siz=0x8"` // transaction ID that created this extent
 	RAMBytes   int64                `bin:"off=0x8, siz=0x8"` // upper bound of what compressed data will decompress to

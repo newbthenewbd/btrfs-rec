@@ -19,10 +19,14 @@ func NameHash(dat []byte) uint64 {
 	return uint64(^crc32.Update(1, crc32.MakeTable(crc32.Castagnoli), dat))
 }
 
-// key.objectid = inode of directory containing this entry
-// key.offset =
-//   - for DIR_ITEM and XATTR_ITEM = NameHash(name)
-//   - for DIR_INDEX               = index id in the directory (starting at 2, because "." and "..")
+// A DirEntry is an member of a directory.
+//
+// Key:
+//
+//	key.objectid = inode of directory containing this entry
+//	key.offset   = one of:
+//	  - for DIR_ITEM and XATTR_ITEM = NameHash(name)
+//	  - for DIR_INDEX               = index id in the directory (starting at 2, because of "." and "..")
 type DirEntry struct { // complex DIR_ITEM=84 DIR_INDEX=96 XATTR_ITEM=24
 	Location      btrfsprim.Key `bin:"off=0x0, siz=0x11"`
 	TransID       int64         `bin:"off=0x11, siz=8"`
