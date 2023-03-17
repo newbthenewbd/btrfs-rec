@@ -47,7 +47,6 @@ linters:
     - exhaustruct
     - gochecknoglobals
     - gochecknoinits
-    - revive # TODO: get this to pass
     - testpackage
     - thelper
     - varnamelen
@@ -85,6 +84,9 @@ linters-settings:
     require-specific: true
     allow-no-explanation:
       - dupword
+  revive:
+    rules:
+      - { name: exported, disabled: true } # TODO: Add doc comments to exported identifiers
   stylecheck:
     checks:
       - "all"
