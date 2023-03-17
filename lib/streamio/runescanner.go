@@ -89,7 +89,7 @@ func (rs *runeScanner) ReadRune() (r rune, size int, err error) {
 			rs.progressWriter.Set(rs.progress)
 		}
 	}
-	return
+	return r, size, err
 }
 
 // ReadRune implements io.RuneScanner.

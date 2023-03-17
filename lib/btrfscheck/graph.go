@@ -47,7 +47,7 @@ func HandleItemWouldBeNoOp(typ btrfsprim.ItemType) bool {
 	}
 }
 
-func HandleItem(o GraphCallbacks, ctx context.Context, treeID btrfsprim.ObjID, item btrfstree.Item) {
+func HandleItem(ctx context.Context, o GraphCallbacks, treeID btrfsprim.ObjID, item btrfstree.Item) {
 	// Notionally, just express the relationships shown in
 	// https://btrfs.wiki.kernel.org/index.php/File:References.png (from the page
 	// https://btrfs.wiki.kernel.org/index.php/Data_Structures )

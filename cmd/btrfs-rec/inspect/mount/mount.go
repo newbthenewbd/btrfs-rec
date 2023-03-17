@@ -482,4 +482,4 @@ func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error {
 	return nil
 }
 
-func (sv *subvolume) Destroy() {}
+func (*subvolume) Destroy() {}

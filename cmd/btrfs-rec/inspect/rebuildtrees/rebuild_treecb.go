@@ -14,7 +14,7 @@ import (
 )
 
 // AddedItem implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
+func (o *rebuilder) AddedItem(_ context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	o.addedItemQueue.Insert(keyAndTree{
 		TreeID: tree,
 		Key:    key,
@@ -22,7 +22,7 @@ func (o *rebuilder) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btr
 }
 
 // AddedRoot implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr) {
+func (o *rebuilder) AddedRoot(_ context.Context, tree btrfsprim.ObjID, _ btrfsvol.LogicalAddr) {
 	if retries := o.retryItemQueue[tree]; retries != nil {
 		o.addedItemQueue.InsertFrom(retries)
 	}

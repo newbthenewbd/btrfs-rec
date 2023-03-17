@@ -188,7 +188,8 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			return nil, nil, err
 		}
 
-		if node.Data.Head.Level > 0 {
+		switch {
+		case node.Data.Head.Level > 0:
 			// interior node
 
 			// Search for the right-most node.Data.BodyInterior item for which
@@ -220,7 +221,7 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 				ToMaxKey:         toMaxKey,
 			})
 			FreeNodeRef(node)
-		} else {
+		default:
 			// leaf node
 
 			// Search for a member of node.Data.BodyLeaf for which

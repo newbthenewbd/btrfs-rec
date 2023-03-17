@@ -113,20 +113,22 @@ type NodeHeader struct {
 // .Head.NumItems.
 func (node Node) MaxItems() uint32 {
 	bodyBytes := node.Size - uint32(nodeHeaderSize)
-	if node.Head.Level > 0 {
+	switch {
+	case node.Head.Level > 0:
 		return bodyBytes / uint32(keyPointerSize)
-	} else {
+	default:
 		return bodyBytes / uint32(itemHeaderSize)
 	}
 }
 
 func (node Node) MinItem() (btrfsprim.Key, bool) {
-	if node.Head.Level > 0 {
+	switch {
+	case node.Head.Level > 0:
 		if len(node.BodyInterior) == 0 {
 			return btrfsprim.Key{}, false
 		}
 		return node.BodyInterior[0].Key, true
-	} else {
+	default:
 		if len(node.BodyLeaf) == 0 {
 			return btrfsprim.Key{}, false
 		}
@@ -135,12 +137,13 @@ func (node Node) MinItem() (btrfsprim.Key, bool) {
 }
 
 func (node Node) MaxItem() (btrfsprim.Key, bool) {
-	if node.Head.Level > 0 {
+	switch {
+	case node.Head.Level > 0:
 		if len(node.BodyInterior) == 0 {
 			return btrfsprim.Key{}, false
 		}
 		return node.BodyInterior[len(node.BodyInterior)-1].Key, true
-	} else {
+	default:
 		if len(node.BodyLeaf) == 0 {
 			return btrfsprim.Key{}, false
 		}
@@ -221,15 +224,15 @@ func (node Node) MarshalBinary() ([]byte, error) {
 
 	buf := make([]byte, node.Size)
 
-	if bs, err := binstruct.Marshal(node.Head); err != nil {
+	bs, err := binstruct.Marshal(node.Head)
+	if err != nil {
 		return buf, err
-	} else {
-		if len(bs) != nodeHeaderSize {
-			return nil, fmt.Errorf("header is %v bytes but expected %v",
-				len(bs), nodeHeaderSize)
-		}
-		copy(buf, bs)
 	}
+	if len(bs) != nodeHeaderSize {
+		return nil, fmt.Errorf("header is %v bytes but expected %v",
+			len(bs), nodeHeaderSize)
+	}
+	copy(buf, bs)
 
 	if node.Head.Level > 0 {
 		if err := node.marshalInteriorTo(buf[nodeHeaderSize:]); err != nil {

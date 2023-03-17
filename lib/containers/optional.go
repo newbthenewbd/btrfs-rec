@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -19,11 +19,10 @@ var (
 )
 
 func (o Optional[T]) MarshalJSON() ([]byte, error) {
-	if o.OK {
-		return json.Marshal(o.Val)
-	} else {
+	if !o.OK {
 		return []byte("null"), nil
 	}
+	return json.Marshal(o.Val)
 }
 
 func (o *Optional[T]) UnmarshalJSON(dat []byte) error {

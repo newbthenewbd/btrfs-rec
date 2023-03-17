@@ -42,12 +42,11 @@ func (key Key) Format(tree ObjID) string {
 			return fmt.Sprintf("(%v %v -1)",
 				key.ObjectID.Format(tree),
 				key.ItemType)
-		} else {
-			return fmt.Sprintf("(%v %v %v)",
-				key.ObjectID.Format(tree),
-				key.ItemType,
-				key.Offset)
 		}
+		return fmt.Sprintf("(%v %v %v)",
+			key.ObjectID.Format(tree),
+			key.ItemType,
+			key.Offset)
 	}
 }
 

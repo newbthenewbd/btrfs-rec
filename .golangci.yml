@@ -85,8 +85,33 @@ linters-settings:
     allow-no-explanation:
       - dupword
   revive:
+    enable-all-rules: true
     rules:
+      - { name: call-to-gc, disabled: true }
       - { name: exported, disabled: true } # TODO: Add doc comments to exported identifiers
+      - { name: file-header, disabled: true } # TODO: This might actually be useful for copyright
+      - { name: flag-parameter, disabled: true }
+      - { name: modifies-value-receiver, disabled: true }
+      - { name: unexported-return, disabled: true }
+      # Style.
+      - { name: banned-characters, disabled: true }
+      - { name: line-length-limit, disabled: true }
+      - { name: nested-structs, disabled: true }
+      - { name: var-naming, disabled: true }
+      # Complexity; sometimes code is just complex.
+      - { name: argument-limit, disabled: true }
+      - { name: cognitive-complexity, disabled: true }
+      - { name: cyclomatic, disabled: true }
+      - { name: function-length, disabled: true }
+      - { name: function-result-limit, disabled: true }
+      - { name: max-public-structs, disabled: true }
+      # Duplicates.
+      - { name: add-constant, disabled: true } # duplicates gomnd
+      - { name: receiver-naming, disabled: true } # duplicates stylecheck ST1016
+      - { name: unhandled-error, disabled: true } # duplicates errcheck
+      # Buggy.
+      - { name: confusing-naming, disabled: true } # false positive on methods implementing interfaces
+      - { name: import-shadowing, disabled: true } # false positive on methods
   stylecheck:
     checks:
       - "all"

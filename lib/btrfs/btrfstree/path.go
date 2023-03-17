@@ -101,23 +101,22 @@ func (elem TreePathElem) writeNodeTo(w io.Writer) {
 func (path TreePath) String() string {
 	if len(path) == 0 {
 		return "(empty-path)"
-	} else {
-		var ret strings.Builder
-		fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
-		if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
-			ret.WriteString("(empty-path)")
-		} else {
-			path[0].writeNodeTo(&ret)
-		}
-		for _, elem := range path[1:] {
-			fmt.Fprintf(&ret, "[%v]", elem.FromItemSlot)
-			if elem.ToNodeAddr != 0 {
-				ret.WriteString("->")
-				elem.writeNodeTo(&ret)
-			}
-		}
-		return ret.String()
 	}
+	var ret strings.Builder
+	fmt.Fprintf(&ret, "%s->", path[0].FromTree.Format(btrfsprim.ROOT_TREE_OBJECTID))
+	if len(path) == 1 && path[0] == (TreePathElem{FromTree: path[0].FromTree, FromItemSlot: -1}) {
+		ret.WriteString("(empty-path)")
+	} else {
+		path[0].writeNodeTo(&ret)
+	}
+	for _, elem := range path[1:] {
+		fmt.Fprintf(&ret, "[%v]", elem.FromItemSlot)
+		if elem.ToNodeAddr != 0 {
+			ret.WriteString("->")
+			elem.writeNodeTo(&ret)
+		}
+	}
+	return ret.String()
 }
 
 func (path TreePath) DeepCopy() TreePath {

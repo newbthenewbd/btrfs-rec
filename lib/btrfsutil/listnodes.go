@@ -30,7 +30,7 @@ func (s nodeStats) String() string {
 
 var _ DeviceScanner[nodeStats, containers.Set[btrfsvol.LogicalAddr]] = (*nodeScanner)(nil)
 
-func newNodeScanner(ctx context.Context, sb btrfstree.Superblock, numBytes btrfsvol.PhysicalAddr, numSectors int) DeviceScanner[nodeStats, containers.Set[btrfsvol.LogicalAddr]] {
+func newNodeScanner(context.Context, btrfstree.Superblock, btrfsvol.PhysicalAddr, int) DeviceScanner[nodeStats, containers.Set[btrfsvol.LogicalAddr]] {
 	s := new(nodeScanner)
 	s.nodes = make(containers.Set[btrfsvol.LogicalAddr])
 	return s
@@ -40,16 +40,16 @@ func (s *nodeScanner) ScanStats() nodeStats {
 	return nodeStats{numNodes: len(s.nodes)}
 }
 
-func (*nodeScanner) ScanSector(ctx context.Context, dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) error {
+func (*nodeScanner) ScanSector(context.Context, *btrfs.Device, btrfsvol.PhysicalAddr) error {
 	return nil
 }
 
-func (s *nodeScanner) ScanNode(ctx context.Context, nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Node]) error {
+func (s *nodeScanner) ScanNode(_ context.Context, nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Node]) error {
 	s.nodes.Insert(nodeRef.Data.Head.Addr)
 	return nil
 }
 
-func (s *nodeScanner) ScanDone(ctx context.Context) (containers.Set[btrfsvol.LogicalAddr], error) {
+func (s *nodeScanner) ScanDone(_ context.Context) (containers.Set[btrfsvol.LogicalAddr], error) {
 	return s.nodes, nil
 }
 

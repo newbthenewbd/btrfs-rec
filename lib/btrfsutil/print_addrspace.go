@@ -49,7 +49,7 @@ func PrintPhysicalSpace(out io.Writer, fs *btrfs.FS) {
 		return mappings[i].PAddr.Compare(mappings[j].PAddr) < 0
 	})
 
-	var prevDev btrfsvol.DeviceID = 0
+	var prevDev btrfsvol.DeviceID
 	var prevEnd btrfsvol.PhysicalAddr
 	var sumHole, sumExt btrfsvol.AddrDelta
 	for _, mapping := range mappings {
