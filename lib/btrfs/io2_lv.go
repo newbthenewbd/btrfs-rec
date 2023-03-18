@@ -168,7 +168,7 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 			errs = append(errs, err)
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
 				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
 					return nil
 				}

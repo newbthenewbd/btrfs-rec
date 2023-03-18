@@ -11,7 +11,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -44,8 +43,8 @@ func (*nodeScanner) ScanSector(context.Context, *btrfs.Device, btrfsvol.Physical
 	return nil
 }
 
-func (s *nodeScanner) ScanNode(_ context.Context, nodeRef *diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Node]) error {
-	s.nodes.Insert(nodeRef.Data.Head.Addr)
+func (s *nodeScanner) ScanNode(_ context.Context, _ btrfsvol.PhysicalAddr, node *btrfstree.Node) error {
+	s.nodes.Insert(node.Head.Addr)
 	return nil
 }
 

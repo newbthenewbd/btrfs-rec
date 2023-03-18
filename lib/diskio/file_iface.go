@@ -9,11 +9,15 @@ import (
 	"io"
 )
 
+type ReaderAt[A ~int64] interface {
+	ReadAt(p []byte, off A) (n int, err error)
+}
+
 type File[A ~int64] interface {
 	Name() string
 	Size() A
-	Close() error
-	ReadAt(p []byte, off A) (n int, err error)
+	io.Closer
+	ReaderAt[A]
 	WriteAt(p []byte, off A) (n int, err error)
 }
 

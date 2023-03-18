@@ -34,13 +34,13 @@ func init() {
 					dlog.Error(ctx, err)
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
-					Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+					Item: func(path btrfstree.Path, item btrfstree.Item) error {
 						textui.Fprintf(os.Stdout, "%s = ", path)
 						spew.Dump(item)
 						_, _ = os.Stdout.WriteString("\n")
 						return nil
 					},
-					BadItem: func(path btrfstree.TreePath, item btrfstree.Item) error {
+					BadItem: func(path btrfstree.Path, item btrfstree.Item) error {
 						textui.Fprintf(os.Stdout, "%s = ", path)
 						spew.Dump(item)
 						_, _ = os.Stdout.WriteString("\n")

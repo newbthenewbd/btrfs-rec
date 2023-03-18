@@ -131,8 +131,8 @@ func (g Graph) insertTreeRoot(sb btrfstree.Superblock, treeID btrfsprim.ObjID) {
 	})
 }
 
-func NewGraph(sb btrfstree.Superblock) *Graph {
-	g := &Graph{
+func NewGraph(sb btrfstree.Superblock) Graph {
+	g := Graph{
 		Nodes:     make(map[btrfsvol.LogicalAddr]GraphNode),
 		BadNodes:  make(map[btrfsvol.LogicalAddr]error),
 		EdgesFrom: make(map[btrfsvol.LogicalAddr][]*GraphEdge),
@@ -149,29 +149,29 @@ func NewGraph(sb btrfstree.Superblock) *Graph {
 	return g
 }
 
-func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) {
+func (g Graph) InsertNode(node *btrfstree.Node) {
 	nodeData := GraphNode{
-		Level:      nodeRef.Data.Head.Level,
-		Generation: nodeRef.Data.Head.Generation,
-		Owner:      nodeRef.Data.Head.Owner,
+		Level:      node.Head.Level,
+		Generation: node.Head.Generation,
+		Owner:      node.Head.Owner,
 	}
 
-	if nodeRef.Data.Head.Level == 0 {
+	if node.Head.Level == 0 {
 		cnt := 0
-		for _, item := range nodeRef.Data.BodyLeaf {
+		for _, item := range node.BodyLeaf {
 			if _, ok := item.Body.(*btrfsitem.Root); ok {
 				cnt++
 			}
 		}
 		kps := make([]GraphEdge, 0, cnt)
-		keys := make([]btrfsprim.Key, len(nodeRef.Data.BodyLeaf))
+		keys := make([]btrfsprim.Key, len(node.BodyLeaf))
 		nodeData.Items = keys
-		g.Nodes[nodeRef.Addr] = nodeData
-		for i, item := range nodeRef.Data.BodyLeaf {
+		g.Nodes[node.Head.Addr] = nodeData
+		for i, item := range node.BodyLeaf {
 			keys[i] = item.Key
 			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
 				kps = append(kps, GraphEdge{
-					FromRoot:     nodeRef.Addr,
+					FromRoot:     node.Head.Addr,
 					FromItem:     i,
 					FromTree:     item.Key.ObjectID,
 					ToNode:       itemBody.ByteNr,
@@ -182,15 +182,15 @@ func (g Graph) InsertNode(nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.No
 			}
 		}
 	} else {
-		g.Nodes[nodeRef.Addr] = nodeData
-		kps := make([]GraphEdge, len(nodeRef.Data.BodyInterior))
-		for i, kp := range nodeRef.Data.BodyInterior {
+		g.Nodes[node.Head.Addr] = nodeData
+		kps := make([]GraphEdge, len(node.BodyInterior))
+		for i, kp := range node.BodyInterior {
 			kps[i] = GraphEdge{
-				FromNode:     nodeRef.Addr,
+				FromNode:     node.Head.Addr,
 				FromItem:     i,
-				FromTree:     nodeRef.Data.Head.Owner,
+				FromTree:     node.Head.Owner,
 				ToNode:       kp.BlockPtr,
-				ToLevel:      nodeRef.Data.Head.Level - 1,
+				ToLevel:      node.Head.Level - 1,
 				ToKey:        kp.Key,
 				ToGeneration: kp.Generation,
 			}
@@ -209,7 +209,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	for laddr := range g.EdgesTo {
 		if _, ok := g.Nodes[laddr]; !ok {
 			_, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, sb, laddr, btrfstree.NodeExpectations{
-				LAddr: containers.Optional[btrfsvol.LogicalAddr]{OK: true, Val: laddr},
+				LAddr: containers.OptionalValue(laddr),
 			})
 			if err == nil {
 				progressWriter.Done()

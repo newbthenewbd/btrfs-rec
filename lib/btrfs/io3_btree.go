@@ -10,8 +10,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 // This file is ordered from low-level to high-level.
@@ -19,7 +17,7 @@ import (
 // btrfstree.NodeSource ////////////////////////////////////////////////////////
 
 // ReadNode implements btrfstree.NodeSource.
-func (fs *FS) ReadNode(path btrfstree.TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node], error) {
+func (fs *FS) ReadNode(path btrfstree.Path) (*btrfstree.Node, error) {
 	return btrfstree.FSReadNode(fs, path)
 }
 
@@ -39,7 +37,7 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 			// do nothing
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
 				itemBody, ok := item.Body.(*btrfsitem.Root)
 				if !ok {
 					return nil

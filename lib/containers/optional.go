@@ -13,6 +13,19 @@ type Optional[T any] struct {
 	Val T
 }
 
+func OptionalValue[T any](val T) Optional[T] {
+	return Optional[T]{
+		OK:  true,
+		Val: val,
+	}
+}
+
+func OptionalNil[T any]() Optional[T] {
+	return Optional[T]{
+		OK: false,
+	}
+}
+
 var (
 	_ json.Marshaler   = Optional[bool]{}
 	_ json.Unmarshaler = (*Optional[bool])(nil)

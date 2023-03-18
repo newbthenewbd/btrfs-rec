@@ -47,9 +47,7 @@ func (o keyAndTree) String() string {
 }
 
 type rebuilder struct {
-	sb    btrfstree.Superblock
-	graph btrfsutil.Graph
-	keyIO *btrfsutil.KeyIO
+	scan ScanDevicesResult
 
 	rebuilt *btrfsutil.RebuiltForrest
 
@@ -67,9 +65,9 @@ type rebuilder struct {
 }
 
 type treeAugmentQueue struct {
-	zero   map[Want]struct{}
-	single map[Want]btrfsvol.LogicalAddr
-	multi  map[Want]containers.Set[btrfsvol.LogicalAddr]
+	zero   map[want]struct{}
+	single map[want]btrfsvol.LogicalAddr
+	multi  map[want]containers.Set[btrfsvol.LogicalAddr]
 }
 
 type Rebuilder interface {
@@ -79,22 +77,20 @@ type Rebuilder interface {
 
 func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (Rebuilder, error) {
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.step", "read-fs-data")
-	sb, nodeGraph, keyIO, err := ScanDevices(ctx, fs, nodeList) // ScanDevices does its own logging
+	scanData, err := ScanDevices(ctx, fs, nodeList) // ScanDevices does its own logging
 	if err != nil {
 		return nil, err
 	}
 
 	o := &rebuilder{
-		sb:    sb,
-		graph: nodeGraph,
-		keyIO: keyIO,
+		scan: scanData,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(sb, nodeGraph, keyIO, o)
+	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Superblock, scanData.Graph, forrestCallbacks{o})
 	return o, nil
 }
 
 func (o *rebuilder) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
-	return o.rebuilt.ListRoots(ctx)
+	return o.rebuilt.RebuiltListRoots(ctx)
 }
 
 func (o *rebuilder) Rebuild(ctx context.Context) error {
@@ -163,7 +159,7 @@ func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 		}
 		// This will call o.AddedItem as nescessary, which
 		// inserts to o.addedItemQueue.
-		_ = o.rebuilt.Tree(ctx, o.curKey.TreeID)
+		_ = o.rebuilt.RebuiltTree(ctx, o.curKey.TreeID)
 	}
 
 	return nil
@@ -201,18 +197,18 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 		progressWriter.Set(progress)
 
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
-		tree := o.rebuilt.Tree(ctx, key.TreeID)
-		incPtr, ok := tree.Items(ctx).Load(key.Key)
+		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
+		incPtr, ok := tree.RebuiltItems(ctx).Load(key.Key)
 		if !ok {
 			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
 		}
-		excPtr, ok := tree.PotentialItems(ctx).Load(key.Key)
-		if ok && tree.ShouldReplace(incPtr.Node, excPtr.Node) {
-			wantKey := WantWithTree{
+		excPtr, ok := tree.RebuiltPotentialItems(ctx).Load(key.Key)
+		if ok && tree.RebuiltShouldReplace(incPtr.Node, excPtr.Node) {
+			wantKey := wantWithTree{
 				TreeID: key.TreeID,
 				Key:    wantFromKey(key.Key),
 			}
-			o.wantAugment(ctx, wantKey, tree.LeafToRoots(ctx, excPtr.Node))
+			o.wantAugment(ctx, wantKey, tree.RebuiltLeafToRoots(ctx, excPtr.Node))
 			progress.NumAugments = o.numAugments
 			progress.NumAugmentTrees = len(o.augmentQueue)
 			progressWriter.Set(progress)
@@ -270,7 +266,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", key)
 			item := keyAndBody{
 				keyAndTree: key,
-				Body:       o.rebuilt.Tree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+				Body:       o.rebuilt.RebuiltTree(ctx, key.TreeID).ReadItem(ctx, key.Key),
 			}
 			select {
 			case itemChan <- item:
@@ -286,7 +282,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", item.keyAndTree)
 			o.curKey.TreeID = item.TreeID
 			o.curKey.Key.Val = item.Key
-			btrfscheck.HandleItem(ctx, o, item.TreeID, btrfstree.Item{
+			btrfscheck.HandleItem(ctx, graphCallbacks{o}, item.TreeID, btrfstree.Item{
 				Key:  item.Key,
 				Body: item.Body,
 			})
@@ -337,7 +333,7 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 			progressWriter.Set(progress)
 			// This will call o.AddedItem as nescessary, which
 			// inserts to o.addedItemQueue.
-			o.rebuilt.Tree(ctx, treeID).AddRoot(ctx, nodeAddr)
+			o.rebuilt.RebuiltTree(ctx, treeID).RebuiltAddRoot(ctx, nodeAddr)
 			progress.N++
 		}
 	}
@@ -385,8 +381,8 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		} else {
 			choices[choice] = ChoiceInfo{
 				Count:      1,
-				Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)),
-				Generation: o.graph.Nodes[choice].Generation,
+				Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
+				Generation: o.scan.Graph.Nodes[choice].Generation,
 			}
 		}
 	}
@@ -399,8 +395,8 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 			} else {
 				choices[choice] = ChoiceInfo{
 					Count:      1,
-					Distance:   discardOK(o.rebuilt.Tree(ctx, treeID).COWDistance(o.graph.Nodes[choice].Owner)),
-					Generation: o.graph.Nodes[choice].Generation,
+					Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
+					Generation: o.scan.Graph.Nodes[choice].Generation,
 				}
 			}
 		}
@@ -520,7 +516,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (queue *treeAugmentQueue) has(wantKey Want) bool {
+func (queue *treeAugmentQueue) has(wantKey want) bool {
 	if queue != nil {
 		if queue.zero != nil {
 			if _, ok := queue.zero[wantKey]; ok {
@@ -541,7 +537,7 @@ func (queue *treeAugmentQueue) has(wantKey Want) bool {
 	return false
 }
 
-func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (queue *treeAugmentQueue) store(wantKey want, choices containers.Set[btrfsvol.LogicalAddr]) {
 	if len(choices) == 0 && wantKey.OffsetType > offsetExact {
 		// This wantKey is unlikely to come up again, so it's
 		// not worth the RAM of storing a negative result.
@@ -550,27 +546,27 @@ func (queue *treeAugmentQueue) store(wantKey Want, choices containers.Set[btrfsv
 	switch len(choices) {
 	case 0:
 		if queue.zero == nil {
-			queue.zero = make(map[Want]struct{})
+			queue.zero = make(map[want]struct{})
 		}
 		queue.zero[wantKey] = struct{}{}
 	case 1:
 		if queue.single == nil {
-			queue.single = make(map[Want]btrfsvol.LogicalAddr)
+			queue.single = make(map[want]btrfsvol.LogicalAddr)
 		}
 		queue.single[wantKey] = choices.TakeOne()
 	default:
 		if queue.multi == nil {
-			queue.multi = make(map[Want]containers.Set[btrfsvol.LogicalAddr])
+			queue.multi = make(map[want]containers.Set[btrfsvol.LogicalAddr])
 		}
 		queue.multi[wantKey] = choices
 	}
 }
 
-func (o *rebuilder) hasAugment(wantKey WantWithTree) bool {
+func (o *rebuilder) hasAugment(wantKey wantWithTree) bool {
 	return o.augmentQueue[wantKey.TreeID].has(wantKey.Key)
 }
 
-func (o *rebuilder) wantAugment(ctx context.Context, wantKey WantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
+func (o *rebuilder) wantAugment(ctx context.Context, wantKey wantWithTree, choices containers.Set[btrfsvol.LogicalAddr]) {
 	if o.augmentQueue[wantKey.TreeID] == nil {
 		o.augmentQueue[wantKey.TreeID] = new(treeAugmentQueue)
 	}

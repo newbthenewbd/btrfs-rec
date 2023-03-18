@@ -15,8 +15,6 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
@@ -28,11 +26,11 @@ type TreeOperatorImpl struct {
 func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	sb, err := fs.Superblock()
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 	}
 	rootInfo, err := LookupTreeRoot(fs, *sb, treeID)
 	if err != nil {
-		errHandle(&TreeError{Path: TreePath{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
+		errHandle(&TreeError{Path: Path{{FromTree: treeID, ToMaxKey: btrfsprim.MaxKey}}, Err: err})
 		return
 	}
 	fs.RawTreeWalk(ctx, *rootInfo, errHandle, cbs)
@@ -41,7 +39,7 @@ func (fs TreeOperatorImpl) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID,
 // RawTreeWalk is a utility method to help with implementing the
 // 'TreeOperator' interface.
 func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, errHandle func(*TreeError), cbs TreeWalkHandler) {
-	path := TreePath{{
+	path := Path{{
 		FromTree:         rootInfo.TreeID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       rootInfo.RootNode,
@@ -52,7 +50,7 @@ func (fs TreeOperatorImpl) RawTreeWalk(ctx context.Context, rootInfo TreeRoot, e
 	fs.treeWalk(ctx, path, errHandle, cbs)
 }
 
-func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandle func(*TreeError), cbs TreeWalkHandler) {
+func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path Path, errHandle func(*TreeError), cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -72,7 +70,7 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 		}
 	}
 	node, err := fs.ReadNode(path)
-	defer FreeNodeRef(node)
+	defer node.Free()
 	if ctx.Err() != nil {
 		return
 	}
@@ -97,17 +95,17 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 		return
 	}
 	if node != nil {
-		for i, item := range node.Data.BodyInterior {
+		for i, item := range node.BodyInterior {
 			toMaxKey := path.Node(-1).ToMaxKey
-			if i+1 < len(node.Data.BodyInterior) {
-				toMaxKey = node.Data.BodyInterior[i+1].Key.Mm()
+			if i+1 < len(node.BodyInterior) {
+				toMaxKey = node.BodyInterior[i+1].Key.Mm()
 			}
-			itemPath := append(path, TreePathElem{
-				FromTree:         node.Data.Head.Owner,
+			itemPath := append(path, PathElem{
+				FromTree:         node.Head.Owner,
 				FromItemSlot:     i,
 				ToNodeAddr:       item.BlockPtr,
 				ToNodeGeneration: item.Generation,
-				ToNodeLevel:      node.Data.Head.Level - 1,
+				ToNodeLevel:      node.Head.Level - 1,
 				ToKey:            item.Key,
 				ToMaxKey:         toMaxKey,
 			})
@@ -129,9 +127,9 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 				}
 			}
 		}
-		for i, item := range node.Data.BodyLeaf {
-			itemPath := append(path, TreePathElem{
-				FromTree:     node.Data.Head.Owner,
+		for i, item := range node.BodyLeaf {
+			itemPath := append(path, PathElem{
+				FromTree:     node.Head.Owner,
 				FromItemSlot: i,
 				ToKey:        item.Key,
 				ToMaxKey:     item.Key,
@@ -169,8 +167,8 @@ func (fs TreeOperatorImpl) treeWalk(ctx context.Context, path TreePath, errHandl
 	}
 }
 
-func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
-	path := TreePath{{
+func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
+	path := Path{{
 		FromTree:         treeRoot.TreeID,
 		FromItemSlot:     -1,
 		ToNodeAddr:       treeRoot.RootNode,
@@ -184,15 +182,15 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 		}
 		node, err := fs.ReadNode(path)
 		if err != nil {
-			FreeNodeRef(node)
+			node.Free()
 			return nil, nil, err
 		}
 
 		switch {
-		case node.Data.Head.Level > 0:
+		case node.Head.Level > 0:
 			// interior node
 
-			// Search for the right-most node.Data.BodyInterior item for which
+			// Search for the right-most node.BodyInterior item for which
 			// `fn(item.Key) >= 0`.
 			//
 			//    + + + + 0 - - - -
@@ -200,31 +198,31 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			// There may or may not be a value that returns '0'.
 			//
 			// i.e. find the highest value that isn't too high.
-			lastGood, ok := slices.SearchHighest(node.Data.BodyInterior, func(kp KeyPointer) int {
+			lastGood, ok := slices.SearchHighest(node.BodyInterior, func(kp KeyPointer) int {
 				return slices.Min(fn(kp.Key, math.MaxUint32), 0) // don't return >0; a key can't be "too low"
 			})
 			if !ok {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, ErrNoItem
 			}
 			toMaxKey := path.Node(-1).ToMaxKey
-			if lastGood+1 < len(node.Data.BodyInterior) {
-				toMaxKey = node.Data.BodyInterior[lastGood+1].Key.Mm()
+			if lastGood+1 < len(node.BodyInterior) {
+				toMaxKey = node.BodyInterior[lastGood+1].Key.Mm()
 			}
-			path = append(path, TreePathElem{
-				FromTree:         node.Data.Head.Owner,
+			path = append(path, PathElem{
+				FromTree:         node.Head.Owner,
 				FromItemSlot:     lastGood,
-				ToNodeAddr:       node.Data.BodyInterior[lastGood].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInterior[lastGood].Generation,
-				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInterior[lastGood].Key,
+				ToNodeAddr:       node.BodyInterior[lastGood].BlockPtr,
+				ToNodeGeneration: node.BodyInterior[lastGood].Generation,
+				ToNodeLevel:      node.Head.Level - 1,
+				ToKey:            node.BodyInterior[lastGood].Key,
 				ToMaxKey:         toMaxKey,
 			})
-			FreeNodeRef(node)
+			node.Free()
 		default:
 			// leaf node
 
-			// Search for a member of node.Data.BodyLeaf for which
+			// Search for a member of node.BodyLeaf for which
 			// `fn(item.Head.Key) == 0`.
 			//
 			//    + + + + 0 - - - -
@@ -234,25 +232,25 @@ func (fs TreeOperatorImpl) treeSearch(treeRoot TreeRoot, fn func(btrfsprim.Key, 
 			// is returned.
 			//
 			// Implement this search as a binary search.
-			slot, ok := slices.Search(node.Data.BodyLeaf, func(item Item) int {
+			slot, ok := slices.Search(node.BodyLeaf, func(item Item) int {
 				return fn(item.Key, item.BodySize)
 			})
 			if !ok {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, ErrNoItem
 			}
-			path = append(path, TreePathElem{
-				FromTree:     node.Data.Head.Owner,
+			path = append(path, PathElem{
+				FromTree:     node.Head.Owner,
 				FromItemSlot: slot,
-				ToKey:        node.Data.BodyLeaf[slot].Key,
-				ToMaxKey:     node.Data.BodyLeaf[slot].Key,
+				ToKey:        node.BodyLeaf[slot].Key,
+				ToMaxKey:     node.BodyLeaf[slot].Key,
 			})
 			return path, node, nil
 		}
 	}
 }
 
-func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs TreeOperatorImpl) prev(path Path, node *Node) (Path, *Node, error) {
 	var err error
 	path = path.DeepCopy()
 
@@ -266,139 +264,139 @@ func (fs TreeOperatorImpl) prev(path TreePath, node *diskio.Ref[btrfsvol.Logical
 	// go left
 	path.Node(-1).FromItemSlot--
 	if path.Node(-1).ToNodeAddr != 0 {
-		if node.Addr != path.Node(-2).ToNodeAddr {
-			FreeNodeRef(node)
+		if node.Head.Addr != path.Node(-2).ToNodeAddr {
+			node.Free()
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, err
 			}
-			path.Node(-1).ToNodeAddr = node.Data.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
+			path.Node(-1).ToNodeAddr = node.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
 		}
 	}
 	// go down
 	for path.Node(-1).ToNodeAddr != 0 {
-		if node.Addr != path.Node(-1).ToNodeAddr {
-			FreeNodeRef(node)
+		if node.Head.Addr != path.Node(-1).ToNodeAddr {
+			node.Free()
 			node, err = fs.ReadNode(path)
 			if err != nil {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, err
 			}
 		}
-		if node.Data.Head.Level > 0 {
-			path = append(path, TreePathElem{
-				FromTree:         node.Data.Head.Owner,
-				FromItemSlot:     len(node.Data.BodyInterior) - 1,
-				ToNodeAddr:       node.Data.BodyInterior[len(node.Data.BodyInterior)-1].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInterior[len(node.Data.BodyInterior)-1].Generation,
-				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInterior[len(node.Data.BodyInterior)-1].Key,
+		if node.Head.Level > 0 {
+			path = append(path, PathElem{
+				FromTree:         node.Head.Owner,
+				FromItemSlot:     len(node.BodyInterior) - 1,
+				ToNodeAddr:       node.BodyInterior[len(node.BodyInterior)-1].BlockPtr,
+				ToNodeGeneration: node.BodyInterior[len(node.BodyInterior)-1].Generation,
+				ToNodeLevel:      node.Head.Level - 1,
+				ToKey:            node.BodyInterior[len(node.BodyInterior)-1].Key,
 				ToMaxKey:         path.Node(-1).ToMaxKey,
 			})
 		} else {
-			path = append(path, TreePathElem{
-				FromTree:     node.Data.Head.Owner,
-				FromItemSlot: len(node.Data.BodyLeaf) - 1,
-				ToKey:        node.Data.BodyLeaf[len(node.Data.BodyLeaf)-1].Key,
-				ToMaxKey:     node.Data.BodyLeaf[len(node.Data.BodyLeaf)-1].Key,
+			path = append(path, PathElem{
+				FromTree:     node.Head.Owner,
+				FromItemSlot: len(node.BodyLeaf) - 1,
+				ToKey:        node.BodyLeaf[len(node.BodyLeaf)-1].Key,
+				ToMaxKey:     node.BodyLeaf[len(node.BodyLeaf)-1].Key,
 			})
 		}
 	}
 	// return
-	if node.Addr != path.Node(-2).ToNodeAddr {
-		FreeNodeRef(node)
+	if node.Head.Addr != path.Node(-2).ToNodeAddr {
+		node.Free()
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
-			FreeNodeRef(node)
+			node.Free()
 			return nil, nil, err
 		}
 	}
 	return path, node, nil
 }
 
-func (fs TreeOperatorImpl) next(path TreePath, node *diskio.Ref[btrfsvol.LogicalAddr, Node]) (TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) {
+func (fs TreeOperatorImpl) next(path Path, node *Node) (Path, *Node, error) {
 	var err error
 	path = path.DeepCopy()
 
 	// go up
-	if node.Addr != path.Node(-2).ToNodeAddr {
-		FreeNodeRef(node)
+	if node.Head.Addr != path.Node(-2).ToNodeAddr {
+		node.Free()
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
-			FreeNodeRef(node)
+			node.Free()
 			return nil, nil, err
 		}
-		path.Node(-2).ToNodeLevel = node.Data.Head.Level
+		path.Node(-2).ToNodeLevel = node.Head.Level
 	}
-	for path.Node(-1).FromItemSlot+1 >= int(node.Data.Head.NumItems) {
+	for path.Node(-1).FromItemSlot+1 >= int(node.Head.NumItems) {
 		path = path.Parent()
 		if len(path) == 1 {
 			return nil, nil, nil
 		}
-		if node.Addr != path.Node(-2).ToNodeAddr {
-			FreeNodeRef(node)
+		if node.Head.Addr != path.Node(-2).ToNodeAddr {
+			node.Free()
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, err
 			}
-			path.Node(-2).ToNodeLevel = node.Data.Head.Level
+			path.Node(-2).ToNodeLevel = node.Head.Level
 		}
 	}
 	// go right
 	path.Node(-1).FromItemSlot++
 	if path.Node(-1).ToNodeAddr != 0 {
-		if node.Addr != path.Node(-2).ToNodeAddr {
-			FreeNodeRef(node)
+		if node.Head.Addr != path.Node(-2).ToNodeAddr {
+			node.Free()
 			node, err = fs.ReadNode(path.Parent())
 			if err != nil {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, err
 			}
-			path.Node(-1).ToNodeAddr = node.Data.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
+			path.Node(-1).ToNodeAddr = node.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
 		}
 	}
 	// go down
 	for path.Node(-1).ToNodeAddr != 0 {
-		if node.Addr != path.Node(-1).ToNodeAddr {
-			FreeNodeRef(node)
+		if node.Head.Addr != path.Node(-1).ToNodeAddr {
+			node.Free()
 			node, err = fs.ReadNode(path)
 			if err != nil {
-				FreeNodeRef(node)
+				node.Free()
 				return nil, nil, err
 			}
-			path.Node(-1).ToNodeLevel = node.Data.Head.Level
+			path.Node(-1).ToNodeLevel = node.Head.Level
 		}
-		if node.Data.Head.Level > 0 {
+		if node.Head.Level > 0 {
 			toMaxKey := path.Node(-1).ToMaxKey
-			if len(node.Data.BodyInterior) > 1 {
-				toMaxKey = node.Data.BodyInterior[1].Key.Mm()
+			if len(node.BodyInterior) > 1 {
+				toMaxKey = node.BodyInterior[1].Key.Mm()
 			}
-			path = append(path, TreePathElem{
-				FromTree:         node.Data.Head.Owner,
+			path = append(path, PathElem{
+				FromTree:         node.Head.Owner,
 				FromItemSlot:     0,
-				ToNodeAddr:       node.Data.BodyInterior[0].BlockPtr,
-				ToNodeGeneration: node.Data.BodyInterior[0].Generation,
-				ToNodeLevel:      node.Data.Head.Level - 1,
-				ToKey:            node.Data.BodyInterior[0].Key,
+				ToNodeAddr:       node.BodyInterior[0].BlockPtr,
+				ToNodeGeneration: node.BodyInterior[0].Generation,
+				ToNodeLevel:      node.Head.Level - 1,
+				ToKey:            node.BodyInterior[0].Key,
 				ToMaxKey:         toMaxKey,
 			})
 		} else {
-			path = append(path, TreePathElem{
-				FromTree:     node.Data.Head.Owner,
+			path = append(path, PathElem{
+				FromTree:     node.Head.Owner,
 				FromItemSlot: 0,
-				ToKey:        node.Data.BodyInterior[0].Key,
-				ToMaxKey:     node.Data.BodyInterior[0].Key,
+				ToKey:        node.BodyInterior[0].Key,
+				ToMaxKey:     node.BodyInterior[0].Key,
 			})
 		}
 	}
 	// return
-	if node.Addr != path.Node(-2).ToNodeAddr {
-		FreeNodeRef(node)
+	if node.Head.Addr != path.Node(-2).ToNodeAddr {
+		node.Free()
 		node, err = fs.ReadNode(path.Parent())
 		if err != nil {
-			FreeNodeRef(node)
+			node.Free()
 			return nil, nil, err
 		}
 	}
@@ -419,9 +417,9 @@ func (fs TreeOperatorImpl) TreeSearch(treeID btrfsprim.ObjID, searcher TreeSearc
 	if err != nil {
 		return Item{}, fmt.Errorf("item with %s: %w", searcher, err)
 	}
-	item := node.Data.BodyLeaf[path.Node(-1).FromItemSlot]
+	item := node.BodyLeaf[path.Node(-1).FromItemSlot]
 	item.Body = item.Body.CloneItem()
-	FreeNodeRef(node)
+	node.Free()
 	return item, nil
 }
 
@@ -444,7 +442,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 	if err != nil {
 		return nil, fmt.Errorf("items with %s: %w", searcher, err)
 	}
-	middleItem := middleNode.Data.BodyLeaf[middlePath.Node(-1).FromItemSlot]
+	middleItem := middleNode.BodyLeaf[middlePath.Node(-1).FromItemSlot]
 
 	ret := []Item{middleItem}
 	var errs derror.MultiError
@@ -458,7 +456,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 		if len(prevPath) == 0 {
 			break
 		}
-		prevItem := prevNode.Data.BodyLeaf[prevPath.Node(-1).FromItemSlot]
+		prevItem := prevNode.BodyLeaf[prevPath.Node(-1).FromItemSlot]
 		if searcher.Search(prevItem.Key, prevItem.BodySize) != 0 {
 			break
 		}
@@ -467,11 +465,11 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 		ret = append(ret, item)
 	}
 	slices.Reverse(ret)
-	if prevNode.Addr != middlePath.Node(-1).ToNodeAddr {
-		FreeNodeRef(prevNode)
+	if prevNode.Head.Addr != middlePath.Node(-1).ToNodeAddr {
+		prevNode.Free()
 		middleNode, err = fs.ReadNode(middlePath)
 		if err != nil {
-			FreeNodeRef(middleNode)
+			middleNode.Free()
 			return nil, fmt.Errorf("items with %s: %w", searcher, err)
 		}
 	}
@@ -485,7 +483,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 		if len(nextPath) == 0 {
 			break
 		}
-		nextItem := nextNode.Data.BodyLeaf[nextPath.Node(-1).FromItemSlot]
+		nextItem := nextNode.BodyLeaf[nextPath.Node(-1).FromItemSlot]
 		if searcher.Search(nextItem.Key, nextItem.BodySize) != 0 {
 			break
 		}
@@ -493,7 +491,7 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 		item.Body = item.Body.CloneItem()
 		ret = append(ret, item)
 	}
-	FreeNodeRef(nextNode)
+	nextNode.Free()
 	if errs != nil {
 		err = errs
 	}

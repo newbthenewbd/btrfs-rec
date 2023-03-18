@@ -117,7 +117,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	// First dedup them, because they change for allocations and
 	// CoW means that they'll bounce around a lot, so you likely
 	// have oodles of duplicates?
-	bgs, err := DedupBlockGroups(scanResults)
+	bgs, err := dedupedBlockGroups(scanResults)
 	if err != nil {
 		return err
 	}
@@ -137,10 +137,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 			PAddr:      otherPAddr.Add(-offsetWithinChunk),
 			Size:       bg.Size,
 			SizeLocked: true,
-			Flags: containers.Optional[btrfsvol.BlockGroupFlags]{
-				OK:  true,
-				Val: bg.Flags,
-			},
+			Flags:      containers.OptionalValue(bg.Flags),
 		}
 		if err := fs.LV.AddMapping(mapping); err != nil {
 			dlog.Errorf(ctx, "error: adding flags from blockgroup: %v", err)
@@ -162,8 +159,8 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	// slower.
 	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "5/6")
 	dlog.Infof(_ctx, "5/6: Searching for %d block groups in checksum map (exact)...", len(bgs))
-	physicalSums := ExtractPhysicalSums(scanResults)
-	logicalSums := ExtractLogicalSums(ctx, scanResults)
+	physicalSums := extractPhysicalSums(scanResults)
+	logicalSums := extractLogicalSums(ctx, scanResults)
 	if err := matchBlockGroupSumsExact(ctx, fs, bgs, physicalSums, logicalSums); err != nil {
 		return err
 	}
@@ -179,7 +176,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-mappings.process.step", "report")
 	dlog.Info(_ctx, "report:")
 
-	unmappedPhysicalRegions := ListUnmappedPhysicalRegions(fs)
+	unmappedPhysicalRegions := listUnmappedPhysicalRegions(fs)
 	var unmappedPhysical btrfsvol.AddrDelta
 	var numUnmappedPhysical int
 	for _, devRegions := range unmappedPhysicalRegions {
@@ -190,7 +187,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	}
 	dlog.Infof(ctx, "... %d of unmapped physical space (across %d regions)", textui.IEC(unmappedPhysical, "B"), numUnmappedPhysical)
 
-	unmappedLogicalRegions := ListUnmappedLogicalRegions(fs, logicalSums)
+	unmappedLogicalRegions := listUnmappedLogicalRegions(fs, logicalSums)
 	var unmappedLogical btrfsvol.AddrDelta
 	for _, region := range unmappedLogicalRegions {
 		unmappedLogical += region.Size()

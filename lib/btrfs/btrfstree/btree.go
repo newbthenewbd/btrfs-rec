@@ -11,8 +11,6 @@ import (
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
 type TreeSearcher interface {
@@ -71,20 +69,20 @@ type TreeWalkHandler struct {
 	// node immediately stops getting processed; if PreNode, Node,
 	// or BadNode return io/fs.SkipDir then key pointers and items
 	// within the node are not processed.
-	PreNode  func(TreePath) error
-	Node     func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
-	BadNode  func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node], error) error
-	PostNode func(TreePath, *diskio.Ref[btrfsvol.LogicalAddr, Node]) error
+	PreNode  func(Path) error
+	Node     func(Path, *Node) error
+	BadNode  func(Path, *Node, error) error
+	PostNode func(Path, *Node) error
 	// Callbacks for items on interior nodes
-	PreKeyPointer  func(TreePath, KeyPointer) error
-	PostKeyPointer func(TreePath, KeyPointer) error
+	PreKeyPointer  func(Path, KeyPointer) error
+	PostKeyPointer func(Path, KeyPointer) error
 	// Callbacks for items on leaf nodes
-	Item    func(TreePath, Item) error
-	BadItem func(TreePath, Item) error
+	Item    func(Path, Item) error
+	BadItem func(Path, Item) error
 }
 
 type TreeError struct {
-	Path TreePath
+	Path Path
 	Err  error
 }
 
@@ -96,5 +94,5 @@ func (e *TreeError) Error() string {
 
 type NodeSource interface {
 	Superblock() (*Superblock, error)
-	ReadNode(TreePath) (*diskio.Ref[btrfsvol.LogicalAddr, Node], error)
+	ReadNode(Path) (*Node, error)
 }

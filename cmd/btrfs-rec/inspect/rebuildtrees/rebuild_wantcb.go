@@ -19,16 +19,20 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
 
+type graphCallbacks struct {
+	*rebuilder
+}
+
 // FSErr implements btrfscheck.GraphCallbacks.
-func (*rebuilder) FSErr(ctx context.Context, e error) {
+func (graphCallbacks) FSErr(ctx context.Context, e error) {
 	dlog.Errorf(ctx, "filesystem error: %v", e)
 }
 
 // Want implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
-	wantKey := WantWithTree{
+func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType) {
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetAny,
@@ -38,8 +42,8 @@ func (o *rebuilder) Want(ctx context.Context, reason string, treeID btrfsprim.Ob
 	o._want(ctx, wantKey)
 }
 
-func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsprim.Key, ok bool) {
-	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
+func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsprim.Key, ok bool) {
+	if o.rebuilt.RebuiltTree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return btrfsprim.Key{}, false
 	}
@@ -47,7 +51,7 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 	// check if we already have it
 
 	tgt := wantKey.Key.Key()
-	if key, _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Search(func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
+	if key, _, ok := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 		key.Offset = 0
 		return tgt.Compare(key)
 	}); ok {
@@ -60,13 +64,13 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 		return btrfsprim.Key{}, false
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltPotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			k.Offset = 0
 			return tgt.Compare(k)
 		},
 		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
+			wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltLeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, wantKey, wants)
@@ -74,10 +78,10 @@ func (o *rebuilder) _want(ctx context.Context, wantKey WantWithTree) (key btrfsp
 }
 
 // WantOff implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
-	wantKey := WantWithTree{
+func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType, off uint64) {
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetExact,
@@ -88,8 +92,8 @@ func (o *rebuilder) WantOff(ctx context.Context, reason string, treeID btrfsprim
 	o._wantOff(ctx, wantKey)
 }
 
-func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool) {
-	if o.rebuilt.Tree(ctx, wantKey.TreeID) == nil {
+func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool) {
+	if o.rebuilt.RebuiltTree(ctx, wantKey.TreeID) == nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return false
 	}
@@ -97,7 +101,7 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 	// check if we already have it
 
 	tgt := wantKey.Key.Key()
-	if _, ok := o.rebuilt.Tree(ctx, wantKey.TreeID).Items(ctx).Load(tgt); ok {
+	if _, ok := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltItems(ctx).Load(tgt); ok {
 		return true
 	}
 
@@ -107,10 +111,10 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 		return false
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, wantKey.TreeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltPotentialItems(ctx).Subrange(
 		func(k btrfsprim.Key, _ btrfsutil.ItemPtr) int { return tgt.Compare(k) },
 		func(_ btrfsprim.Key, v btrfsutil.ItemPtr) bool {
-			wants.InsertFrom(o.rebuilt.Tree(ctx, wantKey.TreeID).LeafToRoots(ctx, v.Node))
+			wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).RebuiltLeafToRoots(ctx, v.Node))
 			return true
 		})
 	o.wantAugment(ctx, wantKey, wants)
@@ -118,10 +122,10 @@ func (o *rebuilder) _wantOff(ctx context.Context, wantKey WantWithTree) (ok bool
 }
 
 // WantDirIndex implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
-	wantKey := WantWithTree{
+func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID btrfsprim.ObjID, objID btrfsprim.ObjID, name []byte) {
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   btrfsitem.DIR_INDEX_KEY,
 			OffsetType: offsetName,
@@ -130,7 +134,7 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 	}
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 
-	if o.rebuilt.Tree(ctx, treeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, treeID) == nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -139,13 +143,13 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 
 	tgt := wantKey.Key.Key()
 	found := false
-	o.rebuilt.Tree(ctx, treeID).Items(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, treeID).RebuiltItems(ctx).Subrange(
 		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
-			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
+			if itemName, ok := o.scan.Names[ptr]; ok && bytes.Equal(itemName, name) {
 				found = true
 			}
 			return !found
@@ -160,21 +164,21 @@ func (o *rebuilder) WantDirIndex(ctx context.Context, reason string, treeID btrf
 		return
 	}
 	wants := make(containers.Set[btrfsvol.LogicalAddr])
-	o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx).Subrange(
+	o.rebuilt.RebuiltTree(ctx, treeID).RebuiltPotentialItems(ctx).Subrange(
 		func(key btrfsprim.Key, _ btrfsutil.ItemPtr) int {
 			key.Offset = 0
 			return tgt.Compare(key)
 		},
 		func(_ btrfsprim.Key, ptr btrfsutil.ItemPtr) bool {
-			if itemName, ok := o.keyIO.Names[ptr]; ok && bytes.Equal(itemName, name) {
-				wants.InsertFrom(o.rebuilt.Tree(ctx, treeID).LeafToRoots(ctx, ptr.Node))
+			if itemName, ok := o.scan.Names[ptr]; ok && bytes.Equal(itemName, name) {
+				wants.InsertFrom(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltLeafToRoots(ctx, ptr.Node))
 			}
 			return true
 		})
 	o.wantAugment(ctx, wantKey, wants)
 }
 
-func (o *rebuilder) _walkRange(
+func (o graphCallbacks) _walkRange(
 	ctx context.Context,
 	items *containers.SortedMap[btrfsprim.Key, btrfsutil.ItemPtr],
 	treeID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
@@ -203,7 +207,7 @@ func (o *rebuilder) _walkRange(
 			}
 		},
 		func(runKey btrfsprim.Key, runPtr btrfsutil.ItemPtr) bool {
-			runSizeAndErr, ok := o.keyIO.Sizes[runPtr]
+			runSizeAndErr, ok := o.scan.Sizes[runPtr]
 			if !ok {
 				panic(fmt.Errorf("should not happen: %v (%v) did not have a size recorded",
 					runPtr, keyAndTree{TreeID: treeID, Key: runKey}))
@@ -239,14 +243,14 @@ func (a gap) Compare(b gap) int {
 	return containers.NativeCompare(a.Beg, b.Beg)
 }
 
-func (o *rebuilder) _wantRange(
+func (o graphCallbacks) _wantRange(
 	ctx context.Context, reason string,
 	treeID btrfsprim.ObjID, objID btrfsprim.ObjID, typ btrfsprim.ItemType,
 	beg, end uint64,
 ) {
-	wantKey := WantWithTree{
+	wantKey := wantWithTree{
 		TreeID: treeID,
-		Key: Want{
+		Key: want{
 			ObjectID:   objID,
 			ItemType:   typ,
 			OffsetType: offsetAny,
@@ -255,7 +259,7 @@ func (o *rebuilder) _wantRange(
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 	wantKey.Key.OffsetType = offsetRange
 
-	if o.rebuilt.Tree(ctx, treeID) == nil {
+	if o.rebuilt.RebuiltTree(ctx, treeID) == nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -271,7 +275,7 @@ func (o *rebuilder) _wantRange(
 	})
 	o._walkRange(
 		ctx,
-		o.rebuilt.Tree(ctx, treeID).Items(ctx),
+		o.rebuilt.RebuiltTree(ctx, treeID).RebuiltItems(ctx),
 		treeID, objID, typ, beg, end,
 		func(runKey btrfsprim.Key, _ btrfsutil.ItemPtr, runBeg, runEnd uint64) {
 			var overlappingGaps []*containers.RBNode[gap]
@@ -316,7 +320,7 @@ func (o *rebuilder) _wantRange(
 	if gaps.Len() == 0 {
 		return
 	}
-	potentialItems := o.rebuilt.Tree(ctx, treeID).PotentialItems(ctx)
+	potentialItems := o.rebuilt.RebuiltTree(ctx, treeID).RebuiltPotentialItems(ctx)
 	gaps.Range(func(rbNode *containers.RBNode[gap]) bool {
 		gap := rbNode.Value
 		last := gap.Beg
@@ -336,7 +340,7 @@ func (o *rebuilder) _wantRange(
 				wantKey.Key.OffsetLow = gap.Beg
 				wantKey.Key.OffsetHigh = gap.End
 				wantCtx := withWant(ctx, logFieldItemWant, reason, wantKey)
-				o.wantAugment(wantCtx, wantKey, o.rebuilt.Tree(wantCtx, treeID).LeafToRoots(wantCtx, v.Node))
+				o.wantAugment(wantCtx, wantKey, o.rebuilt.RebuiltTree(wantCtx, treeID).RebuiltLeafToRoots(wantCtx, v.Node))
 				last = runEnd
 			})
 		if last < gap.End {
@@ -353,10 +357,10 @@ func (o *rebuilder) _wantRange(
 // WantCSum implements btrfscheck.GraphCallbacks.
 //
 // interval is [beg, end)
-func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
-	inodeWant := WantWithTree{
+func (o graphCallbacks) WantCSum(ctx context.Context, reason string, inodeTree, inode btrfsprim.ObjID, beg, end btrfsvol.LogicalAddr) {
+	inodeWant := wantWithTree{
 		TreeID: inodeTree,
-		Key: Want{
+		Key: want{
 			ObjectID:   inode,
 			ItemType:   btrfsitem.INODE_ITEM_KEY,
 			OffsetType: offsetExact,
@@ -368,11 +372,11 @@ func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inod
 		o.enqueueRetry(inodeTree)
 		return
 	}
-	inodePtr, ok := o.rebuilt.Tree(inodeCtx, inodeTree).Items(inodeCtx).Load(inodeWant.Key.Key())
+	inodePtr, ok := o.rebuilt.RebuiltTree(inodeCtx, inodeTree).RebuiltItems(inodeCtx).Load(inodeWant.Key.Key())
 	if !ok {
 		panic(fmt.Errorf("should not happen: could not load key: %v", inodeWant))
 	}
-	inodeFlags, ok := o.keyIO.Flags[inodePtr]
+	inodeFlags, ok := o.scan.Flags[inodePtr]
 	if !ok {
 		panic(fmt.Errorf("should not happen: INODE_ITEM did not have flags recorded"))
 	}
@@ -392,7 +396,7 @@ func (o *rebuilder) WantCSum(ctx context.Context, reason string, inodeTree, inod
 }
 
 // WantFileExt implements btrfscheck.GraphCallbacks.
-func (o *rebuilder) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
+func (o graphCallbacks) WantFileExt(ctx context.Context, reason string, treeID btrfsprim.ObjID, ino btrfsprim.ObjID, size int64) {
 	o._wantRange(
 		ctx, reason,
 		treeID, ino, btrfsprim.EXTENT_DATA_KEY,

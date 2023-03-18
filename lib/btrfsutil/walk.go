@@ -1,4 +1,4 @@
-// Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -61,7 +61,7 @@ func WalkAllTrees(ctx context.Context, fs btrfstree.TreeOperator, cbs WalkAllTre
 		},
 	}
 	origItem := cbs.Item
-	cbs.Item = func(path btrfstree.TreePath, item btrfstree.Item) error {
+	cbs.Item = func(path btrfstree.Path, item btrfstree.Item) error {
 		if item.Key.ItemType == btrfsitem.ROOT_ITEM_KEY {
 			trees = append(trees, struct {
 				Name string

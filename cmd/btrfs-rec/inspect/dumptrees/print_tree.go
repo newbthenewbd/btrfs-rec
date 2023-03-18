@@ -19,7 +19,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -54,7 +53,7 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 			dlog.Error(ctx, err)
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.TreePath, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
 				if item.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
 					return nil
 				}
@@ -100,12 +99,12 @@ var nodeHeaderSize = binstruct.StaticSize(btrfstree.NodeHeader{})
 func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfsprim.ObjID) {
 	var itemOffset uint32
 	handlers := btrfstree.TreeWalkHandler{
-		Node: func(path btrfstree.TreePath, nodeRef *diskio.Ref[btrfsvol.LogicalAddr, btrfstree.Node]) error {
-			printHeaderInfo(out, nodeRef.Data)
-			itemOffset = nodeRef.Data.Size - uint32(nodeHeaderSize)
+		Node: func(path btrfstree.Path, node *btrfstree.Node) error {
+			printHeaderInfo(out, node)
+			itemOffset = node.Size - uint32(nodeHeaderSize)
 			return nil
 		},
-		PreKeyPointer: func(path btrfstree.TreePath, item btrfstree.KeyPointer) error {
+		PreKeyPointer: func(path btrfstree.Path, item btrfstree.KeyPointer) error {
 			treeID := path[0].FromTree
 			textui.Fprintf(out, "\tkey %v block %v gen %v\n",
 				item.Key.Format(treeID),
@@ -113,7 +112,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 				item.Generation)
 			return nil
 		},
-		Item: func(path btrfstree.TreePath, item btrfstree.Item) error {
+		Item: func(path btrfstree.Path, item btrfstree.Item) error {
 			treeID := path[0].FromTree
 			i := path.Node(-1).FromItemSlot
 			bs, _ := binstruct.Marshal(item.Body)
@@ -375,7 +374,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 }
 
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()
-func printHeaderInfo(out io.Writer, node btrfstree.Node) {
+func printHeaderInfo(out io.Writer, node *btrfstree.Node) {
 	var typename string
 	if node.Head.Level > 0 { // interior node
 		typename = "node"

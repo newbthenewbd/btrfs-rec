@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"sync"
 
 	"github.com/datawire/dlib/derror"
 
@@ -20,6 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -62,15 +62,13 @@ type File struct {
 }
 
 type Subvolume struct {
-	FS interface {
+	fs interface {
 		btrfstree.TreeOperator
 		Superblock() (*btrfstree.Superblock, error)
-		ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error)
+		diskio.ReaderAt[btrfsvol.LogicalAddr]
 	}
 	TreeID      btrfsprim.ObjID
-	NoChecksums bool
-
-	initOnce sync.Once
+	noChecksums bool
 
 	rootVal btrfsitem.Root
 	rootErr error
@@ -81,41 +79,57 @@ type Subvolume struct {
 	fileCache      containers.ARCache[btrfsprim.ObjID, *File]
 }
 
-func (sv *Subvolume) init() {
-	sv.initOnce.Do(func() {
-		root, err := sv.FS.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.SearchRootItem(sv.TreeID))
-		if err != nil {
-			sv.rootErr = err
-		} else {
-			switch rootBody := root.Body.(type) {
-			case *btrfsitem.Root:
-				sv.rootVal = rootBody.Clone()
-			case *btrfsitem.Error:
-				sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
-			default:
-				panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
-			}
-		}
+func NewSubvolume(
+	fs interface {
+		btrfstree.TreeOperator
+		Superblock() (*btrfstree.Superblock, error)
+		diskio.ReaderAt[btrfsvol.LogicalAddr]
+	},
+	treeID btrfsprim.ObjID,
+	noChecksums bool,
+) *Subvolume {
+	sv := &Subvolume{
+		fs:          fs,
+		TreeID:      treeID,
+		noChecksums: noChecksums,
+	}
 
-		sv.bareInodeCache.MaxLen = textui.Tunable(128)
-		sv.fullInodeCache.MaxLen = textui.Tunable(128)
-		sv.dirCache.MaxLen = textui.Tunable(128)
-		sv.fileCache.MaxLen = textui.Tunable(128)
-	})
+	root, err := sv.fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.SearchRootItem(sv.TreeID))
+	if err != nil {
+		sv.rootErr = err
+	} else {
+		switch rootBody := root.Body.(type) {
+		case *btrfsitem.Root:
+			sv.rootVal = rootBody.Clone()
+		case *btrfsitem.Error:
+			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
+		default:
+			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
+		}
+	}
+
+	sv.bareInodeCache.MaxLen = textui.Tunable(128)
+	sv.fullInodeCache.MaxLen = textui.Tunable(128)
+	sv.dirCache.MaxLen = textui.Tunable(128)
+	sv.fileCache.MaxLen = textui.Tunable(128)
+
+	return sv
+}
+
+func (sv *Subvolume) NewChildSubvolume(childID btrfsprim.ObjID) *Subvolume {
+	return NewSubvolume(sv.fs, childID, sv.noChecksums)
 }
 
 func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
-	sv.init()
 	return sv.rootVal.RootDirID, sv.rootErr
 }
 
 func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
-	sv.init()
 	val := containers.LoadOrElse[btrfsprim.ObjID, *BareInode](&sv.bareInodeCache, inode, func(inode btrfsprim.ObjID) (val *BareInode) {
 		val = &BareInode{
 			Inode: inode,
 		}
-		item, err := sv.FS.TreeLookup(sv.TreeID, btrfsprim.Key{
+		item, err := sv.fs.TreeLookup(sv.TreeID, btrfsprim.Key{
 			ObjectID: inode,
 			ItemType: btrfsitem.INODE_ITEM_KEY,
 			Offset:   0,
@@ -144,7 +158,6 @@ func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
 }
 
 func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
-	sv.init()
 	val := containers.LoadOrElse[btrfsprim.ObjID, *FullInode](&sv.fullInodeCache, inode, func(indoe btrfsprim.ObjID) (val *FullInode) {
 		val = &FullInode{
 			BareInode: BareInode{
@@ -152,7 +165,7 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 			},
 			XAttrs: make(map[string]string),
 		}
-		items, err := sv.FS.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
+		items, err := sv.fs.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
 		if err != nil {
 			val.Errs = append(val.Errs, err)
 			if len(items) == 0 {
@@ -199,7 +212,6 @@ func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
 }
 
 func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
-	sv.init()
 	val := containers.LoadOrElse[btrfsprim.ObjID, *Dir](&sv.dirCache, inode, func(inode btrfsprim.ObjID) (val *Dir) {
 		val = new(Dir)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -336,7 +348,6 @@ func (dir *Dir) AbsPath() (string, error) {
 }
 
 func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
-	sv.init()
 	val := containers.LoadOrElse[btrfsprim.ObjID, *File](&sv.fileCache, inode, func(inode btrfsprim.ObjID) (val *File) {
 		val = new(File)
 		fullInode, err := sv.LoadFullInode(inode)
@@ -448,7 +459,7 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 		case btrfsitem.FILE_EXTENT_INLINE:
 			return copy(dat, extent.BodyInline[offsetWithinExt:offsetWithinExt+readSize]), nil
 		case btrfsitem.FILE_EXTENT_REG, btrfsitem.FILE_EXTENT_PREALLOC:
-			sb, err := file.SV.FS.Superblock()
+			sb, err := file.SV.fs.Superblock()
 			if err != nil {
 				return 0, err
 			}
@@ -457,7 +468,7 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 				Add(btrfsvol.AddrDelta(offsetWithinExt))
 			var block [btrfssum.BlockSize]byte
 			blockBeg := (beg / btrfssum.BlockSize) * btrfssum.BlockSize
-			n, err := file.SV.FS.ReadAt(block[:], blockBeg)
+			n, err := file.SV.fs.ReadAt(block[:], blockBeg)
 			if n > int(beg-blockBeg) {
 				n = copy(dat[:readSize], block[beg-blockBeg:])
 			} else {
@@ -466,8 +477,8 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			if !file.SV.NoChecksums {
-				sumRun, err := LookupCSum(file.SV.FS, sb.ChecksumType, blockBeg)
+			if !file.SV.noChecksums {
+				sumRun, err := LookupCSum(file.SV.fs, sb.ChecksumType, blockBeg)
 				if err != nil {
 					return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
 				}

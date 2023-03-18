@@ -13,8 +13,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
+type forrestCallbacks struct {
+	*rebuilder
+}
+
 // AddedItem implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) AddedItem(_ context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
+func (o forrestCallbacks) AddedItem(_ context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	o.addedItemQueue.Insert(keyAndTree{
 		TreeID: tree,
 		Key:    key,
@@ -22,17 +26,17 @@ func (o *rebuilder) AddedItem(_ context.Context, tree btrfsprim.ObjID, key btrfs
 }
 
 // AddedRoot implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) AddedRoot(_ context.Context, tree btrfsprim.ObjID, _ btrfsvol.LogicalAddr) {
+func (o forrestCallbacks) AddedRoot(_ context.Context, tree btrfsprim.ObjID, _ btrfsvol.LogicalAddr) {
 	if retries := o.retryItemQueue[tree]; retries != nil {
 		o.addedItemQueue.InsertFrom(retries)
 	}
 }
 
 // LookupRoot implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
-	wantKey := WantWithTree{
+func (o forrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
+	wantKey := wantWithTree{
 		TreeID: btrfsprim.ROOT_TREE_OBJECTID,
-		Key: Want{
+		Key: want{
 			ObjectID:   tree,
 			ItemType:   btrfsitem.ROOT_ITEM_KEY,
 			OffsetType: offsetAny,
@@ -44,13 +48,13 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey)
+	itemBody := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).ReadItem(ctx, foundKey)
 	defer itemBody.Free()
 	switch itemBody := itemBody.(type) {
 	case *btrfsitem.Root:
 		return btrfsprim.Generation(foundKey.Offset), *itemBody, true
 	case *btrfsitem.Error:
-		o.FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", foundKey, itemBody.Err))
+		graphCallbacks(o).FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", foundKey, itemBody.Err))
 		return 0, btrfsitem.Root{}, false
 	default:
 		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
@@ -60,8 +64,8 @@ func (o *rebuilder) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offse
 }
 
 // LookupUUID implements btrfsutil.RebuiltForrestCallbacks.
-func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	wantKey := WantWithTree{
+func (o forrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	wantKey := wantWithTree{
 		TreeID: btrfsprim.UUID_TREE_OBJECTID,
 		Key:    wantFromKey(btrfsitem.UUIDToKey(uuid)),
 	}
@@ -70,13 +74,13 @@ func (o *rebuilder) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btr
 		o.enqueueRetry(btrfsprim.UUID_TREE_OBJECTID)
 		return 0, false
 	}
-	itemBody := o.rebuilt.Tree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key())
+	itemBody := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID).ReadItem(ctx, wantKey.Key.Key())
 	defer itemBody.Free()
 	switch itemBody := itemBody.(type) {
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:
-		o.FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
+		graphCallbacks(o).FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
 		return 0, false
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but

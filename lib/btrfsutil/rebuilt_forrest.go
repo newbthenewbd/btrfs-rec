@@ -6,6 +6,8 @@ package btrfsutil
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -14,6 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -25,13 +28,71 @@ type RebuiltForrestCallbacks interface {
 	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
 }
 
+type noopRebuiltForrestCallbacks struct {
+	forrest *RebuiltForrest
+}
+
+func (noopRebuiltForrestCallbacks) AddedItem(context.Context, btrfsprim.ObjID, btrfsprim.Key) {}
+func (noopRebuiltForrestCallbacks) AddedRoot(context.Context, btrfsprim.ObjID, btrfsvol.LogicalAddr) {
+}
+
+func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, _item btrfsitem.Root, ok bool) {
+	rootTree := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if rootTree == nil {
+		return 0, btrfsitem.Root{}, false
+	}
+	tgt := btrfsprim.Key{
+		ObjectID: tree,
+		ItemType: btrfsprim.ROOT_ITEM_KEY,
+	}
+	itemKey, itemPtr, ok := rootTree.RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
+		key.Offset = 0
+		return tgt.Compare(key)
+	})
+	itemBody := cb.forrest.readItem(ctx, itemPtr)
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
+	case *btrfsitem.Root:
+		return btrfsprim.Generation(itemKey.Offset), *itemBody, true
+	case *btrfsitem.Error:
+		return 0, btrfsitem.Root{}, false
+	default:
+		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
+		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
+	}
+}
+
+func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	uuidTree := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+	if uuidTree == nil {
+		return 0, false
+	}
+	tgt := btrfsitem.UUIDToKey(uuid)
+	itemPtr, ok := uuidTree.RebuiltItems(ctx).Load(tgt)
+	if !ok {
+		return 0, false
+	}
+	itemBody := cb.forrest.readItem(ctx, itemPtr)
+	defer itemBody.Free()
+	switch itemBody := itemBody.(type) {
+	case *btrfsitem.UUIDMap:
+		return itemBody.ObjID, true
+	case *btrfsitem.Error:
+		return 0, false
+	default:
+		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
+	}
+}
+
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
 //
-// It is conceptually a btrfstree.TreeOperator, and adds similar
-// broken-tree handling to OldRebuiltForrest.  However, the API is
-// different than btrfstree.TreeOperator, and is much more efficient
-// than OldRebuiltForrest.
+// It is conceptually a btrfstree.Forrest, and adds similar
+// broken-tree handling to OldRebuiltForrest.  However, it is much
+// more efficient than OldRebuiltForrest.
 //
 // The efficiency improvements are possible because of the API
 // differences, which are necessary for how it is used in
@@ -40,43 +101,60 @@ type RebuiltForrestCallbacks interface {
 //   - it consumes an already-read Graph instead of reading the graph
 //     itself
 //
-//   - it does not use `btrfstree.TreePath`
+//   - it does not use `btrfstree.Path`
 //
 //   - it does not keep track of errors encountered in a tree
 //
 // Additionally, it provides some functionality that OldRebuiltForrest
 // does not:
 //
-//   - it provides a .LeafToRoots() method to advise on what
-//     additional roots should be added
+//   - it provides a RebuiltForrest.RebuiltListRoots() method for
+//     listing how trees have been repaired.
 //
-//   - it provides a .COWDistance() method to compare how related two
-//     trees are
+//   - it provides a RebuiltTree.RebuiltAddRoot() method for repairing a
+//     tree.
+//
+//   - it provides several RebuiltTree methods that provide advice on
+//     what roots should be added to a tree in order to repair it:
+//
+//     .RebuiltItems() and RebuiltPotentialItems() to compare what's
+//     in the tree and what could be in the tree.
+//
+//     .RebuiltLeafToRoots() to map potential items to things that can
+//     be passed to .RebuiltAddRoot().
+//
+//     .RebuiltCOWDistance() and .RebuiltShouldReplace() to provide
+//     information on deciding on an option from
+//     .RebuiltLeafToRoots().
 //
 // A zero RebuiltForrest is invalid; it must be initialized with
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
+	file  diskio.File[btrfsvol.LogicalAddr]
 	sb    btrfstree.Superblock
 	graph Graph
-	keyIO *KeyIO
 	cb    RebuiltForrestCallbacks
 
 	// mutable
+
 	treesMu  nestedMutex
 	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
 	leafs    containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
 	excItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
+
+	nodesMu sync.Mutex
+	nodes   containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
 }
 
-// NewRebuiltForrest returns a new RebuiltForrest instance.  All of
-// the callbacks must be non-nil.
-func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb RebuiltForrestCallbacks) *RebuiltForrest {
-	return &RebuiltForrest{
+// NewRebuiltForrest returns a new RebuiltForrest instance.  The
+// RebuiltForrestCallbacks may be nil.
+func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+	ret := &RebuiltForrest{
+		file:  file,
 		sb:    sb,
 		graph: graph,
-		keyIO: keyIO,
 		cb:    cb,
 
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
@@ -89,15 +167,31 @@ func NewRebuiltForrest(sb btrfstree.Superblock, graph Graph, keyIO *KeyIO, cb Re
 		excItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
 			MaxLen: textui.Tunable(8),
 		},
+
+		nodes: containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]{
+			MaxLen: textui.Tunable(8),
+			OnRemove: func(_ btrfsvol.LogicalAddr, node *btrfstree.Node) {
+				node.Free()
+			},
+		},
 	}
+	if ret.cb == nil {
+		ret.cb = noopRebuiltForrestCallbacks{
+			forrest: ret,
+		}
+	}
+	return ret
 }
 
-// Tree returns a given tree, initializing it if nescessary.  If it is
-// unable to initialize the tree, then nil is returned, and nothing is
-// done to the forrest.
+// RebuiltTree returns a given tree, initializing it if nescessary.
+// If it is unable to initialize the tree, then nil is returned, and
+// nothing is done to the forrest.
 //
 // The tree is initialized with the normal root node of the tree.
-func (ts *RebuiltForrest) Tree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
+//
+// This is identical to .ForrestLookup(), but returns a concrete type
+// rather than an interface.
+func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
 	ctx = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
 	if !ts.addTree(ctx, treeID, nil) {
@@ -112,8 +206,8 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	}
 	defer func() {
 		if !ok {
-			// Store a negative cache of this.  tree.AddRoot() for the ROOT or UUID
-			// trees will call .flushNegativeCache().
+			// Store a negative cache of this.  tree.RebuiltAddRoot() for the ROOT or
+			// UUID trees will call .flushNegativeCache().
 			ts.trees[treeID] = nil
 		}
 	}()
@@ -172,7 +266,7 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 
 	ts.trees[treeID] = tree
 	if root != 0 {
-		tree.AddRoot(ctx, root)
+		tree.RebuiltAddRoot(ctx, root)
 	}
 
 	return true
@@ -188,12 +282,12 @@ func (ts *RebuiltForrest) flushNegativeCache(ctx context.Context) {
 	}
 }
 
-// ListRoots returns a listing of all initialized trees and their root
-// nodes.
+// RebuiltListRoots returns a listing of all initialized trees and
+// their root nodes.
 //
 // Do not mutate the set of roots for a tree; it is a pointer to the
 // RebuiltForrest's internal set!
-func (ts *RebuiltForrest) ListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
+func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr] {
 	_ = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
