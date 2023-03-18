@@ -219,10 +219,6 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 	btrfstree.TreeOperatorImpl{NodeSource: bt.inner}.RawTreeWalk(ctx, *root, errHandle, cbs)
 }
 
-func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
-}
-
 func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error) error {
 	var errs derror.MultiError
 	tree.Errors.Subrange(
@@ -265,6 +261,10 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 	}
 
 	return node
+}
+
+func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
+	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
 }
 
 func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
