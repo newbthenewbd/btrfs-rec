@@ -96,7 +96,10 @@ type OldRebuiltForrest struct {
 	trees   map[btrfsprim.ObjID]oldRebuiltTree
 }
 
-var _ btrfstree.TreeOperator = (*OldRebuiltForrest)(nil)
+var (
+	_ btrfstree.TreeOperator = (*OldRebuiltForrest)(nil)
+	_ btrfs.ReadableFS       = (*OldRebuiltForrest)(nil)
+)
 
 // NewOldRebuiltForrest wraps a *btrfs.FS to support looking up
 // information from broken trees.
@@ -123,8 +126,18 @@ func NewOldRebuiltForrest(ctx context.Context, inner *btrfs.FS) *OldRebuiltForre
 	}
 }
 
-// RebuiltTree returns a handle for an individual tree.  An error is
-// indicated by the ret.RootErr member.
+// ForrestLookup implements btrfstree.Forrest.
+func (bt *OldRebuiltForrest) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfstree.Tree, error) {
+	tree := bt.RebuiltTree(ctx, treeID)
+	if tree.RootErr != nil {
+		return nil, tree.RootErr
+	}
+	return tree, nil
+}
+
+// RebuiltTree is a variant of ForrestLookup that returns a concrete
+// type instead of an interface.  An error is indicated by the
+// ret.RootErr member.
 func (bt *OldRebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) oldRebuiltTree {
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
@@ -437,6 +450,11 @@ func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
 // ReadAt implements diskio.ReaderAt (and btrfs.ReadableFS).
 func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
+}
+
+// Name implements btrfs.ReadableFS.
+func (bt *OldRebuiltForrest) Name() string {
+	return bt.inner.Name()
 }
 
 // TreeCheckOwner implements btrfstree.Tree.
