@@ -20,6 +20,10 @@ import (
 )
 
 type oldRebuiltTree struct {
+	forrest *OldRebuiltForrest
+
+	ID btrfsprim.ObjID
+
 	RootErr error
 	Items   *containers.RBTree[oldRebuiltTreeValue]
 	Errors  *containers.IntervalTree[btrfsprim.Key, oldRebuiltTreeError]
@@ -135,6 +139,8 @@ func (bt *OldRebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.O
 	}
 
 	cacheEntry := newOldRebuiltTree()
+	cacheEntry.forrest = bt
+	cacheEntry.ID = treeID
 	dlog.Infof(ctx, "indexing tree %v...", treeID)
 	bt.rawTreeWalk(ctx, treeID, &cacheEntry)
 	dlog.Infof(ctx, "... done indexing tree %v", treeID)
@@ -267,12 +273,20 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 
 // TreeLookup implements btrfstree.TreeOperator.
 func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
+	return bt.RebuiltTree(bt.ctx, treeID).treeLookup(bt.ctx, key)
+}
+
+func (tree oldRebuiltTree) treeLookup(ctx context.Context, key btrfsprim.Key) (btrfstree.Item, error) {
+	return tree.treeSearch(ctx, btrfstree.SearchExactKey(key))
 }
 
 // TreeSearch implements btrfstree.TreeOperator.
 func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
-	tree := bt.RebuiltTree(bt.ctx, treeID)
+	return bt.RebuiltTree(bt.ctx, treeID).treeSearch(bt.ctx, searcher)
+}
+
+// TreeSearch implements btrfstree.Tree.
+func (tree oldRebuiltTree) treeSearch(_ context.Context, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
 	if tree.RootErr != nil {
 		return btrfstree.Item{}, tree.RootErr
 	}
@@ -284,7 +298,7 @@ func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstr
 		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, tree.addErrs(searcher.Search, btrfstree.ErrNoItem))
 	}
 
-	node := bt.readNode(indexItem.Value.Node)
+	node := tree.forrest.readNode(indexItem.Value.Node)
 	defer node.Free()
 
 	item := node.BodyLeaf[indexItem.Value.Slot]
@@ -303,33 +317,41 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrf
 	}
 
 	var ret []btrfstree.Item
+	err := tree.treeSubrange(bt.ctx, 1, searcher, func(item btrfstree.Item) bool {
+		item.Body = item.Body.CloneItem()
+		ret = append(ret, item)
+		return true
+	})
+
+	return ret, err
+}
+
+func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btrfstree.TreeSearcher, handleFn func(btrfstree.Item) bool) error {
 	var node *btrfstree.Node
+	var cnt int
 	tree.Items.Subrange(
 		func(indexItem oldRebuiltTreeValue) int {
 			return searcher.Search(indexItem.Key, indexItem.ItemSize)
 		},
 		func(rbNode *containers.RBNode[oldRebuiltTreeValue]) bool {
+			cnt++
 			if node == nil || node.Head.Addr != rbNode.Value.Node.LAddr {
 				node.Free()
-				node = bt.readNode(rbNode.Value.Node)
+				node = tree.forrest.readNode(rbNode.Value.Node)
 			}
-			item := node.BodyLeaf[rbNode.Value.Slot]
-			item.Body = item.Body.CloneItem()
-			ret = append(ret, item)
-			return true
+			return handleFn(node.BodyLeaf[rbNode.Value.Slot])
 		})
 	node.Free()
 
 	var err error
-	if len(ret) == 0 {
+	if cnt < min {
 		err = btrfstree.ErrNoItem
 	}
 	err = tree.addErrs(searcher.Search, err)
 	if err != nil {
 		err = fmt.Errorf("items with %s: %w", searcher, err)
 	}
-
-	return ret, err
+	return err
 }
 
 func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
@@ -344,6 +366,10 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		})
 		return
 	}
+	tree.treeWalk(ctx, errHandle, cbs)
+}
+
+func (tree oldRebuiltTree) treeWalk(ctx context.Context, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
 	if cbs.Item == nil {
 		return
 	}
@@ -352,18 +378,18 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 		if ctx.Err() != nil {
 			return false
 		}
-		if bt.ctx.Err() != nil {
+		if tree.forrest.ctx.Err() != nil {
 			return false
 		}
 		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
 			node.Free()
-			node = bt.readNode(indexItem.Value.Node)
+			node = tree.forrest.readNode(indexItem.Value.Node)
 		}
 		item := node.BodyLeaf[indexItem.Value.Slot]
 
 		itemPath := btrfstree.Path{
 			{
-				FromTree:         treeID,
+				FromTree:         tree.ID,
 				ToNodeAddr:       indexItem.Value.Node.LAddr,
 				ToNodeGeneration: indexItem.Value.Node.Generation,
 				ToNodeLevel:      indexItem.Value.Node.Level,
