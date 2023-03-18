@@ -297,35 +297,33 @@ func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrf
 		return nil, tree.RootErr
 	}
 
-	var indexItems []oldRebuiltTreeValue
+	var ret []btrfstree.Item
+	var node *btrfstree.Node
 	tree.Items.Subrange(
 		func(indexItem oldRebuiltTreeValue) int {
 			return searcher.Search(indexItem.Key, indexItem.ItemSize)
 		},
-		func(node *containers.RBNode[oldRebuiltTreeValue]) bool {
-			indexItems = append(indexItems, node.Value)
+		func(rbNode *containers.RBNode[oldRebuiltTreeValue]) bool {
+			if node == nil || node.Head.Addr != rbNode.Value.Node.LAddr {
+				node.Free()
+				node = bt.readNode(rbNode.Value.Node)
+			}
+			item := node.BodyLeaf[rbNode.Value.Slot]
+			item.Body = item.Body.CloneItem()
+			ret = append(ret, item)
 			return true
 		})
-	if len(indexItems) == 0 {
-		return nil, fmt.Errorf("items with %s: %w", searcher, tree.addErrs(searcher.Search, btrfstree.ErrNoItem))
-	}
-
-	ret := make([]btrfstree.Item, len(indexItems))
-	var node *btrfstree.Node
-	for i, indexItem := range indexItems {
-		if node == nil || node.Head.Addr != indexItem.Node.LAddr {
-			node.Free()
-			node = bt.readNode(indexItem.Node)
-		}
-		ret[i] = node.BodyLeaf[indexItem.Slot]
-		ret[i].Body = ret[i].Body.CloneItem()
-	}
 	node.Free()
 
-	err := tree.addErrs(searcher.Search, nil)
+	var err error
+	if len(ret) == 0 {
+		err = btrfstree.ErrNoItem
+	}
+	err = tree.addErrs(searcher.Search, err)
 	if err != nil {
 		err = fmt.Errorf("items with %s: %w", searcher, err)
 	}
+
 	return ret, err
 }
 
