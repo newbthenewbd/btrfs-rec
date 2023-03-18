@@ -26,8 +26,17 @@ type oldRebuiltTree struct {
 }
 
 type oldRebuiltTreeError struct {
-	Path SkinnyPath
-	Err  error
+	Min btrfsprim.Key
+	Max btrfsprim.Key
+	Err error
+}
+
+func (e oldRebuiltTreeError) Error() string {
+	return fmt.Sprintf("keys %v-%v: %v", e.Min, e.Max, e.Err)
+}
+
+func (e oldRebuiltTreeError) Unwrap() error {
+	return e.Err
 }
 
 type oldRebuiltTreeValue struct {
@@ -41,15 +50,15 @@ func (a oldRebuiltTreeValue) Compare(b oldRebuiltTreeValue) int {
 	return a.Key.Compare(b.Key)
 }
 
-func newOldRebuiltTree(arena *SkinnyPathArena) oldRebuiltTree {
+func newOldRebuiltTree() oldRebuiltTree {
 	return oldRebuiltTree{
 		Items: new(containers.RBTree[oldRebuiltTreeValue]),
 		Errors: &containers.IntervalTree[btrfsprim.Key, oldRebuiltTreeError]{
 			MinFn: func(err oldRebuiltTreeError) btrfsprim.Key {
-				return arena.Inflate(err.Path).Node(-1).ToKey
+				return err.Min
 			},
 			MaxFn: func(err oldRebuiltTreeError) btrfsprim.Key {
-				return arena.Inflate(err.Path).Node(-1).ToMaxKey
+				return err.Max
 			},
 		},
 	}
@@ -134,7 +143,7 @@ func (bt *OldRebuiltForrest) RebuiltTree(treeID btrfsprim.ObjID) oldRebuiltTree 
 			SB: _sb,
 		}
 	}
-	cacheEntry := newOldRebuiltTree(bt.arena)
+	cacheEntry := newOldRebuiltTree()
 	if err != nil {
 		cacheEntry.RootErr = err
 	} else {
@@ -158,8 +167,9 @@ func (bt *OldRebuiltForrest) rawTreeWalk(root btrfstree.TreeRoot, cacheEntry old
 			panic(fmt.Errorf("TODO: error parsing item: %w", err))
 		}
 		cacheEntry.Errors.Insert(oldRebuiltTreeError{
-			Path: bt.arena.Deflate(err.Path),
-			Err:  err.Err,
+			Min: err.Path.Node(-1).ToKey,
+			Max: err.Path.Node(-1).ToMaxKey,
+			Err: err.Err,
 		})
 	}
 
@@ -190,15 +200,12 @@ func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Ke
 	return bt.TreeSearch(treeID, btrfstree.SearchExactKey(key))
 }
 
-func (bt *OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key, uint32) int, err error) error {
+func (*OldRebuiltForrest) addErrs(tree oldRebuiltTree, fn func(btrfsprim.Key, uint32) int, err error) error {
 	var errs derror.MultiError
 	tree.Errors.Subrange(
 		func(k btrfsprim.Key) int { return fn(k, 0) },
 		func(v oldRebuiltTreeError) bool {
-			path := bt.arena.Inflate(v.Path)
-			minKey := path.Node(-1).ToKey
-			maxKey := path.Node(-1).ToMaxKey
-			errs = append(errs, fmt.Errorf("keys %v-%v: %w", minKey, maxKey, v.Err))
+			errs = append(errs, v)
 			return true
 		})
 	if len(errs) == 0 {
