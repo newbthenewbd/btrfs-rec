@@ -162,33 +162,28 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 		}
 	}
 	var errs derror.MultiError
-	fs.TreeWalk(ctx, btrfsprim.CHUNK_TREE_OBJECTID,
-		func(err *btrfstree.TreeError) {
-			errs = append(errs, err)
-		},
-		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) {
-				if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
-					return
+	fs.TreeWalk(ctx, btrfsprim.CHUNK_TREE_OBJECTID, func(err *btrfstree.TreeError) {
+		errs = append(errs, err)
+	}, btrfstree.TreeWalkHandler{Item: func(_ btrfstree.Path, item btrfstree.Item) {
+		if item.Key.ItemType != btrfsitem.CHUNK_ITEM_KEY {
+			return
+		}
+		switch itemBody := item.Body.(type) {
+		case *btrfsitem.Chunk:
+			for _, mapping := range itemBody.Mappings(item.Key) {
+				if err := fs.LV.AddMapping(mapping); err != nil {
+					errs = append(errs, err)
 				}
-				switch itemBody := item.Body.(type) {
-				case *btrfsitem.Chunk:
-					for _, mapping := range itemBody.Mappings(item.Key) {
-						if err := fs.LV.AddMapping(mapping); err != nil {
-							errs = append(errs, err)
-						}
-					}
-				case *btrfsitem.Error:
-					// do nothing
-				default:
-					// This is a panic because the item decoder should not emit CHUNK_ITEM items as
-					// anything but btrfsitem.Chunk or btrfsitem.Error without this code also being
-					// updated.
-					panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
-				}
-			},
-		},
-	)
+			}
+		case *btrfsitem.Error:
+			// do nothing
+		default:
+			// This is a panic because the item decoder should not emit CHUNK_ITEM items as
+			// anything but btrfsitem.Chunk or btrfsitem.Error without this code also being
+			// updated.
+			panic(fmt.Errorf("should not happen: CHUNK_ITEM has unexpected item type: %T", itemBody))
+		}
+	}})
 	if len(errs) > 0 {
 		return errs
 	}
