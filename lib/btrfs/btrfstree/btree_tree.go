@@ -155,314 +155,144 @@ func (tree *RawTree) walk(ctx context.Context, path Path, errHandle func(*TreeEr
 	}
 }
 
-func (tree *RawTree) search(_ context.Context, fn func(btrfsprim.Key, uint32) int) (Path, *Node, error) {
-	path := Path{{
-		FromTree:         tree.ID,
-		FromItemSlot:     -1,
-		ToNodeAddr:       tree.RootNode,
-		ToNodeGeneration: tree.Generation,
-		ToNodeLevel:      tree.Level,
-		ToMaxKey:         btrfsprim.MaxKey,
-	}}
-	for {
-		if path.Node(-1).ToNodeAddr == 0 {
-			return nil, nil, ErrNoItem
-		}
-		node, err := tree.Forrest.ReadNode(path)
-		if err != nil {
-			node.Free()
-			return nil, nil, err
-		}
-
-		switch {
-		case node.Head.Level > 0:
-			// interior node
-
-			// Search for the right-most node.BodyInterior item for which
-			// `fn(item.Key) >= 0`.
-			//
-			//    + + + + 0 - - - -
-			//
-			// There may or may not be a value that returns '0'.
-			//
-			// i.e. find the highest value that isn't too high.
-			lastGood, ok := slices.SearchHighest(node.BodyInterior, func(kp KeyPointer) int {
-				return slices.Min(fn(kp.Key, math.MaxUint32), 0) // don't return >0; a key can't be "too low"
-			})
-			if !ok {
-				node.Free()
-				return nil, nil, ErrNoItem
-			}
-			toMaxKey := path.Node(-1).ToMaxKey
-			if lastGood+1 < len(node.BodyInterior) {
-				toMaxKey = node.BodyInterior[lastGood+1].Key.Mm()
-			}
-			path = append(path, PathElem{
-				FromTree:         node.Head.Owner,
-				FromItemSlot:     lastGood,
-				ToNodeAddr:       node.BodyInterior[lastGood].BlockPtr,
-				ToNodeGeneration: node.BodyInterior[lastGood].Generation,
-				ToNodeLevel:      node.Head.Level - 1,
-				ToKey:            node.BodyInterior[lastGood].Key,
-				ToMaxKey:         toMaxKey,
-			})
-			node.Free()
-		default:
-			// leaf node
-
-			// Search for a member of node.BodyLeaf for which
-			// `fn(item.Head.Key) == 0`.
-			//
-			//    + + + + 0 - - - -
-			//
-			// Such an item might not exist; in this case, return (nil, ErrNoItem).
-			// Multiple such items might exist; in this case, it does not matter which
-			// is returned.
-			//
-			// Implement this search as a binary search.
-			slot, ok := slices.Search(node.BodyLeaf, func(item Item) int {
-				return fn(item.Key, item.BodySize)
-			})
-			if !ok {
-				node.Free()
-				return nil, nil, ErrNoItem
-			}
-			path = append(path, PathElem{
-				FromTree:     node.Head.Owner,
-				FromItemSlot: slot,
-				ToKey:        node.BodyLeaf[slot].Key,
-				ToMaxKey:     node.BodyLeaf[slot].Key,
-			})
-			return path, node, nil
-		}
+// searchKP takes a sorted list of KeyPointers, and finds the
+//
+//   - left-most member for which `searchFn(member.Key, math.MaxUint32) == 0`; or else the
+//   - right-most member for which `searchFn(member.Key, math.MaxUint32) == 1`; or else
+//   - zero
+//
+// This assumes that `haystack` is sorted such that the return values from searchFn look like:
+//
+//   - + + 0 0 0 - - -
+func searchKP(haystack []KeyPointer, searchFn func(key btrfsprim.Key, size uint32) int) (_ KeyPointer, ok bool) {
+	if leftZero, ok := slices.SearchLowest(haystack, func(kp KeyPointer) int {
+		return searchFn(kp.Key, math.MaxUint32)
+	}); ok {
+		return haystack[leftZero], true
 	}
-}
-
-func (fs TreeOperatorImpl) prev(path Path, node *Node) (Path, *Node, error) {
-	var err error
-	path = path.DeepCopy()
-
-	// go up
-	for path.Node(-1).FromItemSlot < 1 {
-		path = path.Parent()
-		if len(path) == 0 {
-			return nil, nil, nil
-		}
+	if rightPos, ok := slices.SearchHighest(haystack, func(kp KeyPointer) int {
+		return slices.Min(searchFn(kp.Key, math.MaxUint32), 0)
+	}); ok {
+		return haystack[rightPos], true
 	}
-	// go left
-	path.Node(-1).FromItemSlot--
-	if path.Node(-1).ToNodeAddr != 0 {
-		if node.Head.Addr != path.Node(-2).ToNodeAddr {
-			node.Free()
-			node, err = fs.ReadNode(path.Parent())
-			if err != nil {
-				node.Free()
-				return nil, nil, err
-			}
-			path.Node(-1).ToNodeAddr = node.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
-		}
-	}
-	// go down
-	for path.Node(-1).ToNodeAddr != 0 {
-		if node.Head.Addr != path.Node(-1).ToNodeAddr {
-			node.Free()
-			node, err = fs.ReadNode(path)
-			if err != nil {
-				node.Free()
-				return nil, nil, err
-			}
-		}
-		if node.Head.Level > 0 {
-			path = append(path, PathElem{
-				FromTree:         node.Head.Owner,
-				FromItemSlot:     len(node.BodyInterior) - 1,
-				ToNodeAddr:       node.BodyInterior[len(node.BodyInterior)-1].BlockPtr,
-				ToNodeGeneration: node.BodyInterior[len(node.BodyInterior)-1].Generation,
-				ToNodeLevel:      node.Head.Level - 1,
-				ToKey:            node.BodyInterior[len(node.BodyInterior)-1].Key,
-				ToMaxKey:         path.Node(-1).ToMaxKey,
-			})
-		} else {
-			path = append(path, PathElem{
-				FromTree:     node.Head.Owner,
-				FromItemSlot: len(node.BodyLeaf) - 1,
-				ToKey:        node.BodyLeaf[len(node.BodyLeaf)-1].Key,
-				ToMaxKey:     node.BodyLeaf[len(node.BodyLeaf)-1].Key,
-			})
-		}
-	}
-	// return
-	if node.Head.Addr != path.Node(-2).ToNodeAddr {
-		node.Free()
-		node, err = fs.ReadNode(path.Parent())
-		if err != nil {
-			node.Free()
-			return nil, nil, err
-		}
-	}
-	return path, node, nil
-}
-
-func (fs TreeOperatorImpl) next(path Path, node *Node) (Path, *Node, error) {
-	var err error
-	path = path.DeepCopy()
-
-	// go up
-	if node.Head.Addr != path.Node(-2).ToNodeAddr {
-		node.Free()
-		node, err = fs.ReadNode(path.Parent())
-		if err != nil {
-			node.Free()
-			return nil, nil, err
-		}
-		path.Node(-2).ToNodeLevel = node.Head.Level
-	}
-	for path.Node(-1).FromItemSlot+1 >= int(node.Head.NumItems) {
-		path = path.Parent()
-		if len(path) == 1 {
-			return nil, nil, nil
-		}
-		if node.Head.Addr != path.Node(-2).ToNodeAddr {
-			node.Free()
-			node, err = fs.ReadNode(path.Parent())
-			if err != nil {
-				node.Free()
-				return nil, nil, err
-			}
-			path.Node(-2).ToNodeLevel = node.Head.Level
-		}
-	}
-	// go right
-	path.Node(-1).FromItemSlot++
-	if path.Node(-1).ToNodeAddr != 0 {
-		if node.Head.Addr != path.Node(-2).ToNodeAddr {
-			node.Free()
-			node, err = fs.ReadNode(path.Parent())
-			if err != nil {
-				node.Free()
-				return nil, nil, err
-			}
-			path.Node(-1).ToNodeAddr = node.BodyInterior[path.Node(-1).FromItemSlot].BlockPtr
-		}
-	}
-	// go down
-	for path.Node(-1).ToNodeAddr != 0 {
-		if node.Head.Addr != path.Node(-1).ToNodeAddr {
-			node.Free()
-			node, err = fs.ReadNode(path)
-			if err != nil {
-				node.Free()
-				return nil, nil, err
-			}
-			path.Node(-1).ToNodeLevel = node.Head.Level
-		}
-		if node.Head.Level > 0 {
-			toMaxKey := path.Node(-1).ToMaxKey
-			if len(node.BodyInterior) > 1 {
-				toMaxKey = node.BodyInterior[1].Key.Mm()
-			}
-			path = append(path, PathElem{
-				FromTree:         node.Head.Owner,
-				FromItemSlot:     0,
-				ToNodeAddr:       node.BodyInterior[0].BlockPtr,
-				ToNodeGeneration: node.BodyInterior[0].Generation,
-				ToNodeLevel:      node.Head.Level - 1,
-				ToKey:            node.BodyInterior[0].Key,
-				ToMaxKey:         toMaxKey,
-			})
-		} else {
-			path = append(path, PathElem{
-				FromTree:     node.Head.Owner,
-				FromItemSlot: 0,
-				ToKey:        node.BodyInterior[0].Key,
-				ToMaxKey:     node.BodyInterior[0].Key,
-			})
-		}
-	}
-	// return
-	if node.Head.Addr != path.Node(-2).ToNodeAddr {
-		node.Free()
-		node, err = fs.ReadNode(path.Parent())
-		if err != nil {
-			node.Free()
-			return nil, nil, err
-		}
-	}
-	return path, node, nil
+	return KeyPointer{}, false
 }
 
 func (tree *RawTree) TreeSearch(ctx context.Context, searcher TreeSearcher) (Item, error) {
-	path, node, err := tree.search(ctx, searcher.Search)
-	if err != nil {
-		return Item{}, fmt.Errorf("item with %s: %w", searcher, err)
-	}
-	item := node.BodyLeaf[path.Node(-1).FromItemSlot]
-	item.Body = item.Body.CloneItem()
-	node.Free()
-	return item, nil
+	ctx, cancel := context.WithCancel(ctx)
+	var retErr error
+
+	var ret Item
+	var selKP KeyPointer
+	tree.TreeWalk(ctx, func(err *TreeError) {
+		if retErr == nil {
+			retErr = fmt.Errorf("item with %s: %w", searcher, err)
+		}
+		cancel()
+	}, TreeWalkHandler{
+		Node: func(_ Path, node *Node) error {
+			if node.Head.Level > 0 { // interior node
+				kp, ok := searchKP(node.BodyInterior, searcher.Search)
+				if !ok {
+					return ErrNoItem
+				}
+				selKP = kp
+			} else { // leaf node
+				slot, ok := slices.Search(node.BodyLeaf, func(item Item) int {
+					return searcher.Search(item.Key, item.BodySize)
+				})
+				if !ok {
+					return ErrNoItem
+				}
+				ret = node.BodyLeaf[slot]
+				ret.Body = ret.Body.CloneItem()
+			}
+			return nil
+		},
+		PreKeyPointer: func(_ Path, kp KeyPointer) error {
+			if kp == selKP {
+				return nil
+			}
+			return iofs.SkipDir
+		},
+	})
+
+	return ret, retErr
 }
 
 func (tree *RawTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (Item, error) {
 	return tree.TreeSearch(ctx, SearchExactKey(key))
 }
 
-func (tree *RawTree) TreeSearchAll(ctx context.Context, searcher TreeSearcher) ([]Item, error) {
-	middlePath, middleNode, err := tree.search(ctx, searcher.Search)
-	if err != nil {
-		return nil, fmt.Errorf("items with %s: %w", searcher, err)
-	}
-	middleItem := middleNode.BodyLeaf[middlePath.Node(-1).FromItemSlot]
-
-	ret := []Item{middleItem}
+func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSearcher, handleFn func(Item) bool) error {
+	ctx, cancel := context.WithCancel(ctx)
 	var errs derror.MultiError
-	prevPath, prevNode := middlePath, middleNode
-	for {
-		prevPath, prevNode, err = tree.Forrest.prev(prevPath, prevNode)
-		if err != nil {
-			errs = append(errs, err)
-			break
-		}
-		if len(prevPath) == 0 {
-			break
-		}
-		prevItem := prevNode.BodyLeaf[prevPath.Node(-1).FromItemSlot]
-		if searcher.Search(prevItem.Key, prevItem.BodySize) != 0 {
-			break
-		}
-		item := prevItem
-		item.Body = item.Body.CloneItem()
-		ret = append(ret, item)
+
+	var minKP btrfsprim.Key
+	var cnt int
+	tree.TreeWalk(ctx, func(err *TreeError) {
+		errs = append(errs, err)
+	}, TreeWalkHandler{
+		Node: func(_ Path, node *Node) error {
+			// Only bother for interior nodes.
+			if node.Head.Level == 0 {
+				return nil
+			}
+			kp, ok := searchKP(node.BodyInterior, searcher.Search)
+			if !ok {
+				cancel()
+				return nil
+			}
+			minKP = kp.Key
+			return nil
+		},
+		PreKeyPointer: func(_ Path, kp KeyPointer) error {
+			if searcher.Search(kp.Key, math.MaxUint32) < 0 {
+				cancel()
+				return iofs.SkipDir
+			}
+			if kp.Key.Compare(minKP) > 0 {
+				return iofs.SkipDir
+			}
+			return nil
+		},
+		Item: func(_ Path, item Item) error {
+			d := searcher.Search(item.Key, item.BodySize)
+			switch {
+			case d > 1:
+				// do nothing
+			case d == 0:
+				cnt++
+				if !handleFn(item) {
+					cancel()
+				}
+			case d < 1:
+				cancel()
+			}
+			return nil
+		},
+		BadItem: func(_ Path, item Item) error {
+			d := searcher.Search(item.Key, item.BodySize)
+			switch {
+			case d > 1:
+				// do nothing
+			case d == 0:
+				cnt++
+				if !handleFn(item) {
+					cancel()
+				}
+			case d < 1:
+				cancel()
+			}
+			return nil
+		},
+	})
+
+	if cnt < min {
+		errs = append(errs, ErrNoItem)
 	}
-	slices.Reverse(ret)
-	if prevNode.Head.Addr != middlePath.Node(-1).ToNodeAddr {
-		prevNode.Free()
-		middleNode, err = tree.Forrest.ReadNode(middlePath)
-		if err != nil {
-			middleNode.Free()
-			return nil, fmt.Errorf("items with %s: %w", searcher, err)
-		}
+	if len(errs) > 0 {
+		return fmt.Errorf("items with %s: %w", searcher, errs)
 	}
-	nextPath, nextNode := middlePath, middleNode
-	for {
-		nextPath, nextNode, err = tree.Forrest.next(nextPath, nextNode)
-		if err != nil {
-			errs = append(errs, err)
-			break
-		}
-		if len(nextPath) == 0 {
-			break
-		}
-		nextItem := nextNode.BodyLeaf[nextPath.Node(-1).FromItemSlot]
-		if searcher.Search(nextItem.Key, nextItem.BodySize) != 0 {
-			break
-		}
-		item := nextItem
-		item.Body = item.Body.CloneItem()
-		ret = append(ret, item)
-	}
-	nextNode.Free()
-	if errs != nil {
-		err = errs
-	}
-	return ret, err
+	return nil
 }

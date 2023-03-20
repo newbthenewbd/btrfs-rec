@@ -135,5 +135,13 @@ func (fs TreeOperatorImpl) TreeSearchAll(treeID btrfsprim.ObjID, searcher TreeSe
 	if err != nil {
 		return nil, err
 	}
-	return tree.TreeSearchAll(ctx, searcher)
+
+	var ret []Item
+	err = tree.TreeSubrange(ctx, 1, searcher, func(item Item) bool {
+		item.Body = item.Body.CloneItem()
+		ret = append(ret, item)
+		return true
+	})
+
+	return ret, err
 }
