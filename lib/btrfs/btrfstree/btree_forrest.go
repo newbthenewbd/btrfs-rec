@@ -59,7 +59,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, SearchRootItem(treeID))
 		if err != nil {
 			if errors.Is(err, ErrNoItem) {
-				err = ErrNoTree
+				err = fmt.Errorf("%w: %s", ErrNoTree, err)
 			}
 			return nil, fmt.Errorf("tree %s: %w", treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), err)
 		}
