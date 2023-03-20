@@ -34,7 +34,7 @@ type TreeWalkHandler struct {
 	BadNode  func(Path, *Node, error) error
 	PostNode func(Path, *Node) error
 	// Callbacks for items on interior nodes
-	PreKeyPointer  func(Path, KeyPointer) error
+	PreKeyPointer  func(Path, KeyPointer) error // io/fs.SkipDir causes the KP to not be traversed
 	PostKeyPointer func(Path, KeyPointer) error
 	// Callbacks for items on leaf nodes
 	Item    func(Path, Item) error

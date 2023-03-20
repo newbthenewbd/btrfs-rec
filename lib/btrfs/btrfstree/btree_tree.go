@@ -96,6 +96,9 @@ func (tree *RawTree) walk(ctx context.Context, path Path, errHandle func(*TreeEr
 			})
 			if cbs.PreKeyPointer != nil {
 				if err := cbs.PreKeyPointer(itemPath, item); err != nil {
+					if errors.Is(err, iofs.SkipDir) {
+						continue
+					}
 					errHandle(&TreeError{Path: itemPath, Err: err})
 				}
 				if ctx.Err() != nil {
