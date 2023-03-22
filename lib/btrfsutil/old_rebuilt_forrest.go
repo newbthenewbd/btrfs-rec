@@ -179,13 +179,13 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		cacheEntry.RootErr = err
 		return
 	}
-	root, err := btrfstree.OldLookupTreeRoot(ctx, bt.TreeSearch, *sb, treeID)
+	root, err := btrfstree.LookupTreeRoot(ctx, bt, *sb, treeID)
 	if err != nil {
 		cacheEntry.RootErr = err
 		return
 	}
 	tree := &btrfstree.RawTree{
-		Forrest:  btrfstree.TreeOperatorImpl{NodeSource: bt.inner},
+		Forrest:  btrfstree.RawForrest{NodeSource: bt.inner},
 		TreeRoot: *root,
 	}
 
