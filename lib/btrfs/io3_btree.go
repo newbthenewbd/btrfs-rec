@@ -25,13 +25,18 @@ var _ btrfstree.NodeSource = (*FS)(nil)
 
 // btrfstree.NodeFile //////////////////////////////////////////////////////////
 
+type treeInfo struct {
+	UUID       btrfsprim.UUID
+	ParentUUID btrfsprim.UUID
+	ParentGen  btrfsprim.Generation
+}
+
 func (fs *FS) populateTreeUUIDs(ctx context.Context) {
-	if fs.cacheObjID2UUID != nil && fs.cacheUUID2ObjID != nil && fs.cacheTreeParent != nil {
+	if fs.cacheObjID2All != nil && fs.cacheUUID2ObjID != nil {
 		return
 	}
-	fs.cacheObjID2UUID = make(map[btrfsprim.ObjID]btrfsprim.UUID)
+	fs.cacheObjID2All = make(map[btrfsprim.ObjID]treeInfo)
 	fs.cacheUUID2ObjID = make(map[btrfsprim.UUID]btrfsprim.ObjID)
-	fs.cacheTreeParent = make(map[btrfsprim.ObjID]btrfsprim.UUID)
 	fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
 		func(err *btrfstree.TreeError) {
 			// do nothing
@@ -42,8 +47,11 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 				if !ok {
 					return
 				}
-				fs.cacheObjID2UUID[item.Key.ObjectID] = itemBody.UUID
-				fs.cacheTreeParent[item.Key.ObjectID] = itemBody.ParentUUID
+				fs.cacheObjID2All[item.Key.ObjectID] = treeInfo{
+					UUID:       itemBody.UUID,
+					ParentUUID: itemBody.ParentUUID,
+					ParentGen:  btrfsprim.Generation(item.Key.Offset),
+				}
 				fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
 			},
 		},
@@ -51,27 +59,28 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 }
 
 // ParentTree implements btrfstree.NodeFile.
-func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, bool) {
+func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, btrfsprim.Generation, bool) {
 	if tree < btrfsprim.FIRST_FREE_OBJECTID || tree > btrfsprim.LAST_FREE_OBJECTID {
 		// no parent
-		return 0, true
+		return 0, 0, true
 	}
 	fs.populateTreeUUIDs(context.TODO())
-	parentUUID, ok := fs.cacheTreeParent[tree]
+
+	all, ok := fs.cacheObjID2All[tree]
 	if !ok {
 		// could not look up parent info
-		return 0, false
+		return 0, 0, false
 	}
-	if parentUUID == (btrfsprim.UUID{}) {
+	if all.ParentUUID == (btrfsprim.UUID{}) {
 		// no parent
-		return 0, true
+		return 0, 0, true
 	}
-	parentObjID, ok := fs.cacheUUID2ObjID[parentUUID]
+	parentObjID, ok := fs.cacheUUID2ObjID[all.ParentUUID]
 	if !ok {
 		// could not look up parent info
-		return 0, false
+		return 0, 0, false
 	}
-	return parentObjID, true
+	return parentObjID, all.ParentGen, true
 }
 
 var _ btrfstree.NodeFile = (*FS)(nil)

@@ -20,13 +20,13 @@ type NodeFile interface {
 	// ParentTree, given a tree ID, returns that tree's parent
 	// tree, if it has one.
 	//
-	//  - non-zero, true : the parent tree ID
+	//  - non-zero, ?, true : the parent tree ID
 	//
-	//  - 0, true : the tree does not have a parent
+	//  - 0, 0, true : the tree does not have a parent
 	//
-	//  - any, false : the tree's parent information could not be
+	//  - ?, ?, false : the tree's parent information could not be
 	//    looked up
-	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, bool)
+	ParentTree(btrfsprim.ObjID) (btrfsprim.ObjID, btrfsprim.Generation, bool)
 }
 
 // FSReadNode is a utility function to help with implementing the
@@ -40,25 +40,33 @@ func FSReadNode(
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
 
-	var treeParents []btrfsprim.ObjID
-	checkOwner := func(owner btrfsprim.ObjID, _ btrfsprim.Generation) error {
-		exp := path.Node(-1).FromTree
+	checkOwner := func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
+		var treeParents []btrfsprim.ObjID
+
+		tree := path.Node(-1).FromTree
 		for {
-			if owner == exp {
+			if owner == tree {
+				// OK!
 				return nil
 			}
-			treeParents = append(treeParents, exp)
-			var ok bool
-			exp, ok = fs.ParentTree(exp)
-			if !ok {
+
+			treeParents = append(treeParents, tree)
+			parent, parentGen, parentOK := fs.ParentTree(tree)
+			if !parentOK {
 				// Failed look up parent info; fail open.
 				return nil
 			}
-			if exp == 0 {
+
+			if parent == 0 {
 				// End of the line.
 				return fmt.Errorf("expected owner in %v but claims to have owner=%v",
 					treeParents, owner)
 			}
+			if gen > parentGen {
+				return fmt.Errorf("claimed owner=%v might be acceptable in this tree (if generation<=%v) but not with claimed generation=%v",
+					owner, parentGen, gen)
+			}
+			tree = parent
 		}
 	}
 

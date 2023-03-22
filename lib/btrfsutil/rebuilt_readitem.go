@@ -42,10 +42,11 @@ func (ts *RebuiltForrest) readNode(ctx context.Context, laddr btrfsvol.LogicalAd
 		LAddr:      containers.OptionalValue(laddr),
 		Level:      containers.OptionalValue(graphInfo.Level),
 		Generation: containers.OptionalValue(graphInfo.Generation),
-		Owner: func(treeID btrfsprim.ObjID, _ btrfsprim.Generation) error {
-			if treeID != graphInfo.Owner {
-				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
-					graphInfo.Owner, treeID)
+		Owner: func(treeID btrfsprim.ObjID, gen btrfsprim.Generation) error {
+			if treeID != graphInfo.Owner || gen != graphInfo.Generation {
+				return fmt.Errorf("expected owner=%v generation=%v but claims to have owner=%v generation=%v",
+					graphInfo.Owner, graphInfo.Generation,
+					treeID, gen)
 			}
 			return nil
 		},

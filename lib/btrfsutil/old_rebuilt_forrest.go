@@ -240,10 +240,11 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),
 		Generation: containers.OptionalValue(nodeInfo.Generation),
-		Owner: func(treeID btrfsprim.ObjID, _ btrfsprim.Generation) error {
-			if treeID != nodeInfo.Owner {
-				return fmt.Errorf("expected owner=%v but claims to have owner=%v",
-					nodeInfo.Owner, treeID)
+		Owner: func(treeID btrfsprim.ObjID, gen btrfsprim.Generation) error {
+			if treeID != nodeInfo.Owner || gen != nodeInfo.Generation {
+				return fmt.Errorf("expected owner=%v generation=%v but claims to have owner=%v generation=%v",
+					nodeInfo.Owner, nodeInfo.Generation,
+					treeID, gen)
 			}
 			return nil
 		},
