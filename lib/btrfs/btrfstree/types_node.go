@@ -417,7 +417,7 @@ type NodeExpectations struct {
 	// Things knowable from the parent.
 	Level      containers.Optional[uint8]
 	Generation containers.Optional[btrfsprim.Generation]
-	Owner      func(btrfsprim.ObjID) error
+	Owner      func(btrfsprim.ObjID, btrfsprim.Generation) error
 	MinItem    containers.Optional[btrfsprim.Key]
 	// Things knowable from the structure of the tree.
 	MaxItem containers.Optional[btrfsprim.Key]
@@ -547,7 +547,7 @@ func (exp NodeExpectations) Check(node *Node) error {
 			exp.Generation.Val, node.Head.Generation))
 	}
 	if exp.Owner != nil {
-		if err := exp.Owner(node.Head.Owner); err != nil {
+		if err := exp.Owner(node.Head.Owner, node.Head.Generation); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -41,7 +41,7 @@ func FSReadNode(
 	}
 
 	var treeParents []btrfsprim.ObjID
-	checkOwner := func(owner btrfsprim.ObjID) error {
+	checkOwner := func(owner btrfsprim.ObjID, _ btrfsprim.Generation) error {
 		exp := path.Node(-1).FromTree
 		for {
 			if owner == exp {
