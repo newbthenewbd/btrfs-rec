@@ -122,7 +122,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 		if owner == tree.ID {
 			return true
 		}
-		if tree.Parent == nil || gen >= tree.ParentGen {
+		if tree.Parent == nil || gen > tree.ParentGen {
 			return false
 		}
 		tree = tree.Parent

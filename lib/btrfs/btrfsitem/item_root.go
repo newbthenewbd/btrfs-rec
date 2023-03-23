@@ -22,6 +22,11 @@ import (
 //	key.offset   = one of:
 //	   - 0 if objectid is one of the BTRFS_*_TREE_OBJECTID defines or a non-snapshot volume; or
 //	   - transaction_id of when this snapshot was created
+//
+// This tree might contain nodes with node.Head.Owner set to the
+// root.ParentUUID tree, *if* the node.Head.Generation is
+// less-than-or-equal-to the root's key.offset.  The "or-equal-to"
+// part of that might be surprising, which is why I called it out.
 type Root struct { // trivial ROOT_ITEM=132
 	Inode         Inode                `bin:"off=0x000, siz=0xa0"` // ???
 	Generation    btrfsprim.Generation `bin:"off=0x0a0, siz=0x08"`
