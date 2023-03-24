@@ -8,6 +8,7 @@
 package lsfiles
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 )
 
 func LsFiles(
+	ctx context.Context,
 	out io.Writer,
 	fs interface {
 		btrfstree.TreeOperator
@@ -42,6 +44,7 @@ func LsFiles(
 	}()
 
 	printSubvol(out, "", true, "/", btrfs.NewSubvolume(
+		ctx,
 		fs,
 		btrfsprim.FS_TREE_OBJECTID,
 		false,

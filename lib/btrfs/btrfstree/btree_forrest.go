@@ -21,6 +21,8 @@ type TreeRoot struct {
 	RootNode   btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
+
+	RootInode btrfsprim.ObjID // only for subvolume trees
 }
 
 // LookupTreeRoot is a utility function to help with implementing the
@@ -59,7 +61,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 		rootItem, err := fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, SearchRootItem(treeID))
 		if err != nil {
 			if errors.Is(err, ErrNoItem) {
-				err = ErrNoTree
+				err = fmt.Errorf("%w: %s", ErrNoTree, err)
 			}
 			return nil, fmt.Errorf("tree %s: %w", treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), err)
 		}
@@ -70,6 +72,7 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 				RootNode:   rootItemBody.ByteNr,
 				Level:      rootItemBody.Level,
 				Generation: rootItemBody.Generation,
+				RootInode:  rootItemBody.RootDirID,
 			}, nil
 		case *btrfsitem.Error:
 			return nil, fmt.Errorf("malformed ROOT_ITEM for tree %v: %w", treeID, rootItemBody.Err)

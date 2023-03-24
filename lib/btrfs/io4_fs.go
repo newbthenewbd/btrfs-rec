@@ -5,6 +5,7 @@
 package btrfs
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -62,7 +63,8 @@ type File struct {
 }
 
 type Subvolume struct {
-	fs interface {
+	ctx context.Context //nolint:containedctx // don't have an option while keeping the same API
+	fs  interface {
 		btrfstree.TreeOperator
 		Superblock() (*btrfstree.Superblock, error)
 		diskio.ReaderAt[btrfsvol.LogicalAddr]
@@ -70,8 +72,8 @@ type Subvolume struct {
 	TreeID      btrfsprim.ObjID
 	noChecksums bool
 
-	rootVal btrfsitem.Root
-	rootErr error
+	rootInfo btrfstree.TreeRoot
+	rootErr  error
 
 	bareInodeCache containers.ARCache[btrfsprim.ObjID, *BareInode]
 	fullInodeCache containers.ARCache[btrfsprim.ObjID, *FullInode]
@@ -80,6 +82,7 @@ type Subvolume struct {
 }
 
 func NewSubvolume(
+	ctx context.Context,
 	fs interface {
 		btrfstree.TreeOperator
 		Superblock() (*btrfstree.Superblock, error)
@@ -94,19 +97,17 @@ func NewSubvolume(
 		noChecksums: noChecksums,
 	}
 
-	root, err := sv.fs.TreeSearch(btrfsprim.ROOT_TREE_OBJECTID, btrfstree.SearchRootItem(sv.TreeID))
+	sb, err := sv.fs.Superblock()
 	if err != nil {
 		sv.rootErr = err
-	} else {
-		switch rootBody := root.Body.(type) {
-		case *btrfsitem.Root:
-			sv.rootVal = rootBody.Clone()
-		case *btrfsitem.Error:
-			sv.rootErr = fmt.Errorf("FS_TREE ROOT_ITEM has malformed body: %w", rootBody.Err)
-		default:
-			panic(fmt.Errorf("should not happen: ROOT_ITEM has unexpected item type: %T", rootBody))
-		}
+		return sv
 	}
+	rootInfo, err := btrfstree.LookupTreeRoot(ctx, sv.fs, *sb, sv.TreeID)
+	if err != nil {
+		sv.rootErr = err
+		return sv
+	}
+	sv.rootInfo = *rootInfo
 
 	sv.bareInodeCache.MaxLen = textui.Tunable(128)
 	sv.fullInodeCache.MaxLen = textui.Tunable(128)
@@ -117,11 +118,11 @@ func NewSubvolume(
 }
 
 func (sv *Subvolume) NewChildSubvolume(childID btrfsprim.ObjID) *Subvolume {
-	return NewSubvolume(sv.fs, childID, sv.noChecksums)
+	return NewSubvolume(sv.ctx, sv.fs, childID, sv.noChecksums)
 }
 
 func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
-	return sv.rootVal.RootDirID, sv.rootErr
+	return sv.rootInfo.RootInode, sv.rootErr
 }
 
 func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
