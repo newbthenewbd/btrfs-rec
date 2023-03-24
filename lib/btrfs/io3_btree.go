@@ -37,15 +37,14 @@ func (fs *FS) populateTreeUUIDs(ctx context.Context) {
 			// do nothing
 		},
 		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) error {
+			Item: func(_ btrfstree.Path, item btrfstree.Item) {
 				itemBody, ok := item.Body.(*btrfsitem.Root)
 				if !ok {
-					return nil
+					return
 				}
 				fs.cacheObjID2UUID[item.Key.ObjectID] = itemBody.UUID
 				fs.cacheTreeParent[item.Key.ObjectID] = itemBody.ParentUUID
 				fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
-				return nil
 			},
 		},
 	)

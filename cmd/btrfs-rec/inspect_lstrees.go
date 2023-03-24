@@ -75,19 +75,21 @@ func init() {
 					treeErrCnt++
 				},
 				TreeWalkHandler: btrfstree.TreeWalkHandler{
-					Node: func(path btrfstree.Path, node *btrfstree.Node) error {
+					Node: func(path btrfstree.Path, node *btrfstree.Node) {
 						visitedNodes.Insert(path.Node(-1).ToNodeAddr)
-						return nil
 					},
-					Item: func(_ btrfstree.Path, item btrfstree.Item) error {
+					BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
+						visitedNodes.Insert(path.Node(-1).ToNodeAddr)
+						treeErrCnt++
+						return false
+					},
+					Item: func(_ btrfstree.Path, item btrfstree.Item) {
 						typ := item.Key.ItemType
 						treeItemCnt[typ]++
-						return nil
 					},
-					BadItem: func(_ btrfstree.Path, item btrfstree.Item) error {
+					BadItem: func(_ btrfstree.Path, item btrfstree.Item) {
 						typ := item.Key.ItemType
 						treeItemCnt[typ]++
-						return nil
 					},
 				},
 				PostTree: func(_ string, _ btrfsprim.ObjID) {
