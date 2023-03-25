@@ -5,12 +5,13 @@
 package containers
 
 import (
-	"git.lukeshu.com/go/typedsync"
+	"fmt"
 )
 
 // LinkedListEntry [T] is an entry in a LinkedList [T].
 type LinkedListEntry[T any] struct {
-	older, newer *LinkedListEntry[T]
+	List         *LinkedList[T]
+	Older, Newer *LinkedListEntry[T]
 	Value        T
 }
 
@@ -24,18 +25,17 @@ type LinkedListEntry[T any] struct {
 // of a linked-list, because these applications do not need such
 // features.
 //
-// An advantage over `container/list.List` is that LinkedList
-// maintains a Pool of entries, so churning through the list does not
-// churn out garbage.  However, LinkedList also has the disadvantages
-// that it has fewer safety checks and fewer features in general.
+// Compared to `containers/list.List`, LinkedList has the
+// disadvantages that it has fewer safety checks and fewer features in
+// general.
 type LinkedList[T any] struct {
-	oldest, newest *LinkedListEntry[T]
-	pool           typedsync.Pool[*LinkedListEntry[T]]
+	Len            int
+	Oldest, Newest *LinkedListEntry[T]
 }
 
 // IsEmpty returns whether the list empty or not.
 func (l *LinkedList[T]) IsEmpty() bool {
-	return l.oldest == nil
+	return l.Oldest == nil
 }
 
 // Delete removes an entry from the list.  The entry is invalid once
@@ -44,42 +44,50 @@ func (l *LinkedList[T]) IsEmpty() bool {
 //
 // It is invalid (runtime-panic) to call Delete on a nil entry.
 //
-// It is invalid (corrupt the list) to call Delete on an entry that
+// It is invalid (runtime-panic) to call Delete on an entry that
 // isn't in the list.
 func (l *LinkedList[T]) Delete(entry *LinkedListEntry[T]) {
-	if entry.newer == nil {
-		l.newest = entry.older
-	} else {
-		entry.newer.older = entry.older
+	if entry.List != l {
+		panic(fmt.Errorf("LinkedList.Delete: entry %p not in list", entry))
 	}
-	if entry.older == nil {
-		l.oldest = entry.newer
+	l.Len--
+	if entry.Newer == nil {
+		l.Newest = entry.Older
 	} else {
-		entry.older.newer = entry.newer
+		entry.Newer.Older = entry.Older
+	}
+	if entry.Older == nil {
+		l.Oldest = entry.Newer
+	} else {
+		entry.Older.Newer = entry.Newer
 	}
 
-	*entry = LinkedListEntry[T]{} // no memory leaks
-	l.pool.Put(entry)
+	// no memory leaks
+	entry.List = nil
+	entry.Older = nil
+	entry.Newer = nil
 }
 
 // Store appends a value to the "newest" end of the list, returning
 // the created entry.
-func (l *LinkedList[T]) Store(val T) *LinkedListEntry[T] {
-	entry, ok := l.pool.Get()
-	if !ok {
-		entry = new(LinkedListEntry[T])
+//
+// It is invalid (runtime-panic) to call Store on a nil entry.
+//
+// It is invalid (runtime-panic) to call Store on an entry that is
+// already in a list.
+func (l *LinkedList[T]) Store(entry *LinkedListEntry[T]) {
+	if entry.List != nil {
+		panic(fmt.Errorf("LinkedList.Store: entry %p is already in a list", entry))
 	}
-	*entry = LinkedListEntry[T]{
-		older: l.newest,
-		Value: val,
-	}
-	l.newest = entry
-	if entry.older == nil {
-		l.oldest = entry
+	l.Len++
+	entry.List = l
+	entry.Older = l.Newest
+	l.Newest = entry
+	if entry.Older == nil {
+		l.Oldest = entry
 	} else {
-		entry.older.newer = entry
+		entry.Older.Newer = entry
 	}
-	return entry
 }
 
 // MoveToNewest moves an entry fron any position in the list to the
@@ -88,29 +96,26 @@ func (l *LinkedList[T]) Store(val T) *LinkedListEntry[T] {
 //
 // It is invalid (runtime-panic) to call MoveToNewest on a nil entry.
 //
-// It is invalid (corrupt the list) to call MoveToNewest on an entry
-// that isn't in the list.
+// It is invalid (runtime-panic) to call MoveToNewest on an entry that
+// isn't in the list.
 func (l *LinkedList[T]) MoveToNewest(entry *LinkedListEntry[T]) {
-	if entry.newer == nil {
+	if entry.List != l {
+		panic(fmt.Errorf("LinkedList.MoveToNewest: entry %p not in list", entry))
+	}
+	if entry.Newer == nil {
 		// Already newest.
 		return
 	}
-	entry.newer.older = entry.older
-	if entry.older == nil {
-		l.oldest = entry.newer
+	entry.Newer.Older = entry.Older
+	if entry.Older == nil {
+		l.Oldest = entry.Newer
 	} else {
-		entry.older.newer = entry.newer
+		entry.Older.Newer = entry.Newer
 	}
 
-	entry.older = l.newest
-	l.newest.newer = entry
+	entry.Older = l.Newest
+	l.Newest.Newer = entry
 
-	entry.newer = nil
-	l.newest = entry
-}
-
-// Oldest returns the entry at the "oldest" end of the list, or nil if
-// the list is empty.
-func (l *LinkedList[T]) Oldest() *LinkedListEntry[T] {
-	return l.oldest
+	entry.Newer = nil
+	l.Newest = entry
 }

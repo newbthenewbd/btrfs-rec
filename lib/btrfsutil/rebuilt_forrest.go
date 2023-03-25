@@ -7,7 +7,6 @@ package btrfsutil
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -140,12 +139,11 @@ type RebuiltForrest struct {
 
 	treesMu  nestedMutex
 	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
-	leafs    containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	incItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
-	excItems containers.ARCache[btrfsprim.ObjID, *itemIndex]
+	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
+	incItems containers.Cache[btrfsprim.ObjID, itemIndex]
+	excItems containers.Cache[btrfsprim.ObjID, itemIndex]
 
-	nodesMu sync.Mutex
-	nodes   containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]
+	nodes containers.Cache[btrfsvol.LogicalAddr, btrfstree.Node]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
@@ -158,23 +156,24 @@ func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Supe
 		cb:    cb,
 
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
-		leafs: containers.ARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]{
-			MaxLen: textui.Tunable(8),
-		},
-		incItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
-			MaxLen: textui.Tunable(8),
-		},
-		excItems: containers.ARCache[btrfsprim.ObjID, *itemIndex]{
-			MaxLen: textui.Tunable(8),
-		},
-
-		nodes: containers.ARCache[btrfsvol.LogicalAddr, *btrfstree.Node]{
-			MaxLen: textui.Tunable(8),
-			OnRemove: func(_ btrfsvol.LogicalAddr, node *btrfstree.Node) {
-				node.Free()
-			},
-		},
 	}
+
+	ret.leafs = containers.NewARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
+			func(ctx context.Context, treeID btrfsprim.ObjID, leafs *map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]) {
+				*leafs = ret.trees[treeID].uncachedLeafToRoots(ctx)
+			}))
+	ret.incItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, incItems *itemIndex) {
+			*incItems = ret.trees[treeID].uncachedIncItems(ctx)
+		}))
+	ret.excItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, excItems *itemIndex) {
+			*excItems = ret.trees[treeID].uncachedExcItems(ctx)
+		}))
+	ret.nodes = containers.NewARCache[btrfsvol.LogicalAddr, btrfstree.Node](textui.Tunable(8),
+		containers.SourceFunc[btrfsvol.LogicalAddr, btrfstree.Node](ret.readNode))
+
 	if ret.cb == nil {
 		ret.cb = noopRebuiltForrestCallbacks{
 			forrest: ret,

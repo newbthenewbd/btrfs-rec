@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/iotest"
 
+	"github.com/datawire/dlib/dlog"
+
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
@@ -50,7 +52,8 @@ func FuzzStatefulBufferedReader(f *testing.F) {
 			Reader: bytes.NewReader(content),
 			name:   t.Name(),
 		}
-		file = diskio.NewBufferedFile[int64](file, 4, 2)
+		ctx := dlog.NewTestContext(t, false)
+		file = diskio.NewBufferedFile[int64](ctx, file, 4, 2)
 		reader := diskio.NewStatefulFile[int64](file)
 		if err := iotest.TestReader(reader, content); err != nil {
 			t.Error(err)
