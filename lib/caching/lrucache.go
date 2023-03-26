@@ -14,7 +14,7 @@ type lruEntry[K comparable, V any] struct {
 	key  K
 	val  V
 	refs int
-	del  chan struct{}
+	del  chan struct{} // non-nil if a delete is waiting on .refs to drop to zero
 }
 
 type lruCache[K comparable, V any] struct {
@@ -23,8 +23,6 @@ type lruCache[K comparable, V any] struct {
 
 	mu sync.Mutex
 
-	len int
-
 	unused    LinkedList[lruEntry[K, V]]
 	evictable LinkedList[lruEntry[K, V]] // only entries with .refs==0
 	byName    map[K]*LinkedListEntry[lruEntry[K, V]]
@@ -32,8 +30,8 @@ type lruCache[K comparable, V any] struct {
 	waiters LinkedList[chan *LinkedListEntry[lruEntry[K, V]]]
 }
 
-// NewLRUCache returns a new Cache with a simple Least-Recently-Used eviction
-// policy.
+// NewLRUCache returns a new thread-safe Cache with a simple Least-Recently-Used
+// eviction policy.
 //
 // It is invalid (runtime-panic) to call NewLRUCache with a non-positive
 // capacity or a nil source.
@@ -44,10 +42,14 @@ func NewLRUCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 	if src == nil {
 		panic(fmt.Errorf("caching.NewLRUCache: nil source"))
 	}
-	return &lruCache[K, V]{
+	ret := &lruCache[K, V]{
 		cap: cap,
 		src: src,
 	}
+	for i := 0; i < cap; i++ {
+		c.unused.Store(new(LinkedListEntry[lruEntry[K, V]]))
+	}
+	return ret
 }
 
 // Acquire implements Cache.
@@ -69,9 +71,6 @@ func (c *lruCache[K, V]) Acquire(ctx context.Context, k K) *V {
 		case !c.unused.IsEmpty():
 			entry = c.unused.Oldest()
 			c.unused.Delete(entry)
-		case c.len < c.cap:
-			entry = new(LinkedListEntry[lruEntry[K, V]])
-			c.len++
 		case !c.evictable.IsEmpty():
 			entry = c.evictable.Oldest()
 			c.evictable.Delete(entry)

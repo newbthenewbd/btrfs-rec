@@ -169,8 +169,8 @@ func inodeItemToFUSE(itemBody btrfsitem.Inode) fuseops.InodeAttributes {
 	}
 }
 
-func (sv *subvolume) LoadDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) {
-	val, err = sv.Subvolume.LoadDir(inode)
+func (sv *subvolume) AcquireDir(inode btrfsprim.ObjID) (val *btrfs.Dir, err error) {
+	val, err = sv.Subvolume.AcquireDir(inode)
 	if val != nil {
 		haveSubvolumes := false
 		for _, index := range maps.SortedKeys(val.ChildrenByIndex) {
@@ -245,10 +245,11 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 		op.Parent = fuseops.InodeID(parent)
 	}
 
-	dir, err := sv.LoadDir(btrfsprim.ObjID(op.Parent))
+	dir, err := sv.AcquireDir(btrfsprim.ObjID(op.Parent))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseDir(btrfsprim.ObjID(op.Parent))
 	entry, ok := dir.ChildrenByName[op.Name]
 	if !ok {
 		return syscall.ENOENT
@@ -275,10 +276,13 @@ func (sv *subvolume) LookUpInode(_ context.Context, op *fuseops.LookUpInodeOp) e
 		}
 		return nil
 	}
-	bareInode, err := sv.LoadBareInode(entry.Location.ObjectID)
+
+	bareInode, err := sv.AcquireBareInode(entry.Location.ObjectID)
 	if err != nil {
 		return err
 	}
+	defer sv.ReleaseBareInode(entry.Location.ObjectID)
+
 	op.Entry = fuseops.ChildInodeEntry{
 		Child:      fuseops.InodeID(entry.Location.ObjectID),
 		Generation: fuseops.GenerationNumber(bareInode.InodeItem.Sequence),
@@ -296,10 +300,11 @@ func (sv *subvolume) GetInodeAttributes(_ context.Context, op *fuseops.GetInodeA
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	bareInode, err := sv.LoadBareInode(btrfsprim.ObjID(op.Inode))
+	bareInode, err := sv.AcquireBareInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseBareInode(btrfsprim.ObjID(op.Inode))
 
 	op.Attributes = inodeItemToFUSE(*bareInode.InodeItem)
 	return nil
@@ -314,10 +319,12 @@ func (sv *subvolume) OpenDir(_ context.Context, op *fuseops.OpenDirOp) error {
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	dir, err := sv.LoadDir(btrfsprim.ObjID(op.Inode))
+	dir, err := sv.AcquireDir(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseDir(btrfsprim.ObjID(op.Inode))
+
 	handle := sv.newHandle()
 	sv.dirHandles.Store(handle, &dirState{
 		Dir: dir,
@@ -369,10 +376,12 @@ func (sv *subvolume) ReleaseDirHandle(_ context.Context, op *fuseops.ReleaseDirH
 }
 
 func (sv *subvolume) OpenFile(_ context.Context, op *fuseops.OpenFileOp) error {
-	file, err := sv.LoadFile(btrfsprim.ObjID(op.Inode))
+	file, err := sv.AcquireFile(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseFile(btrfsprim.ObjID(op.Inode))
+
 	handle := sv.newHandle()
 	sv.fileHandles.Store(handle, &fileState{
 		File: file,
@@ -415,10 +424,12 @@ func (sv *subvolume) ReleaseFileHandle(_ context.Context, op *fuseops.ReleaseFil
 }
 
 func (sv *subvolume) ReadSymlink(_ context.Context, op *fuseops.ReadSymlinkOp) error {
-	file, err := sv.LoadFile(btrfsprim.ObjID(op.Inode))
+	file, err := sv.AcquireFile(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseFile(btrfsprim.ObjID(op.Inode))
+
 	reader := io.NewSectionReader(file, 0, file.InodeItem.Size)
 	tgt, err := io.ReadAll(reader)
 	if err != nil {
@@ -437,10 +448,11 @@ func (sv *subvolume) ListXattr(_ context.Context, op *fuseops.ListXattrOp) error
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	fullInode, err := sv.LoadFullInode(btrfsprim.ObjID(op.Inode))
+	fullInode, err := sv.AcquireFullInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseFullInode(btrfsprim.ObjID(op.Inode))
 
 	size := 0
 	for name := range fullInode.XAttrs {
@@ -469,10 +481,11 @@ func (sv *subvolume) GetXattr(_ context.Context, op *fuseops.GetXattrOp) error {
 		op.Inode = fuseops.InodeID(inode)
 	}
 
-	fullInode, err := sv.LoadFullInode(btrfsprim.ObjID(op.Inode))
+	fullInode, err := sv.AcquireFullInode(btrfsprim.ObjID(op.Inode))
 	if err != nil {
 		return err
 	}
+	defer sv.Subvolume.ReleaseFullInode(btrfsprim.ObjID(op.Inode))
 
 	val, ok := fullInode.XAttrs[op.Name]
 	if !ok {

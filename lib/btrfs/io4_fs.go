@@ -19,6 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfssum"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/caching"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
@@ -75,10 +76,10 @@ type Subvolume struct {
 	rootInfo btrfstree.TreeRoot
 	rootErr  error
 
-	bareInodeCache containers.ARCache[btrfsprim.ObjID, *BareInode]
-	fullInodeCache containers.ARCache[btrfsprim.ObjID, *FullInode]
-	dirCache       containers.ARCache[btrfsprim.ObjID, *Dir]
-	fileCache      containers.ARCache[btrfsprim.ObjID, *File]
+	bareInodeCache caching.Cache[btrfsprim.ObjID, BareInode]
+	fullInodeCache caching.Cache[btrfsprim.ObjID, FullInode]
+	dirCache       caching.Cache[btrfsprim.ObjID, Dir]
+	fileCache      caching.Cache[btrfsprim.ObjID, File]
 }
 
 func NewSubvolume(
@@ -109,10 +110,14 @@ func NewSubvolume(
 	}
 	sv.rootInfo = *rootInfo
 
-	sv.bareInodeCache.MaxLen = textui.Tunable(128)
-	sv.fullInodeCache.MaxLen = textui.Tunable(128)
-	sv.dirCache.MaxLen = textui.Tunable(128)
-	sv.fileCache.MaxLen = textui.Tunable(128)
+	sv.bareInodeCache = caching.NewLRUCache[btrfsprim.ObjID, BareInode](textui.Tunable(128),
+		caching.FuncSource[btrfsprim.ObjID, BareInode](sv.loadBareInode))
+	sv.fullInodeCache = caching.NewLRUCache[btrfsprim.ObjID, FullInode](textui.Tunable(128),
+		caching.FuncSource[btrfsprim.ObjID, FullInode](sv.loadFullInode))
+	sv.dirCache = caching.NewLRUCache[btrfsprim.ObjID, Dir](textui.Tunable(128),
+		caching.FuncSource[btrfsprim.ObjID, Dir](sv.loadDir))
+	sv.fileCache = caching.NewLRUCache[btrfsprim.ObjID, File](textui.Tunable(128),
+		caching.FuncSource[btrfsprim.ObjID, File](sv.loadFile))
 
 	return sv
 }
@@ -125,113 +130,128 @@ func (sv *Subvolume) GetRootInode() (btrfsprim.ObjID, error) {
 	return sv.rootInfo.RootInode, sv.rootErr
 }
 
-func (sv *Subvolume) LoadBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
-	val := containers.LoadOrElse[btrfsprim.ObjID, *BareInode](&sv.bareInodeCache, inode, func(inode btrfsprim.ObjID) (val *BareInode) {
-		val = &BareInode{
-			Inode: inode,
-		}
-		item, err := sv.fs.TreeLookup(sv.TreeID, btrfsprim.Key{
-			ObjectID: inode,
-			ItemType: btrfsitem.INODE_ITEM_KEY,
-			Offset:   0,
-		})
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			return val
-		}
-
-		switch itemBody := item.Body.(type) {
-		case *btrfsitem.Inode:
-			bodyCopy := itemBody.Clone()
-			val.InodeItem = &bodyCopy
-		case *btrfsitem.Error:
-			val.Errs = append(val.Errs, fmt.Errorf("malformed inode: %w", itemBody.Err))
-		default:
-			panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
-		}
-
-		return val
-	})
+func (sv *Subvolume) AcquireBareInode(inode btrfsprim.ObjID) (*BareInode, error) {
+	val := sv.bareInodeCache.Acquire(sv.ctx, inode)
 	if val.InodeItem == nil {
+		sv.bareInodeCache.Release(inode)
 		return nil, val.Errs
 	}
 	return val, nil
 }
 
-func (sv *Subvolume) LoadFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
-	val := containers.LoadOrElse[btrfsprim.ObjID, *FullInode](&sv.fullInodeCache, inode, func(indoe btrfsprim.ObjID) (val *FullInode) {
-		val = &FullInode{
-			BareInode: BareInode{
-				Inode: inode,
-			},
-			XAttrs: make(map[string]string),
-		}
-		items, err := sv.fs.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			if len(items) == 0 {
-				return val
-			}
-		}
-		for _, item := range items {
-			switch item.Key.ItemType {
-			case btrfsitem.INODE_ITEM_KEY:
-				switch itemBody := item.Body.(type) {
-				case *btrfsitem.Inode:
-					if val.InodeItem != nil {
-						if !reflect.DeepEqual(itemBody, *val.InodeItem) {
-							val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
-						}
-						continue
-					}
-					bodyCopy := itemBody.Clone()
-					val.InodeItem = &bodyCopy
-				case *btrfsitem.Error:
-					val.Errs = append(val.Errs, fmt.Errorf("malformed INODE_ITEM: %w", itemBody.Err))
-				default:
-					panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
-				}
-			case btrfsitem.XATTR_ITEM_KEY:
-				switch itemBody := item.Body.(type) {
-				case *btrfsitem.DirEntry:
-					val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
-				case *btrfsitem.Error:
-					val.Errs = append(val.Errs, fmt.Errorf("malformed XATTR_ITEM: %w", itemBody.Err))
-				default:
-					panic(fmt.Errorf("should not happen: XATTR_ITEM has unexpected item type: %T", itemBody))
-				}
-			default:
-				val.OtherItems = append(val.OtherItems, item)
-			}
-		}
-		return val
+func (sv *Subvolume) ReleaseBareInode(inode btrfsprim.ObjID) {
+	sv.bareInodeCache.Release(inode)
+}
+
+func (sv *Subvolume) loadBareInode(_ context.Context, inode btrfsprim.ObjID, val *BareInode) {
+	*val = BareInode{
+		Inode: inode,
+	}
+	item, err := sv.fs.TreeLookup(sv.TreeID, btrfsprim.Key{
+		ObjectID: inode,
+		ItemType: btrfsitem.INODE_ITEM_KEY,
+		Offset:   0,
 	})
+	if err != nil {
+		val.Errs = append(val.Errs, err)
+		return
+	}
+
+	switch itemBody := item.Body.(type) {
+	case *btrfsitem.Inode:
+		bodyCopy := itemBody.Clone()
+		val.InodeItem = &bodyCopy
+	case *btrfsitem.Error:
+		val.Errs = append(val.Errs, fmt.Errorf("malformed inode: %w", itemBody.Err))
+	default:
+		panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
+	}
+}
+
+func (sv *Subvolume) AcquireFullInode(inode btrfsprim.ObjID) (*FullInode, error) {
+	val := sv.fullInodeCache.Acquire(sv.ctx, inode)
 	if val.InodeItem == nil && val.OtherItems == nil {
+		sv.fullInodeCache.Release(inode)
 		return nil, val.Errs
 	}
 	return val, nil
 }
 
-func (sv *Subvolume) LoadDir(inode btrfsprim.ObjID) (*Dir, error) {
-	val := containers.LoadOrElse[btrfsprim.ObjID, *Dir](&sv.dirCache, inode, func(inode btrfsprim.ObjID) (val *Dir) {
-		val = new(Dir)
-		fullInode, err := sv.LoadFullInode(inode)
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			return val
+func (sv *Subvolume) ReleaseFullInode(inode btrfsprim.ObjID) {
+	sv.fullInodeCache.Release(inode)
+}
+
+func (sv *Subvolume) loadFullInode(_ context.Context, inode btrfsprim.ObjID, val *FullInode) {
+	*val = FullInode{
+		BareInode: BareInode{
+			Inode: inode,
+		},
+		XAttrs: make(map[string]string),
+	}
+	items, err := sv.fs.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
+	if err != nil {
+		val.Errs = append(val.Errs, err)
+		if len(items) == 0 {
+			return
 		}
-		val.FullInode = *fullInode
-		val.SV = sv
-		val.populate()
-		return val
-	})
+	}
+	for _, item := range items {
+		switch item.Key.ItemType {
+		case btrfsitem.INODE_ITEM_KEY:
+			switch itemBody := item.Body.(type) {
+			case *btrfsitem.Inode:
+				if val.InodeItem != nil {
+					if !reflect.DeepEqual(itemBody, *val.InodeItem) {
+						val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
+					}
+					continue
+				}
+				bodyCopy := itemBody.Clone()
+				val.InodeItem = &bodyCopy
+			case *btrfsitem.Error:
+				val.Errs = append(val.Errs, fmt.Errorf("malformed INODE_ITEM: %w", itemBody.Err))
+			default:
+				panic(fmt.Errorf("should not happen: INODE_ITEM has unexpected item type: %T", itemBody))
+			}
+		case btrfsitem.XATTR_ITEM_KEY:
+			switch itemBody := item.Body.(type) {
+			case *btrfsitem.DirEntry:
+				val.XAttrs[string(itemBody.Name)] = string(itemBody.Data)
+			case *btrfsitem.Error:
+				val.Errs = append(val.Errs, fmt.Errorf("malformed XATTR_ITEM: %w", itemBody.Err))
+			default:
+				panic(fmt.Errorf("should not happen: XATTR_ITEM has unexpected item type: %T", itemBody))
+			}
+		default:
+			val.OtherItems = append(val.OtherItems, item)
+		}
+	}
+}
+
+func (sv *Subvolume) AcquireDir(inode btrfsprim.ObjID) (*Dir, error) {
+	val := sv.dirCache.Acquire(sv.ctx, inode)
 	if val.Inode == 0 {
+		sv.dirCache.Release(inode)
 		return nil, val.Errs
 	}
 	return val, nil
 }
 
-func (dir *Dir) populate() {
+func (sv *Subvolume) ReleaseDir(inode btrfsprim.ObjID) {
+	sv.dirCache.Release(inode)
+}
+
+func (sv *Subvolume) loadDir(_ context.Context, inode btrfsprim.ObjID, dir *Dir) {
+	*dir = Dir{}
+	fullInode, err := sv.AcquireFullInode(inode)
+	if err != nil {
+		dir.Errs = append(dir.Errs, err)
+		return
+	}
+	dir.FullInode = *fullInode
+	sv.ReleaseFullInode(inode)
+	dir.SV = sv
+
 	dir.ChildrenByName = make(map[string]btrfsitem.DirEntry)
 	dir.ChildrenByIndex = make(map[uint64]btrfsitem.DirEntry)
 	for _, item := range dir.OtherItems {
@@ -337,37 +357,42 @@ func (dir *Dir) AbsPath() (string, error) {
 	if dir.DotDot == nil {
 		return "", fmt.Errorf("missing .. entry in dir inode %v", dir.Inode)
 	}
-	parent, err := dir.SV.LoadDir(dir.DotDot.Inode)
+	parent, err := dir.SV.AcquireDir(dir.DotDot.Inode)
 	if err != nil {
 		return "", err
 	}
 	parentName, err := parent.AbsPath()
+	dir.SV.ReleaseDir(dir.DotDot.Inode)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(parentName, string(dir.DotDot.Name)), nil
 }
 
-func (sv *Subvolume) LoadFile(inode btrfsprim.ObjID) (*File, error) {
-	val := containers.LoadOrElse[btrfsprim.ObjID, *File](&sv.fileCache, inode, func(inode btrfsprim.ObjID) (val *File) {
-		val = new(File)
-		fullInode, err := sv.LoadFullInode(inode)
-		if err != nil {
-			val.Errs = append(val.Errs, err)
-			return val
-		}
-		val.FullInode = *fullInode
-		val.SV = sv
-		val.populate()
-		return val
-	})
+func (sv *Subvolume) AcquireFile(inode btrfsprim.ObjID) (*File, error) {
+	val := sv.fileCache.Acquire(sv.ctx, inode)
 	if val.Inode == 0 {
+		sv.fileCache.Release(inode)
 		return nil, val.Errs
 	}
 	return val, nil
 }
 
-func (file *File) populate() {
+func (sv *Subvolume) ReleaseFile(inode btrfsprim.ObjID) {
+	sv.fileCache.Release(inode)
+}
+
+func (sv *Subvolume) loadFile(_ context.Context, inode btrfsprim.ObjID, file *File) {
+	*file = File{}
+	fullInode, err := sv.AcquireFullInode(inode)
+	if err != nil {
+		file.Errs = append(file.Errs, err)
+		return
+	}
+	file.FullInode = *fullInode
+	sv.ReleaseFullInode(inode)
+	file.SV = sv
+
 	for _, item := range file.OtherItems {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_REF_KEY:
