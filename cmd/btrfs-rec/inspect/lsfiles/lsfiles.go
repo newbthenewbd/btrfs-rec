@@ -84,12 +84,14 @@ func printSubvol(out io.Writer, prefix string, isLast bool, name string, subvol 
 			subvol.TreeID, fmtErr(err)))
 		return
 	}
-	dir, err := subvol.LoadDir(rootInode)
+
+	dir, err := subvol.AcquireDir(rootInode)
 	if err != nil {
 		printText(out, prefix, isLast, name+"/", textui.Sprintf("subvol_id=%v err=%v",
 			subvol.TreeID, fmtErr(err)))
 		return
 	}
+
 	if name == "/" {
 		printDir(out, prefix, isLast, name, dir)
 		return
@@ -127,19 +129,23 @@ func fmtInode(inode btrfs.BareInode) string {
 
 func printDir(out io.Writer, prefix string, isLast bool, name string, dir *btrfs.Dir) {
 	printText(out, prefix, isLast, name+"/", fmtInode(dir.BareInode))
+	childrenByName := dir.ChildrenByName
+	subvol := dir.SV
+	subvol.ReleaseDir(dir.Inode)
+
 	if isLast {
 		prefix += tS
 	} else {
 		prefix += tl
 	}
-	for i, childName := range maps.SortedKeys(dir.ChildrenByName) {
+	for i, childName := range maps.SortedKeys(childrenByName) {
 		printDirEntry(
 			out,
 			prefix,
-			i == len(dir.ChildrenByName)-1,
-			dir.SV,
+			i == len(childrenByName)-1,
+			subvol,
 			path.Join(name, childName),
-			dir.ChildrenByName[childName])
+			childrenByName[childName])
 	}
 }
 
@@ -151,7 +157,7 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 	case btrfsitem.FT_DIR:
 		switch entry.Location.ItemType {
 		case btrfsitem.INODE_ITEM_KEY:
-			dir, err := subvol.LoadDir(entry.Location.ObjectID)
+			dir, err := subvol.AcquireDir(entry.Location.ObjectID)
 			if err != nil {
 				printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 				return
@@ -168,44 +174,48 @@ func printDirEntry(out io.Writer, prefix string, isLast bool, subvol *btrfs.Subv
 			panic(fmt.Errorf("TODO: I don't know how to handle an FT_SYMLINK with location.ItemType=%v: %q",
 				entry.Location.ItemType, name))
 		}
-		file, err := subvol.LoadFile(entry.Location.ObjectID)
+		file, err := subvol.AcquireFile(entry.Location.ObjectID)
 		if err != nil {
 			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
+		defer subvol.ReleaseFile(entry.Location.ObjectID)
 		printSymlink(out, prefix, isLast, name, file)
 	case btrfsitem.FT_REG_FILE:
 		if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
 			panic(fmt.Errorf("TODO: I don't know how to handle an FT_REG_FILE with location.ItemType=%v: %q",
 				entry.Location.ItemType, name))
 		}
-		file, err := subvol.LoadFile(entry.Location.ObjectID)
+		file, err := subvol.AcquireFile(entry.Location.ObjectID)
 		if err != nil {
 			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
+		defer subvol.ReleaseFile(entry.Location.ObjectID)
 		printFile(out, prefix, isLast, name, file)
 	case btrfsitem.FT_SOCK:
 		if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
 			panic(fmt.Errorf("TODO: I don't know how to handle an FT_SOCK with location.ItemType=%v: %q",
 				entry.Location.ItemType, name))
 		}
-		file, err := subvol.LoadFile(entry.Location.ObjectID)
+		file, err := subvol.AcquireFile(entry.Location.ObjectID)
 		if err != nil {
 			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
+		defer subvol.ReleaseFile(entry.Location.ObjectID)
 		printSocket(out, prefix, isLast, name, file)
 	case btrfsitem.FT_FIFO:
 		if entry.Location.ItemType != btrfsitem.INODE_ITEM_KEY {
 			panic(fmt.Errorf("TODO: I don't know how to handle an FT_FIFO with location.ItemType=%v: %q",
 				entry.Location.ItemType, name))
 		}
-		file, err := subvol.LoadFile(entry.Location.ObjectID)
+		file, err := subvol.AcquireFile(entry.Location.ObjectID)
 		if err != nil {
 			printText(out, prefix, isLast, name, textui.Sprintf("%v err=%v", entry.Type, fmtErr(err)))
 			return
 		}
+		defer subvol.ReleaseFile(entry.Location.ObjectID)
 		printPipe(out, prefix, isLast, name, file)
 	default:
 		panic(fmt.Errorf("TODO: I don't know how to handle a fileType=%v: %q",

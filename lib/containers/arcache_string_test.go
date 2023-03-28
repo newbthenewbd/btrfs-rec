@@ -5,6 +5,7 @@
 package containers
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,21 +13,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func (c *ARCache[K, V]) String() string {
+func (c *arCache[K, V]) String() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	keys := make([]string, 0, c.fullLen())
-	for entry := c.recentGhost.byAge.oldest; entry != nil; entry = entry.newer {
+	fullLen := len(c.liveByName) + len(c.ghostByName)
+	keys := make([]string, 0, fullLen)
+	for entry := c.recentGhost.Oldest; entry != nil; entry = entry.Newer {
 		keys = append(keys, fmt.Sprint(entry.Value.key))
 	}
-	for entry := c.recentLive.byAge.oldest; entry != nil; entry = entry.newer {
+	for entry := c.recentLive.Oldest; entry != nil; entry = entry.Newer {
 		keys = append(keys, fmt.Sprint(entry.Value.key))
 	}
-	for entry := c.frequentLive.byAge.newest; entry != nil; entry = entry.older {
+	for entry := c.frequentLive.Newest; entry != nil; entry = entry.Older {
 		keys = append(keys, fmt.Sprint(entry.Value.key))
 	}
-	for entry := c.frequentGhost.byAge.newest; entry != nil; entry = entry.older {
+	for entry := c.frequentGhost.Newest; entry != nil; entry = entry.Older {
 		keys = append(keys, fmt.Sprint(entry.Value.key))
 	}
 
@@ -36,26 +38,26 @@ func (c *ARCache[K, V]) String() string {
 	}
 
 	var out strings.Builder
-	blankLeft := c.MaxLen - c.recentLen()
-	for i := 0; i <= 2*c.MaxLen; i++ {
+	blankLeft := c.cap - (c.recentLive.Len + c.recentGhost.Len)
+	for i := 0; i <= 2*c.cap; i++ {
 		sep := []byte("    ")
-		if i == blankLeft+c.recentGhost.Len() {
+		if i == blankLeft+c.recentGhost.Len {
 			sep[0] = '['
 		}
-		if i == blankLeft+c.recentGhost.Len()+c.recentLive.Len() {
+		if i == blankLeft+c.recentGhost.Len+c.recentLive.Len {
 			sep[1] = '!'
 		}
-		if i == blankLeft+c.recentGhost.Len()+c.recentLive.Len()-c.recentLiveTarget {
+		if i == blankLeft+c.recentGhost.Len+c.recentLive.Len-c.recentLiveTarget {
 			sep[2] = '^'
 		}
-		if i == blankLeft+c.recentGhost.Len()+c.recentLive.Len()+c.frequentLive.Len() {
+		if i == blankLeft+c.recentGhost.Len+c.recentLive.Len+c.frequentLive.Len {
 			sep[3] = ']'
 		}
 		out.Write(sep)
 
-		if i < 2*c.MaxLen {
+		if i < 2*c.cap {
 			key := ""
-			if i >= blankLeft && i < blankLeft+c.fullLen() {
+			if i >= blankLeft && i < blankLeft+fullLen {
 				key = keys[i-blankLeft]
 			}
 			spaceLeft := (keyLen - len(key)) / 2
@@ -70,9 +72,7 @@ func (c *ARCache[K, V]) String() string {
 
 func TestARCacheString(t *testing.T) {
 	t.Parallel()
-	cache := &ARCache[int, int]{
-		MaxLen: 4,
-	}
+	cache := NewARCache[int, int](4, SourceFunc[int, int](func(context.Context, int, *int) {})).(*arCache[int, int])
 
 	assert.Equal(t, `    ___    ___    ___    ___[!^]___    ___    ___    ___    `, cache.String())
 }

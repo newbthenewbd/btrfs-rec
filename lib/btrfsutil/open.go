@@ -30,6 +30,7 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 			File: osFile,
 		}
 		bufFile := diskio.NewBufferedFile[btrfsvol.PhysicalAddr](
+			ctx,
 			typedFile,
 			//nolint:gomnd // False positive: gomnd.ignored-functions=[textui.Tunable] doesn't support type params.
 			textui.Tunable[btrfsvol.PhysicalAddr](16*1024), // block size: 16KiB

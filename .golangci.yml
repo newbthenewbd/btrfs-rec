@@ -124,6 +124,9 @@ linters-settings:
 issues:
   exclude-use-default: false
   exclude-rules:
+    # Unchecked type asserts in tests are fine.
+    - linters: [forcetypeassert]
+      path: ".*_test\\.go"
     # Ignore false positives that don't actually have any words.
     - linters: [dupword]
       source: "^[^a-zA-Z]*$"

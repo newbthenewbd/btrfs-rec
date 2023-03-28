@@ -9,103 +9,262 @@ package containers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"fmt"
-	"math"
 	"math/big"
+	"sort"
 	"testing"
 
 	"github.com/datawire/dlib/derror"
+	"github.com/datawire/dlib/dlog"
 	"github.com/stretchr/testify/require"
 )
 
 // Add runtime validity checks /////////////////////////////////////////////////
 
-func (c *ARCache[K, V]) err(e error) error {
-	return fmt.Errorf("%[1]T(%[1]p): %w (b1:%v t1:%v / t2:%v b2:%v)",
-		c, e,
-		c.recentGhost.Len(),
-		c.recentLive.Len(),
-		c.frequentLive.Len(),
-		c.frequentGhost.Len())
+func (c *arc[K, V]) logf(format string, a ...any) {
+	c.t.Helper()
+	c.t.Logf("%[1]T(%[1]p): %s (b1:%v t1:%v p1:%v / p1:%v, t2:%v b2:%v)",
+		c,
+		fmt.Sprintf(format, a...),
+		c.recentGhost.Len,
+		c.recentLive.Len,
+		c.recentPinned.Len,
+		c.frequentPinned.Len,
+		c.frequentLive.Len,
+		c.frequentGhost.Len)
 }
 
-func (c *ARCache[K, V]) check() {
-	if c.MaxLen < 2 {
-		panic(c.err(fmt.Errorf("MaxLen:%v < 2", c.MaxLen)))
+func (c *arc[K, V]) fatalf(format string, a ...any) {
+	c.logf(format, a...)
+	c.t.FailNow()
+}
+
+func (c *arc[K, V]) check() {
+	if c.noCheck {
+		return
+	}
+	c.t.Helper()
+
+	// Do the slow parts for 1/32 of all calls.
+	fullCheck := getRand(c.t, 32) == 0
+
+	// Check that the lists are in-sync with the maps.
+	if fullCheck {
+		liveEntries := make(map[*LinkedListEntry[arcLiveEntry[K, V]]]int, len(c.liveByName))
+		for _, list := range c.liveLists {
+			for entry := list.Oldest; entry != nil; entry = entry.Newer {
+				liveEntries[entry]++
+			}
+		}
+		for _, entry := range c.liveByName {
+			liveEntries[entry]--
+			if liveEntries[entry] == 0 {
+				delete(liveEntries, entry)
+			}
+		}
+		require.Len(c.t, liveEntries, 0)
+
+		ghostEntries := make(map[*LinkedListEntry[arcGhostEntry[K]]]int, len(c.ghostByName))
+		for _, list := range c.ghostLists {
+			for entry := list.Oldest; entry != nil; entry = entry.Newer {
+				ghostEntries[entry]++
+			}
+		}
+		for _, entry := range c.ghostByName {
+			ghostEntries[entry]--
+			if ghostEntries[entry] == 0 {
+				delete(ghostEntries, entry)
+			}
+		}
+		require.Len(c.t, ghostEntries, 0)
 	}
 
-	if fullLen := c.fullLen(); fullLen > 2*c.MaxLen {
-		panic(c.err(fmt.Errorf("fullLen:%v > MaxLen:%v", fullLen, c.MaxLen)))
-	}
+	// Check the invariants.
 
-	if liveLen := c.liveLen(); liveLen > c.MaxLen {
-		panic(c.err(fmt.Errorf("liveLen:%v > MaxLen:%v", liveLen, c.MaxLen)))
+	// from DBL(2c):
+	//
+	//    • 0 ≤ |L₁|+|L₂| ≤ 2c
+	if fullLen := c.recentPinned.Len + c.recentLive.Len + c.recentGhost.Len + c.frequentPinned.Len + c.frequentLive.Len + c.frequentGhost.Len; fullLen < 0 || fullLen > 2*c.cap {
+		c.fatalf("! ( 0 <= fullLen:%v <= 2*cap:%v )", fullLen, c.cap)
 	}
-	if ghostLen := c.ghostLen(); ghostLen > c.MaxLen {
-		panic(c.err(fmt.Errorf("ghostLen:%v > MaxLen:%v", ghostLen, c.MaxLen)))
+	//    • 0 ≤ |L₁| ≤ c
+	if recentLen := c.recentPinned.Len + c.recentLive.Len + c.recentGhost.Len; recentLen < 0 || recentLen > c.cap {
+		c.fatalf("! ( 0 <= recentLen:%v <= cap:%v )", recentLen, c.cap)
 	}
-	if recentLen := c.recentLen(); recentLen > c.MaxLen {
-		panic(c.err(fmt.Errorf("recentLen:%v > MaxLen:%v", recentLen, c.MaxLen)))
+	//    • 0 ≤ |L₂| ≤ 2c
+	if frequentLen := c.frequentPinned.Len + c.frequentLive.Len + c.frequentGhost.Len; frequentLen < 0 || frequentLen > 2*c.cap {
+		c.fatalf("! ( 0 <= frequentLen:%v <= 2*cap:%v )", frequentLen, c.cap)
 	}
-	if frequentLen := c.frequentLen(); frequentLen > c.MaxLen {
-		panic(c.err(fmt.Errorf("frequentLen:%v > MaxLen:%v", frequentLen, c.MaxLen)))
+	//
+	// from Π(c):
+	//
+	//    • A.1: The lists T₁, B₁, T₂, and B₂ are all mutually
+	//      disjoint.
+	if fullCheck {
+		keys := make(map[K]int, len(c.liveByName)+len(c.ghostByName))
+		for _, list := range c.liveLists {
+			for entry := list.Oldest; entry != nil; entry = entry.Newer {
+				keys[entry.Value.key]++
+			}
+		}
+		for _, list := range c.ghostLists {
+			for entry := list.Oldest; entry != nil; entry = entry.Newer {
+				keys[entry.Value.key]++
+			}
+		}
+		for key, cnt := range keys {
+			if cnt > 1 {
+				listNames := make([]string, 0, cnt)
+				for listName, list := range c.liveLists {
+					for entry := list.Oldest; entry != nil; entry = entry.Newer {
+						if entry.Value.key == key {
+							listNames = append(listNames, listName)
+						}
+					}
+				}
+				for listName, list := range c.ghostLists {
+					for entry := list.Oldest; entry != nil; entry = entry.Newer {
+						if entry.Value.key == key {
+							listNames = append(listNames, listName)
+						}
+					}
+				}
+				sort.Strings(listNames)
+				c.fatalf("dup key: %v is in %v", key, listNames)
+			}
+		}
+	}
+	//    • (not true) A.2: If |L₁|+|L₂| < c, then both B₁ and B₂ are
+	//      empty.  But supporting "delete" invalidates this!
+	//    • (not true) A.3: If |L₁|+|L₂| ≥ c, then |T₁|+|T₂| = c.  But
+	//      supporting "delete" invalidates this!
+	//    • A.4(a): Either (T₁ or B₁ is empty), or (the LRU page in T₁
+	//      is more recent than the MRU page in B₁).
+	//    • A.4(b): Either (T₂ or B₂ is empty), or (the LRU page in T₂
+	//      is more recent than the MRU page in B₂).
+	//    • A.5: |T₁∪T₂| is the set of pages that would be maintained
+	//      by the cache policy π(c).
+	//
+	// from FRC(p, c):
+	//
+	//    • 0 ≤ p ≤ c
+	if c.recentLiveTarget < 0 || c.recentLiveTarget > c.cap {
+		c.fatalf("! ( 0 <= p:%v <= cap:%v )", c.recentLiveTarget, c.cap)
 	}
 }
 
 // Compatibility layer for hashicorp/golang-lru ////////////////////////////////
 
+type lenFunc func() int
+
+func (fn lenFunc) Len() int { return fn() }
+
 type arc[K comparable, V any] struct {
-	ARCache[K, V]
-	t1, t2 *lruCache[K, V]
-	b1, b2 *lruCache[K, struct{}]
+	*arCache[K, V]
+	ctx context.Context //nolint:containedctx // have no choice to keep the hashicorp-compatible API
+	t   testing.TB
+
+	t1, t2, b1, b2 lenFunc
+
+	// For speeding up .check()
+	noCheck    bool
+	liveLists  map[string]*LinkedList[arcLiveEntry[K, V]]
+	ghostLists map[string]*LinkedList[arcGhostEntry[K]]
 }
 
-func NewARC[K comparable, V any](size int) (*arc[K, V], error) {
+func NewARC[K comparable, V any](t testing.TB, size int) (*arc[K, V], error) {
+	src := SourceFunc[K, V](func(context.Context, K, *V) {})
+	_, isBench := t.(*testing.B)
 	ret := &arc[K, V]{
-		ARCache: ARCache[K, V]{
-			MaxLen: size,
-		},
+		ctx:     dlog.NewTestContext(t, true),
+		t:       t,
+		noCheck: isBench,
 	}
-	ret.t1 = &ret.recentLive
-	ret.t2 = &ret.frequentLive
-	ret.b1 = &ret.recentGhost
-	ret.b2 = &ret.frequentGhost
+	ret.init(size, src)
 	return ret, nil
 }
 
-func (c *arc[K, V]) Contains(k K) bool { return c.Has(k) }
-func (c *arc[K, V]) Get(k K) (V, bool) { return c.Load(k) }
-func (c *arc[K, V]) Add(k K, v V)      { c.Store(k, v) }
-func (c *arc[K, V]) Remove(k K)        { c.Delete(k) }
+func (c *arc[K, V]) init(size int, src Source[K, V]) {
+	c.arCache = NewARCache[K, V](size, src).(*arCache[K, V])
+	c.t1 = lenFunc(func() int { return c.arCache.recentLive.Len })
+	c.t2 = lenFunc(func() int { return c.arCache.frequentLive.Len })
+	c.b1 = lenFunc(func() int { return c.arCache.recentGhost.Len })
+	c.b2 = lenFunc(func() int { return c.arCache.frequentGhost.Len })
+
+	c.liveLists = map[string]*LinkedList[arcLiveEntry[K, V]]{
+		"p1": &c.recentPinned,
+		"t1": &c.recentLive,
+		"p2": &c.frequentPinned,
+		"t2": &c.frequentLive,
+	}
+	c.ghostLists = map[string]*LinkedList[arcGhostEntry[K]]{
+		"b1": &c.recentGhost,
+		"b2": &c.frequentGhost,
+	}
+}
+
+// non-mutators
+
 func (c *arc[K, V]) p() int            { return c.recentLiveTarget }
-func (c *arc[K, V]) Purge() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.recentLive = lruCache[K, V]{}
-	c.recentGhost = lruCache[K, struct{}]{}
-	c.frequentLive = lruCache[K, V]{}
-	c.frequentGhost = lruCache[K, struct{}]{}
-	c.recentLiveTarget = 0
+func (c *arc[K, V]) Len() int          { return len(c.liveByName) }
+func (c *arc[K, V]) Contains(k K) bool { return c.liveByName[k] != nil }
+
+func (c *arc[K, V]) Peek(k K) (V, bool) {
+	entry := c.liveByName[k]
+	if entry == nil {
+		var zero V
+		return zero, false
+	}
+	return entry.Value.val, true
 }
 
 func (c *arc[K, V]) Keys() []K {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	ret := make([]K, 0, c.Len())
-	for entry := c.recentLive.byAge.oldest; entry != nil; entry = entry.newer {
+	ret := make([]K, 0, len(c.liveByName))
+	for entry := c.recentLive.Oldest; entry != nil; entry = entry.Newer {
 		ret = append(ret, entry.Value.key)
 	}
-	for entry := c.frequentLive.byAge.oldest; entry != nil; entry = entry.newer {
+	for entry := c.frequentLive.Oldest; entry != nil; entry = entry.Newer {
 		ret = append(ret, entry.Value.key)
 	}
 	return ret
 }
 
+// mutators
+
+func (c *arc[K, V]) Remove(k K) {
+	defer c.check()
+	c.Delete(k)
+}
+
+func (c *arc[K, V]) Purge() {
+	defer c.check()
+	c.init(c.cap, c.src)
+}
+
+func (c *arc[K, V]) Get(k K) (V, bool) {
+	defer c.check()
+	if !c.Contains(k) {
+		var zero V
+		return zero, false
+	}
+	val := *c.Acquire(c.ctx, k)
+	c.Release(k)
+	return val, true
+}
+
+func (c *arc[K, V]) Add(k K, v V) {
+	defer c.check()
+	ptr := c.Acquire(c.ctx, k)
+	*ptr = v
+	c.Release(k)
+}
+
 // Tests from hashicorp/golang-lru /////////////////////////////////////////////
 
-func getRand(tb testing.TB) int64 {
-	out, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+func getRand(tb testing.TB, limit int64) int64 {
+	out, err := rand.Int(rand.Reader, big.NewInt(limit))
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -113,14 +272,14 @@ func getRand(tb testing.TB) int64 {
 }
 
 func BenchmarkARC_Rand(b *testing.B) {
-	l, err := NewARC[int64, int64](8192)
+	l, err := NewARC[int64, int64](b, 8192)
 	if err != nil {
 		b.Fatalf("err: %v", err)
 	}
 
 	trace := make([]int64, b.N*2)
 	for i := 0; i < b.N*2; i++ {
-		trace[i] = getRand(b) % 32768
+		trace[i] = getRand(b, 32768)
 	}
 
 	b.ResetTimer()
@@ -141,7 +300,7 @@ func BenchmarkARC_Rand(b *testing.B) {
 }
 
 func BenchmarkARC_Freq(b *testing.B) {
-	l, err := NewARC[int64, int64](8192)
+	l, err := NewARC[int64, int64](b, 8192)
 	if err != nil {
 		b.Fatalf("err: %v", err)
 	}
@@ -149,9 +308,9 @@ func BenchmarkARC_Freq(b *testing.B) {
 	trace := make([]int64, b.N*2)
 	for i := 0; i < b.N*2; i++ {
 		if i%2 == 0 {
-			trace[i] = getRand(b) % 16384
+			trace[i] = getRand(b, 16384)
 		} else {
-			trace[i] = getRand(b) % 32768
+			trace[i] = getRand(b, 32768)
 		}
 	}
 
@@ -234,7 +393,7 @@ func FuzzARC(f *testing.F) {
 
 func testARC_RandomOps(t *testing.T, ops []arcOp) {
 	size := 128
-	l, err := NewARC[int64, int64](128)
+	l, err := NewARC[int64, int64](t, 128)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -264,7 +423,7 @@ func testARC_RandomOps(t *testing.T, ops []arcOp) {
 
 func TestARC_Get_RecentToFrequent(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](128)
+	l, err := NewARC[int, int](t, 128)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -309,7 +468,7 @@ func TestARC_Get_RecentToFrequent(t *testing.T) {
 
 func TestARC_Add_RecentToFrequent(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](128)
+	l, err := NewARC[int, int](t, 128)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -344,7 +503,7 @@ func TestARC_Add_RecentToFrequent(t *testing.T) {
 
 func TestARC_Adaptive(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](4)
+	l, err := NewARC[int, int](t, 4)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -353,13 +512,16 @@ func TestARC_Adaptive(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		l.Add(i, i)
 	}
+	require.Equal(t, `[   _0_    _1_    _2_    _3_ !^]___    ___    ___    ___    `, l.String())
 	if n := l.t1.Len(); n != 4 {
 		t.Fatalf("bad: %d", n)
 	}
 
 	// Move to t2
 	l.Get(0)
+	require.Equal(t, `    ___[   _1_    _2_    _3_ !^ _0_   ]___    ___    ___    `, l.String())
 	l.Get(1)
+	require.Equal(t, `    ___    ___[   _2_    _3_ !^ _1_    _0_   ]___    ___    `, l.String())
 	if n := l.t2.Len(); n != 2 {
 		t.Fatalf("bad: %d", n)
 	}
@@ -463,7 +625,7 @@ func TestARC_Adaptive(t *testing.T) {
 
 func TestARC(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](128)
+	l, err := NewARC[int, int](t, 128)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -509,7 +671,7 @@ func TestARC(t *testing.T) {
 // Test that Contains doesn't update recent-ness
 func TestARC_Contains(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](2)
+	l, err := NewARC[int, int](t, 2)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -529,7 +691,7 @@ func TestARC_Contains(t *testing.T) {
 // Test that Peek doesn't update recent-ness
 func TestARC_Peek(t *testing.T) {
 	t.Parallel()
-	l, err := NewARC[int, int](2)
+	l, err := NewARC[int, int](t, 2)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

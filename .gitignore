@@ -1,10 +1,13 @@
-# Copyright (C) 2022  Luke Shumaker <lukeshu@lukeshu.com>
+# Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 *.log
 *.cov
 *.html
+*.test
+*.pprof
+
 bin/
 vendor/
 btrfs-rec
