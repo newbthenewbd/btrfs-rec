@@ -226,12 +226,14 @@ type arCache[K comparable, V any] struct {
 //   Before getting to the meaty ARC stuff, let's get some
 //   boring/simple synchronization/blocking primitives out of the way:
 
-// Because of pinning, there might not actually be an available entry
-// for us to use/evict.  If we need an entry to use or evict, we'll
-// call waitForAvail to block until there is an entry that is either
-// unused or evictable.  We'll give waiters FIFO priority.
+// waitForEval is called before storing something into the cache.
+// This is nescessary because if the cache is full and all entries are
+// pinned, then we won't have to store the entry until something gets
+// unpinned ("Release()d").
 func (c *arCache[K, V]) waitForAvail() {
 	if !(c.recentLive.IsEmpty() && c.frequentLive.IsEmpty() && c.unusedLive.IsEmpty()) {
+		// There is already an available `arcLiveEntry` that
+		// we can either use or evict.
 		return
 	}
 	ch := make(chan struct{})
@@ -241,7 +243,7 @@ func (c *arCache[K, V]) waitForAvail() {
 	c.mu.Lock()
 }
 
-// notifyAvail is called when an entry becomes unused or evictable,
+// notifyAvail is called when an entry gets unpinned ("Release()d"),
 // and wakes up the highest-priority .waitForAvail() waiter (if there
 // is one).
 func (c *arCache[K, V]) notifyAvail() {
@@ -280,9 +282,9 @@ func (c *arCache[K, V]) notifyOfDel(entry *LinkedListEntry[arcLiveEntry[K, V]]) 
 //
 //     from DBL(2c):
 //
-//        - 0 ≤ |L₁|+|L₂| ≤ 2c
-//        - 0 ≤ |L₁| ≤ c
-//        - 0 ≤ |L₂| ≤ 2c
+//        • 0 ≤ |L₁|+|L₂| ≤ 2c
+//        • 0 ≤ |L₁| ≤ c
+//        • 0 ≤ |L₂| ≤ 2c
 //
 //     from Π(c):
 //
@@ -291,22 +293,27 @@ func (c *arCache[K, V]) notifyOfDel(entry *LinkedListEntry[arcLiveEntry[K, V]]) 
 //       deletion, this implementation doesn't actually belong to
 //       Π(c).
 //
-//        - A.1: The lists T₁, B₁, T₂, and B₂ are all mutually
+//        • A.1: The lists T₁, B₁, T₂, and B₂ are all mutually
 //          disjoint.
-//        - (not true) A.2: If |L₁|+|L₂| < c, then both B₁ and B₂ are
+//        • (not true) A.2: If |L₁|+|L₂| < c, then both B₁ and B₂ are
 //          empty.  But supporting "delete" invalidates this!
-//        - (not true) A.3: If |L₁|+|L₂| ≥ c, then |T₁|+|T₂| = c.  But
+//        • (not true) A.3: If |L₁|+|L₂| ≥ c, then |T₁|+|T₂| = c.  But
 //          supporting "delete" invalidates this!
-//        - A.4(a): Either (T₁ or B₁ is empty), or (the LRU page in T₁
+//        • A.4(a): Either (T₁ or B₁ is empty), or (the LRU page in T₁
 //          is more recent than the MRU page in B₁).
-//        - A.4(b): Either (T₂ or B₂ is empty), or (the LRU page in T₂
+//        • A.4(b): Either (T₂ or B₂ is empty), or (the LRU page in T₂
 //          is more recent than the MRU page in B₂).
-//        - A.5: |T₁∪T₂| is the set of pages that would be maintained
+//        • A.5: |T₁∪T₂| is the set of pages that would be maintained
 //          by the cache policy π(c).
+//
+//       The algorithm presented in the paper relies on A.2 and A.3 in
+//       order to be correct; the algorithm had to be adjusted in
+//       order to behave properly without relying on on those two
+//       invariants.
 //
 //     from FRC(p, c):
 //
-//        - 0 ≤ p ≤ c
+//        • 0 ≤ p ≤ c
 //
 //   OK, at the beginning I said that ARC(c) is most reasonably
 //   understood in terms of DBL(2c); to that end, we'll have two
@@ -315,9 +322,11 @@ func (c *arCache[K, V]) notifyOfDel(entry *LinkedListEntry[arcLiveEntry[K, V]]) 
 //   and the "arcReplace" policy that is used when ARC(c) has a
 //   cache-miss but DBL(2c) wouldn't have (and within dblReplace).
 
-// dblReplace is the DBL(2c) replacement policy.  It returns an entry
-// that is not in any list, that the main algorithm should store the
-// value in to and place in the appropriate list.
+// dblReplace is the DBL(2c) replacement policy.
+//
+// It returns an entry that is not in any list (c.recentPinned,
+// c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
+// and is ready to be stored in to a list by the caller.
 func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 	c.waitForAvail()
 
@@ -386,15 +395,18 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 	}
 }
 
-// arcReplace is the ARC(c) replacement policy.  It returns an entry
-// that is not in any list, that the main algorithm should store the
-// value in to and place in the appropriate list.
+// arcReplace is the ARC(c) replacement policy.
 //
-// `ghostEntry` is the entry that the eviction (if one is performed)
-// should be recorded in to.  It is still present in its old list (in
-// case an eviction is not performed).
+// It returns an entry that is not in any list (c.recentPinned,
+// c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
+// and is ready to be stored in to a list by the caller.
 //
-// `arbitrary` is arbitrary, see the quote about it below.
+// The `ghostEntry` argument is the entry that the eviction (if one is
+// performed) should be recorded in to.  It is still present in its
+// old list (in case an eviction is not performed).
+//
+// The `arbitrary` argument is arbitrary, see the quote about it
+// below.
 func (c *arCache[K, V]) arcReplace(ghostEntry *LinkedListEntry[arcGhostEntry[K]], arbitrary bool) *LinkedListEntry[arcLiveEntry[K, V]] {
 	c.waitForAvail()
 
