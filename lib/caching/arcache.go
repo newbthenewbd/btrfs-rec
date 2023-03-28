@@ -33,14 +33,19 @@ import (
 // enhanced ARC, which are patented by Sun (now Oracle) (patent
 // US-7,469,320-B2 is set to expire 2027-02-13).
 //
-// This implementation has a few enhancements compared to standard ARC:
+// This implementation has a few enhancements compared to standard
+// ARC:
 //
 //   - This implementation supports explicitly deleting/invalidating
-//     cache entries.
+//     cache entries; the standard ARC algorithm assumes that the only
+//     reason an entry is ever removed from the cache is because the
+//     cache is full and the entry had to be evicted to make room for
+//     a new entry.
 //
 //   - This implementation supports pinning entries such that they
-//     cannot be evicted.  This is one of the enhancements in ZFS, but
-//     the version here is not based on the ZFS version.
+//     cannot be evicted.  This is one of the enhancement from the
+//     enhanced version of ARC used by ZFS, but the version here is
+//     not based on the ZFS version.
 //
 // It is invalid (runtime-panic) to call NewARCache with a
 // non-positive capacity or a nil source.
@@ -56,7 +61,9 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 		cap: cap,
 		src: src,
 	}
-	// Do allocations up-front.
+	// Do allocations up-front.  Don't yet worry about what these
+	// members are; we'll get to that in the below description of
+	// the datatypes.
 	for i := 0; i < cap; i++ {
 		ret.unusedLive.Store(new(LinkedListEntry[arcLiveEntry[K, V]]))
 		ret.unusedGhost.Store(new(LinkedListEntry[arcGhostEntry[K]]))
@@ -104,7 +111,7 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //     The L₂/frequent list is still ordered by recency of use.
 //
 //   Put another way, L₁/recent is an recency-ordered list of
-//   recently-but-not-used entries, while L₂/frequent is an
+//   recently-but-not-frequently-used entries, while L₂/frequent is an
 //   recency-ordered list of frequently-used entries.
 //
 //   We'll get to DBL(2c)'s replacement algorithm later; the above
@@ -123,10 +130,11 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //      L₂        = T₂ ∪ B₂
 //
 //   Let us say that entries in the T₁ or T₂ are "live entries", and
-//   entries in B₁ or B₂ are "ghost entries".  We could use the same
-//   struct for live entries and ghost entries, and just have
-//   everything but the key zeroed-out for ghost entries; but to
-//   simplify things let's just have different structures:
+//   entries in B₁ or B₂ are "ghost entries".  The ghost entries make
+//   up a record of recent evictions.  We could use the same struct
+//   for live entries and ghost entries, and just have everything but
+//   the key zeroed-out for ghost entries; but to simplify things
+//   let's just have different structures:
 
 type arcLiveEntry[K comparable, V any] struct {
 	key K
@@ -184,15 +192,19 @@ type arCache[K comparable, V any] struct {
 	//
 	// recentLiveTarget is always in the range [0, cap]; it never
 	// goes negative, and never goes beyond cap.  Adjusting this
-	// target is the main way that ARC is "adaptive", we could But
-	// we'll get in to that later.  instead define a "fixed
-	// replacement cache" policy FRC(p, c) that has a static
-	// target.  But we'll get in to that later.
+	// target is the main way that ARC is "adaptive", we could
+	// instead define a "fixed replacement cache" policy FRC(p, c)
+	// that has a static target.  But we'll get in to that later.
 	recentLiveTarget int // "p"
 
 	// Other book-keeping.
 
-	// For lookups.
+	// For lookups.  The above ordered lists are about
+	// eviction/replacement policies, but they don't help us when
+	// we want to read something from the cache; we'd have to do
+	// an O(n) scan through each list to find the item we're
+	// looking for.  So maintain this separate index in order to
+	// do O(1) lookups when we want to read from the cache.
 	liveByName  map[K]*LinkedListEntry[arcLiveEntry[K, V]]
 	ghostByName map[K]*LinkedListEntry[arcGhostEntry[K]]
 
@@ -216,7 +228,7 @@ type arCache[K comparable, V any] struct {
 
 // Because of pinning, there might not actually be an available entry
 // for us to use/evict.  If we need an entry to use or evict, we'll
-// call waitForAvail to block until there is en entry that is either
+// call waitForAvail to block until there is an entry that is either
 // unused or evictable.  We'll give waiters FIFO priority.
 func (c *arCache[K, V]) waitForAvail() {
 	if !(c.recentLive.IsEmpty() && c.frequentLive.IsEmpty() && c.unusedLive.IsEmpty()) {
