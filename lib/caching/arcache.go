@@ -103,8 +103,8 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //   or "frequent"; |L₁| + |L₂| ≤ 2c.  L₁/recent is for entries that
 //   have only been used only once "recently", and L₂/frequent is for
 //   entries that have been used twice or more "recently" (for a
-//   particular definition of "recently" that we don't need to get in
-//   to).
+//   particular definition of "recently" that we don't need to get
+//   into).
 //
 //     Aside: Some of the ARC literature calls these lists "MRU" and
 //     "MFU" for "most {recently,frequently} used", but that's wrong.
@@ -118,11 +118,11 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //   "shape" is enough of an introduction for now.
 //
 //   Now, the difference of ARC(c) over DBL(2c) is that ARC(c) splits
-//   those lists in to segments; L₁ gets split in to a "top" part T₁
-//   and a "bottom" part B₁, and similarly L₂ gets split in to a "top"
-//   part T₂ and a "bottom" part B₂.  The "cache" is only made of of
-//   T₁ and T₂; entries in B₁ and B₂ are evicted; the 4 lists together
-//   make up a "directory" of what would be in DBL(2c).  That is:
+//   those lists into segments; L₁ gets split into a "top" part T₁ and
+//   a "bottom" part B₁, and similarly L₂ gets split into a "top" part
+//   T₂ and a "bottom" part B₂.  The "cache" is only made of of T₁ and
+//   T₂; entries in B₁ and B₂ are evicted; the 4 lists together make
+//   up a "directory" of what would be in DBL(2c).  That is:
 //
 //      cache     = T₁ ∪ T₂
 //      directory = T₁ ∪ T₂ ∪ B₁ ∪ B₂
@@ -156,7 +156,7 @@ type arCache[K comparable, V any] struct {
 
 	// Now, the above was a sort of lie for this implementation;
 	// for our pinning implementation, we we actually segment L₁
-	// and L₂ in to *three* segments rather than two segments: the
+	// and L₂ into *three* segments rather than two segments: the
 	// top part is pinned (and thus live) entries, the middle part
 	// is live-but-not-pinned entries, and the bottom part is
 	// ghost entries.
@@ -194,7 +194,7 @@ type arCache[K comparable, V any] struct {
 	// goes negative, and never goes beyond cap.  Adjusting this
 	// target is the main way that ARC is "adaptive", we could
 	// instead define a "fixed replacement cache" policy FRC(p, c)
-	// that has a static target.  But we'll get in to that later.
+	// that has a static target.  But we'll get into that later.
 	recentLiveTarget int // "p"
 
 	// Other book-keeping.
@@ -220,7 +220,7 @@ type arCache[K comparable, V any] struct {
 
 // Algorithms:
 //
-//   Now that all of our data structures are defined, let's get in to
+//   Now that all of our data structures are defined, let's get into
 //   the algorithms of updating them.
 //
 //   Before getting to the meaty ARC stuff, let's get some
@@ -326,7 +326,7 @@ func (c *arCache[K, V]) notifyOfDel(entry *LinkedListEntry[arcLiveEntry[K, V]]) 
 //
 // It returns an entry that is not in any list (c.recentPinned,
 // c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
-// and is ready to be stored in to a list by the caller.
+// and is ready to be stored into a list by the caller.
 func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 	c.waitForAvail()
 
@@ -399,11 +399,11 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 //
 // It returns an entry that is not in any list (c.recentPinned,
 // c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
-// and is ready to be stored in to a list by the caller.
+// and is ready to be stored into a list by the caller.
 //
 // The `ghostEntry` argument is the entry that the eviction (if one is
-// performed) should be recorded in to.  It is still present in its
-// old list (in case an eviction is not performed).
+// performed) should be recorded into.  It is still present in its old
+// list (in case an eviction is not performed).
 //
 // The `arbitrary` argument is arbitrary, see the quote about it
 // below.
@@ -467,9 +467,9 @@ func (c *arCache[K, V]) arcReplace(ghostEntry *LinkedListEntry[arcGhostEntry[K]]
 	return entry
 }
 
-//   OK, now that we have our replacement policies defined, it's pretty obvious
-//   how to wire them in to the "acquire an entry" algorithm.  The only parts
-//   here that aren't obvious are:
+//   OK, now that we have our replacement policies defined, it's
+//   pretty obvious how to wire them into the "acquire an entry"
+//   algorithm.  The only parts here that aren't obvious are:
 //
 //     - the "adapt" step that adjusts c.recentLiveTarget.  Read the
 //       paper for an explanation of why the formulas used do a good
