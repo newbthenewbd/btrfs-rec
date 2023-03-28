@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-// This file should be reasonably readable from top-to-bottom; I've tried to
-// write it in a sort-of "literate programming" style.  That makes the file
-// comparatively huge--but don't let that intimidate you, it's only huge because
-// of the detailed comments; it's less than 300 lines without the comments.
+// This file should be reasonably readable from top-to-bottom; I've
+// tried to write it in a sort-of "literate programming" style.  That
+// makes the file comparatively huge--but don't let that intimidate
+// you, it's only huge because of the detailed comments; it's less
+// than 300 lines without the comments.
 
 package caching
 
@@ -17,6 +18,13 @@ import (
 
 // NewARCache returns a new thread-safe Adaptive Replacement Cache
 // (ARC).
+//
+// Fundamentally, the point of ARC is to combine both recency
+// information and frequency information together to form a cache
+// policy that is better than both least-recently-used eviction (LRU)
+// or least-frequently-used eviction (LFU); and the balance between
+// how much weight is given to recency vs frequency is "adaptive"
+// based on the characteristics of the current workload.
 //
 // The Adaptive Replacement Cache is patented by IBM (patent
 // US-6,996,676-B2 is set to expire 2024-02-22).
@@ -78,12 +86,6 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //   support deletion or pinning should be clearly commented.
 //
 // Background / data structures:
-//
-//   Fundamentally, the point of ARC is to combine both recency
-//   information and frequency information together to form a cache
-//   policy that is better than either LRU or LFU; and the balance
-//   between how much weight is given to each side is "adaptive" based
-//   on the current workload.
 //
 //   `ARC(c)` -- that is, an adaptive replacement cache with capacity
 //   `c` -- is most reasonably understood in terms of an "imaginary"
