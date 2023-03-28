@@ -6,7 +6,6 @@ package caching
 
 import (
 	"context"
-	"runtime/debug"
 	"testing"
 	"time"
 
@@ -22,7 +21,7 @@ func TestLRUBlocking(t *testing.T) {
 	ctx := dlog.NewTestContext(t, false)
 
 	cache := NewLRUCache[int, int](4,
-		FuncSource[int, int](func(_ context.Context, k int, v *int) { *v = k * k }))
+		SourceFunc[int, int](func(_ context.Context, k int, v *int) { *v = k * k }))
 
 	assert.Equal(t, 1, *cache.Acquire(ctx, 1))
 	assert.Equal(t, 4, *cache.Acquire(ctx, 2))
@@ -54,7 +53,7 @@ func TestLRUAllocs(t *testing.T) {
 	ctx := dlog.NewTestContext(t, false)
 
 	evictions := 0
-	cache := NewLRUCache[int, int](cacheLen, FuncSource[int, int](func(_ context.Context, k int, v *int) {
+	cache := NewLRUCache[int, int](cacheLen, SourceFunc[int, int](func(_ context.Context, k int, v *int) {
 		if *v > 0 {
 			evictions++
 		}
@@ -68,24 +67,21 @@ func TestLRUAllocs(t *testing.T) {
 		i++
 	}
 
-	// Disable the GC temporarily to prevent cache.byAge.pool from
-	// being cleaned in the middle of an AllocsPerRun and causing
-	// spurious allocations.
-	percent := debug.SetGCPercent(-1)
-	defer debug.SetGCPercent(percent)
-
-	// 1 alloc each as we fill the cache
-	assert.Equal(t, float64(1), testing.AllocsPerRun(cacheLen-1, store))
-	assert.Equal(t, 0, evictions)
-	// after that, it should be alloc-free
-	assert.Equal(t, float64(0), testing.AllocsPerRun(1, store))
+	// it should be alloc-free after construction
+	assert.Equal(t, float64(0), testing.AllocsPerRun(cacheLen+1, store))
 	assert.Equal(t, 2, evictions)
 	assert.Equal(t, float64(0), testing.AllocsPerRun(bigNumber, store))
 	assert.Equal(t, 3+bigNumber, evictions)
 	// check the len
 	assert.Equal(t, cacheLen, len(cache.(*lruCache[int, int]).byName))
+	assert.Equal(t, cacheLen, cache.(*lruCache[int, int]).evictable.Len)
 	cnt := 0
-	for entry := cache.(*lruCache[int, int]).evictable.Oldest(); entry != nil; entry = entry.Newer() {
+	for entry := cache.(*lruCache[int, int]).evictable.Oldest; entry != nil; entry = entry.Newer {
+		cnt++
+	}
+	assert.Equal(t, cacheLen, cnt)
+	cnt = 0
+	for entry := cache.(*lruCache[int, int]).evictable.Newest; entry != nil; entry = entry.Older {
 		cnt++
 	}
 	assert.Equal(t, cacheLen, cnt)

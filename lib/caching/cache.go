@@ -54,11 +54,11 @@ type Cache[K comparable, V any] interface {
 	Flush(context.Context)
 }
 
-// FuncSource implements Source.  Load calls the function, and Flush
+// SourceFunc implements Source.  Load calls the function, and Flush
 // is a no-op.
-type FuncSource[K comparable, V any] func(context.Context, K, *V)
+type SourceFunc[K comparable, V any] func(context.Context, K, *V)
 
-var _ Source[int, string] = FuncSource[int, string](nil)
+var _ Source[int, string] = SourceFunc[int, string](nil)
 
-func (fn FuncSource[K, V]) Load(ctx context.Context, k K, v *V) { fn(ctx, k, v) }
-func (fn FuncSource[K, V]) Flush(context.Context, *V)           {}
+func (fn SourceFunc[K, V]) Load(ctx context.Context, k K, v *V) { fn(ctx, k, v) }
+func (fn SourceFunc[K, V]) Flush(context.Context, *V)           {}

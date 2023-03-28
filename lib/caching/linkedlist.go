@@ -10,13 +10,10 @@ import (
 
 // LinkedListEntry [T] is an entry in a LinkedList [T].
 type LinkedListEntry[T any] struct {
-	list         *LinkedList[T]
-	older, newer *LinkedListEntry[T]
+	List         *LinkedList[T]
+	Older, Newer *LinkedListEntry[T]
 	Value        T
 }
-
-func (entry *LinkedListEntry[T]) Older() *LinkedListEntry[T] { return entry.older }
-func (entry *LinkedListEntry[T]) Newer() *LinkedListEntry[T] { return entry.newer }
 
 // LinkedList is a doubly-linked list.
 //
@@ -32,12 +29,13 @@ func (entry *LinkedListEntry[T]) Newer() *LinkedListEntry[T] { return entry.newe
 // disadvantages that it has fewer safety checks and fewer features in
 // general.
 type LinkedList[T any] struct {
-	oldest, newest *LinkedListEntry[T]
+	Len            int
+	Oldest, Newest *LinkedListEntry[T]
 }
 
 // IsEmpty returns whether the list empty or not.
 func (l *LinkedList[T]) IsEmpty() bool {
-	return l.oldest == nil
+	return l.Oldest == nil
 }
 
 // Delete removes an entry from the list.  The entry is invalid once
@@ -49,24 +47,25 @@ func (l *LinkedList[T]) IsEmpty() bool {
 // It is invalid (runtime-panic) to call Delete on an entry that
 // isn't in the list.
 func (l *LinkedList[T]) Delete(entry *LinkedListEntry[T]) {
-	if entry.list != l {
+	if entry.List != l {
 		panic(fmt.Errorf("LinkedList.Delete: entry %p not in list", entry))
 	}
-	if entry.newer == nil {
-		l.newest = entry.older
+	l.Len--
+	if entry.Newer == nil {
+		l.Newest = entry.Older
 	} else {
-		entry.newer.older = entry.older
+		entry.Newer.Older = entry.Older
 	}
-	if entry.older == nil {
-		l.oldest = entry.newer
+	if entry.Older == nil {
+		l.Oldest = entry.Newer
 	} else {
-		entry.older.newer = entry.newer
+		entry.Older.Newer = entry.Newer
 	}
 
 	// no memory leaks
-	entry.list = nil
-	entry.older = nil
-	entry.newer = nil
+	entry.List = nil
+	entry.Older = nil
+	entry.Newer = nil
 }
 
 // Store appends a value to the "newest" end of the list, returning
@@ -77,16 +76,17 @@ func (l *LinkedList[T]) Delete(entry *LinkedListEntry[T]) {
 // It is invalid (runtime-panic) to call Store on an entry that is
 // already in a list.
 func (l *LinkedList[T]) Store(entry *LinkedListEntry[T]) {
-	if entry.list != nil {
+	if entry.List != nil {
 		panic(fmt.Errorf("LinkedList.Store: entry %p is already in a list", entry))
 	}
-	entry.list = l
-	entry.older = l.newest
-	l.newest = entry
-	if entry.older == nil {
-		l.oldest = entry
+	l.Len++
+	entry.List = l
+	entry.Older = l.Newest
+	l.Newest = entry
+	if entry.Older == nil {
+		l.Oldest = entry
 	} else {
-		entry.older.newer = entry
+		entry.Older.Newer = entry
 	}
 }
 
@@ -99,29 +99,23 @@ func (l *LinkedList[T]) Store(entry *LinkedListEntry[T]) {
 // It is invalid (runtime-panic) to call MoveToNewest on an entry that
 // isn't in the list.
 func (l *LinkedList[T]) MoveToNewest(entry *LinkedListEntry[T]) {
-	if entry.list != l {
+	if entry.List != l {
 		panic(fmt.Errorf("LinkedList.MoveToNewest: entry %p not in list", entry))
 	}
-	if entry.newer == nil {
+	if entry.Newer == nil {
 		// Already newest.
 		return
 	}
-	entry.newer.older = entry.older
-	if entry.older == nil {
-		l.oldest = entry.newer
+	entry.Newer.Older = entry.Older
+	if entry.Older == nil {
+		l.Oldest = entry.Newer
 	} else {
-		entry.older.newer = entry.newer
+		entry.Older.Newer = entry.Newer
 	}
 
-	entry.older = l.newest
-	l.newest.newer = entry
+	entry.Older = l.Newest
+	l.Newest.Newer = entry
 
-	entry.newer = nil
-	l.newest = entry
-}
-
-// Oldest returns the entry at the "oldest" end of the list, or nil if
-// the list is empty.
-func (l *LinkedList[T]) Oldest() *LinkedListEntry[T] {
-	return l.oldest
+	entry.Newer = nil
+	l.Newest = entry
 }
