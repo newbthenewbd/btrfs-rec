@@ -400,9 +400,9 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 // c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
 // and is ready to be stored into a list by the caller.
 //
-// The `ghostEntry` argument is the entry that the eviction (if one is
-// performed) should be recorded into.  It is still present in its old
-// list (in case an eviction is not performed).
+// If an eviction is performed, the `ghostEntry` argument is where the
+// eviction should be recorded to.  `ghostEntry` is still present in
+// its old list, in case an eviction is not performed.
 //
 // The `arbitrary` argument is arbitrary, see the quote about it
 // below.
