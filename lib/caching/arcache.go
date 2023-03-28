@@ -400,9 +400,10 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 // c.recentLive, c.frequentPinned, c.frequentLive, or c.unusedLive),
 // and is ready to be stored into a list by the caller.
 //
-// If an eviction is performed, the `ghostEntry` argument is where the
-// eviction should be recorded to.  `ghostEntry` is still present in
-// its old list, in case an eviction is not performed.
+// If an eviction is performed, `ghostEntry` is a pointer to the entry
+// object that is used as a record of the eviction.  `ghostEntry`
+// should still be present in its old list, in case an eviction is not
+// performed and the `ghostEntry` object is not modified.
 //
 // The `arbitrary` argument is arbitrary, see the quote about it
 // below.
@@ -410,8 +411,10 @@ func (c *arCache[K, V]) arcReplace(ghostEntry *LinkedListEntry[arcGhostEntry[K]]
 	c.waitForAvail()
 
 	// If the cache isn't full, no need to do an eviction.  (This
-	// is a nescessary enhancement over standard ARC in order to
-	// support "delete".)
+	// check is a nescessary enhancement over standard ARC in
+	// order to support "delete"; because without "delete",
+	// arcReplace wouldn't ever be called when the cache isn't
+	// full.)
 	if entry := c.unusedLive.Oldest; entry != nil {
 		c.unusedLive.Delete(entry)
 		return entry
