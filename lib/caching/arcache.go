@@ -358,6 +358,7 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 			delete(c.liveByName, entry.Value.key)
 			return entry
 		default: // case !c.recentPinned.IsEmpty(): // top
+
 			// This can't happen because `c.recentLen == c.cap &&
 			// c.recentGhost.IsEmpty() && c.recentLive.IsEmpty()`
 			// implies that `c.recentPinned.Len == c.cap`, which
@@ -379,12 +380,10 @@ func (c *arCache[K, V]) dblReplace() *LinkedListEntry[arcLiveEntry[K, V]] {
 		case !c.frequentGhost.IsEmpty():
 			return c.arcReplace(c.frequentGhost.Oldest, false)
 		default:
-			// This can't happen because it's impossible
-			// that `recentLen < c.cap` implies that
-			// `c.recentGhost.Len < c.cap`, which means
-			// that there is at least one ghost entry that
-			// is available in c.unusedGhost or
-			// c.frequentGhost.
+			// This can't happen because `recentLen < c.cap` implies
+			// that `c.recentGhost.Len < c.cap`, which means that
+			// there is at least one ghost entry that is available
+			// in c.unusedGhost or c.frequentGhost.
 			panic(fmt.Errorf("should not happen: lengths don't match up"))
 		}
 	default: // case recentLen > c.cap:
