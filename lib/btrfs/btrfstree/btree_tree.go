@@ -42,7 +42,7 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 	}
 
 	// 001
-	node, err := tree.Forrest.ReadNode(path)
+	node, err := tree.Forrest.NodeSource.ReadNode(path)
 	defer node.Free()
 	if ctx.Err() != nil {
 		return
