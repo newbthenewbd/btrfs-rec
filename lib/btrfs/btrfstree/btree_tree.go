@@ -46,8 +46,8 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 	if !ok {
 		return
 	}
-	node, err := tree.Forrest.NodeSource.ReadNode(ctx, nodeAddr, nodeExp)
-	defer node.Free()
+	node, err := tree.Forrest.NodeSource.AcquireNode(ctx, nodeAddr, nodeExp)
+	defer tree.Forrest.NodeSource.ReleaseNode(node)
 	if ctx.Err() != nil {
 		return
 	}

@@ -141,8 +141,6 @@ type RebuiltForrest struct {
 	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems containers.Cache[btrfsprim.ObjID, itemIndex]
 	excItems containers.Cache[btrfsprim.ObjID, itemIndex]
-
-	nodes containers.Cache[btrfsvol.LogicalAddr, btrfstree.Node]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
@@ -170,9 +168,6 @@ func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph
 		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, excItems *itemIndex) {
 			*excItems = ret.trees[treeID].uncachedExcItems(ctx)
 		}))
-	ret.nodes = containers.NewARCache[btrfsvol.LogicalAddr, btrfstree.Node](textui.Tunable(8),
-		containers.SourceFunc[btrfsvol.LogicalAddr, btrfstree.Node](ret.readNode))
-
 	if ret.cb == nil {
 		ret.cb = noopRebuiltForrestCallbacks{
 			forrest: ret,

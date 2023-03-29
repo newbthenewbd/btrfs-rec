@@ -97,5 +97,6 @@ func (e *TreeError) Error() string {
 
 type NodeSource interface {
 	Superblock() (*Superblock, error)
-	ReadNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp NodeExpectations) (*Node, error)
+	AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp NodeExpectations) (*Node, error)
+	ReleaseNode(*Node)
 }

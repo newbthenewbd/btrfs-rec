@@ -231,7 +231,7 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 }
 
 func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
-	node, err := bt.inner.ReadNode(bt.ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
+	node, err := bt.inner.AcquireNode(bt.ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),
 		Generation: containers.OptionalValue(nodeInfo.Generation),
@@ -281,7 +281,7 @@ func (tree oldRebuiltTree) treeSearch(_ context.Context, searcher btrfstree.Tree
 	}
 
 	node := tree.forrest.readNode(indexItem.Value.Node)
-	defer node.Free()
+	defer tree.forrest.inner.ReleaseNode(node)
 
 	item := node.BodyLeaf[indexItem.Value.Slot]
 	item.Body = item.Body.CloneItem()
@@ -318,12 +318,12 @@ func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btr
 		func(rbNode *containers.RBNode[oldRebuiltTreeValue]) bool {
 			cnt++
 			if node == nil || node.Head.Addr != rbNode.Value.Node.LAddr {
-				node.Free()
+				tree.forrest.inner.ReleaseNode(node)
 				node = tree.forrest.readNode(rbNode.Value.Node)
 			}
 			return handleFn(node.BodyLeaf[rbNode.Value.Slot])
 		})
-	node.Free()
+	tree.forrest.inner.ReleaseNode(node)
 
 	var err error
 	if cnt < min {
@@ -366,7 +366,7 @@ func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 			return false
 		}
 		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
-			node.Free()
+			tree.forrest.inner.ReleaseNode(node)
 			node = tree.forrest.readNode(indexItem.Value.Node)
 		}
 		item := node.BodyLeaf[indexItem.Value.Slot]
@@ -399,7 +399,7 @@ func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		}
 		return ctx.Err() == nil
 	})
-	node.Free()
+	tree.forrest.inner.ReleaseNode(node)
 }
 
 // Superblock implements btrfs.ReadableFS.

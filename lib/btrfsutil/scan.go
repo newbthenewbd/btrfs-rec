@@ -134,7 +134,7 @@ func ScanOneDevice[Stats comparable, Result any](ctx context.Context, dev *btrfs
 				}
 				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)
 			}
-			node.Free()
+			node.RawFree()
 		}
 	}
 

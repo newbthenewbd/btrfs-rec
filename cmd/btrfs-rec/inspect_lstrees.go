@@ -106,10 +106,11 @@ func init() {
 						continue
 					}
 					visitedNodes.Insert(laddr)
-					node, err := fs.ReadNode(ctx, laddr, btrfstree.NodeExpectations{
+					node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 						LAddr: containers.OptionalValue(laddr),
 					})
 					if err != nil {
+						fs.ReleaseNode(node)
 						treeErrCnt++
 						continue
 					}
@@ -117,6 +118,7 @@ func init() {
 						typ := item.Key.ItemType
 						treeItemCnt[typ]++
 					}
+					fs.ReleaseNode(node)
 				}
 				flush()
 			}

@@ -71,17 +71,17 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 		if err := ctx.Err(); err != nil {
 			return ScanDevicesResult{}, err
 		}
-		node, err := fs.ReadNode(ctx, laddr, btrfstree.NodeExpectations{
+		node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 			LAddr: containers.OptionalValue(laddr),
 		})
 		if err != nil {
-			node.Free()
+			fs.ReleaseNode(node)
 			return ScanDevicesResult{}, err
 		}
 
 		ret.insertNode(node)
 
-		node.Free()
+		fs.ReleaseNode(node)
 
 		stats.N++
 		progressWriter.Set(stats)

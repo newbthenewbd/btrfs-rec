@@ -308,7 +308,9 @@ type ItemHeader struct {
 
 var itemPool containers.SlicePool[Item]
 
-func (node *Node) Free() {
+// RawFree is for low-level use by caches; don't use .RawFree, use
+// ReleaseNode.
+func (node *Node) RawFree() {
 	if node == nil {
 		return
 	}

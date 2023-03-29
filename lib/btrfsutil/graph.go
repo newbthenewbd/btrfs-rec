@@ -207,9 +207,10 @@ func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
 		if _, ok := g.Nodes[laddr]; !ok {
-			_, err := fs.ReadNode(ctx, laddr, btrfstree.NodeExpectations{
+			node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 				LAddr: containers.OptionalValue(laddr),
 			})
+			fs.ReleaseNode(node)
 			if err == nil {
 				progressWriter.Done()
 				return fmt.Errorf("node@%v exists but was not in node scan results", laddr)
