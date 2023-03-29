@@ -86,7 +86,17 @@ func (fs *FS) ReadNode(_ context.Context, addr btrfsvol.LogicalAddr, exp btrfstr
 	if err != nil {
 		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
 	}
-	return btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, addr, exp)
+
+	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, addr)
+	if err != nil {
+		return node, err
+	}
+
+	if err := exp.Check(node); err != nil {
+		return node, fmt.Errorf("btrfstree.ReadNode: node@%v: %w", addr, err) // fmt.Errorf("btrfs.FS.ReadNode: node@%v: %w", addr, err)
+	}
+
+	return node, nil
 }
 
 var _ btrfstree.NodeSource = (*FS)(nil)

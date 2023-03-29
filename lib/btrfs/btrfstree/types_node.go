@@ -446,7 +446,7 @@ var nodePool = typedsync.Pool[*Node]{
 // returned.  The error returned (if non-nil) is always of type
 // *NodeError[Addr].  Notable errors that may be inside of the
 // NodeError are ErrNotANode and *IOError.
-func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr, exp NodeExpectations) (*Node, error) {
+func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr) (*Node, error) {
 	if int(sb.NodeSize) < nodeHeaderSize {
 		return nil, &NodeError[Addr]{
 			Op: "btrfstree.ReadNode", NodeAddr: addr,
@@ -511,12 +511,6 @@ func ReadNode[Addr ~int64](fs diskio.ReaderAt[Addr], sb Superblock, addr Addr, e
 	}
 
 	bytePool.Put(nodeBuf)
-
-	// sanity checking (that doesn't prevent parsing)
-
-	if err := exp.Check(node); err != nil {
-		return node, &NodeError[Addr]{Op: "btrfstree.ReadNode", NodeAddr: addr, Err: err}
-	}
 
 	// return
 
