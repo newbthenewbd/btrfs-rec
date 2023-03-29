@@ -231,12 +231,7 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 }
 
 func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
-	sb, err := bt.inner.Superblock()
-	if err != nil {
-		panic(fmt.Errorf("should not happen: i/o error: %w", err))
-	}
-
-	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](bt.inner, *sb, nodeInfo.LAddr, btrfstree.NodeExpectations{
+	node, err := bt.inner.ReadNode(bt.ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),
 		Generation: containers.OptionalValue(nodeInfo.Generation),

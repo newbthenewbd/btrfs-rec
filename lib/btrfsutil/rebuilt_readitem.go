@@ -34,7 +34,7 @@ func (ts *RebuiltForrest) readNode(ctx context.Context, laddr btrfsvol.LogicalAd
 		panic(fmt.Errorf("should not happen: node@%v is not mentioned in the in-memory graph", laddr))
 	}
 
-	node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](ts.file, ts.sb, laddr, btrfstree.NodeExpectations{
+	node, err := ts.file.ReadNode(ctx, laddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(laddr),
 		Level:      containers.OptionalValue(graphInfo.Level),
 		Generation: containers.OptionalValue(graphInfo.Generation),

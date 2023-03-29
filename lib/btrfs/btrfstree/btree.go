@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
 type TreeSearcher interface {
@@ -96,5 +97,5 @@ func (e *TreeError) Error() string {
 
 type NodeSource interface {
 	Superblock() (*Superblock, error)
-	ReadNode(Path) (*Node, error)
+	ReadNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp NodeExpectations) (*Node, error)
 }

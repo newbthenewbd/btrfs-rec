@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -130,7 +129,7 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
-	file  diskio.File[btrfsvol.LogicalAddr]
+	file  btrfstree.NodeSource
 	sb    btrfstree.Superblock
 	graph Graph
 	cb    RebuiltForrestCallbacks
@@ -148,7 +147,7 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
 // RebuiltForrestCallbacks may be nil.
-func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	ret := &RebuiltForrest{
 		file:  file,
 		sb:    sb,

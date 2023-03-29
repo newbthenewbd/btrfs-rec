@@ -6,10 +6,12 @@ package btrfs
 
 import (
 	"context"
+	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
 // This file is ordered from low-level to high-level.
@@ -79,8 +81,12 @@ var _ btrfstree.NodeFile = (*FS)(nil)
 // btrfstree.NodeSource ////////////////////////////////////////////////////////
 
 // ReadNode implements btrfstree.NodeSource.
-func (fs *FS) ReadNode(path btrfstree.Path) (*btrfstree.Node, error) {
-	return btrfstree.FSReadNode(fs, path)
+func (fs *FS) ReadNode(_ context.Context, addr btrfsvol.LogicalAddr, exp btrfstree.NodeExpectations) (*btrfstree.Node, error) {
+	sb, err := fs.Superblock()
+	if err != nil {
+		return nil, fmt.Errorf("btrfs.FS.ReadNode: %w", err)
+	}
+	return btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, addr, exp)
 }
 
 var _ btrfstree.NodeSource = (*FS)(nil)

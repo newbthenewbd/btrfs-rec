@@ -71,7 +71,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 		if err := ctx.Err(); err != nil {
 			return ScanDevicesResult{}, err
 		}
-		node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
+		node, err := fs.ReadNode(ctx, laddr, btrfstree.NodeExpectations{
 			LAddr: containers.OptionalValue(laddr),
 		})
 		if err != nil {
@@ -93,7 +93,7 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 	dlog.Info(ctx, "... done reading node data")
 
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.read.substep", "check")
-	if err := ret.Graph.FinalCheck(ctx, fs, *sb); err != nil {
+	if err := ret.Graph.FinalCheck(ctx, fs); err != nil {
 		return ScanDevicesResult{}, err
 	}
 

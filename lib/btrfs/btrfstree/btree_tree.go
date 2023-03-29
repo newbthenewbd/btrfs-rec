@@ -22,6 +22,9 @@ type RawTree struct {
 }
 
 func (tree *RawTree) TreeWalk(ctx context.Context, cbs TreeWalkHandler) {
+	if tree.RootNode == 0 {
+		return
+	}
 	path := Path{{
 		FromTree:         tree.ID,
 		FromItemSlot:     -1,
@@ -37,12 +40,13 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
-	if path.Node(-1).ToNodeAddr == 0 {
-		return
-	}
 
 	// 001
-	node, err := tree.Forrest.NodeSource.ReadNode(path)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(tree.Forrest.NodeSource)
+	if !ok {
+		return
+	}
+	node, err := tree.Forrest.NodeSource.ReadNode(ctx, nodeAddr, nodeExp)
 	defer node.Free()
 	if ctx.Err() != nil {
 		return
