@@ -14,15 +14,6 @@ import (
 
 // This file is ordered from low-level to high-level.
 
-// btrfstree.NodeSource ////////////////////////////////////////////////////////
-
-// ReadNode implements btrfstree.NodeSource.
-func (fs *FS) ReadNode(path btrfstree.Path) (*btrfstree.Node, error) {
-	return btrfstree.FSReadNode(fs, path)
-}
-
-var _ btrfstree.NodeSource = (*FS)(nil)
-
 // btrfstree.NodeFile //////////////////////////////////////////////////////////
 
 type treeInfo struct {
@@ -84,6 +75,15 @@ func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, btrfsprim.Gener
 }
 
 var _ btrfstree.NodeFile = (*FS)(nil)
+
+// btrfstree.NodeSource ////////////////////////////////////////////////////////
+
+// ReadNode implements btrfstree.NodeSource.
+func (fs *FS) ReadNode(path btrfstree.Path) (*btrfstree.Node, error) {
+	return btrfstree.FSReadNode(fs, path)
+}
+
+var _ btrfstree.NodeSource = (*FS)(nil)
 
 // btrfstree.TreeOperator //////////////////////////////////////////////////////
 
