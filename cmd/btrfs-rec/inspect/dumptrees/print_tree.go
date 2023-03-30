@@ -23,7 +23,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
+func DumpTrees(ctx context.Context, out io.Writer, fs btrfs.ReadableFS) {
 	superblock, err := fs.Superblock()
 	if err != nil {
 		dlog.Error(ctx, err)
@@ -46,45 +46,44 @@ func DumpTrees(ctx context.Context, out io.Writer, fs *btrfs.FS) {
 		textui.Fprintf(out, "block group tree\n")
 		printTree(ctx, out, fs, btrfsprim.BLOCK_GROUP_TREE_OBJECTID)
 	}
-	fs.TreeWalk(
-		ctx,
-		btrfsprim.ROOT_TREE_OBJECTID,
-		func(err *btrfstree.TreeError) {
-			dlog.Error(ctx, err)
-		},
-		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) {
-				if item.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
-					return
-				}
-				treeName, ok := map[btrfsprim.ObjID]string{
-					btrfsprim.ROOT_TREE_OBJECTID:        "root",
-					btrfsprim.EXTENT_TREE_OBJECTID:      "extent",
-					btrfsprim.CHUNK_TREE_OBJECTID:       "chunk",
-					btrfsprim.DEV_TREE_OBJECTID:         "device",
-					btrfsprim.FS_TREE_OBJECTID:          "fs",
-					btrfsprim.ROOT_TREE_DIR_OBJECTID:    "directory",
-					btrfsprim.CSUM_TREE_OBJECTID:        "checksum",
-					btrfsprim.ORPHAN_OBJECTID:           "orphan",
-					btrfsprim.TREE_LOG_OBJECTID:         "log",
-					btrfsprim.TREE_LOG_FIXUP_OBJECTID:   "log fixup",
-					btrfsprim.TREE_RELOC_OBJECTID:       "reloc",
-					btrfsprim.DATA_RELOC_TREE_OBJECTID:  "data reloc",
-					btrfsprim.EXTENT_CSUM_OBJECTID:      "extent checksum",
-					btrfsprim.QUOTA_TREE_OBJECTID:       "quota",
-					btrfsprim.UUID_TREE_OBJECTID:        "uuid",
-					btrfsprim.FREE_SPACE_TREE_OBJECTID:  "free space",
-					btrfsprim.MULTIPLE_OBJECTIDS:        "multiple",
-					btrfsprim.BLOCK_GROUP_TREE_OBJECTID: "block group",
-				}[item.Key.ObjectID]
-				if !ok {
-					treeName = "file"
-				}
-				textui.Fprintf(out, "%v tree key %v \n", treeName, item.Key.Format(btrfsprim.ROOT_TREE_OBJECTID))
-				printTree(ctx, out, fs, item.Key.ObjectID)
-			},
-		},
-	)
+	rootTree, err := fs.ForrestLookup(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if err != nil {
+		dlog.Errorf(ctx, "root tree: %v", err)
+	} else {
+		if err := rootTree.TreeRange(ctx, func(item btrfstree.Item) bool {
+			if item.Key.ItemType != btrfsitem.ROOT_ITEM_KEY {
+				return true
+			}
+			treeName, ok := map[btrfsprim.ObjID]string{
+				btrfsprim.ROOT_TREE_OBJECTID:        "root",
+				btrfsprim.EXTENT_TREE_OBJECTID:      "extent",
+				btrfsprim.CHUNK_TREE_OBJECTID:       "chunk",
+				btrfsprim.DEV_TREE_OBJECTID:         "device",
+				btrfsprim.FS_TREE_OBJECTID:          "fs",
+				btrfsprim.ROOT_TREE_DIR_OBJECTID:    "directory",
+				btrfsprim.CSUM_TREE_OBJECTID:        "checksum",
+				btrfsprim.ORPHAN_OBJECTID:           "orphan",
+				btrfsprim.TREE_LOG_OBJECTID:         "log",
+				btrfsprim.TREE_LOG_FIXUP_OBJECTID:   "log fixup",
+				btrfsprim.TREE_RELOC_OBJECTID:       "reloc",
+				btrfsprim.DATA_RELOC_TREE_OBJECTID:  "data reloc",
+				btrfsprim.EXTENT_CSUM_OBJECTID:      "extent checksum",
+				btrfsprim.QUOTA_TREE_OBJECTID:       "quota",
+				btrfsprim.UUID_TREE_OBJECTID:        "uuid",
+				btrfsprim.FREE_SPACE_TREE_OBJECTID:  "free space",
+				btrfsprim.MULTIPLE_OBJECTIDS:        "multiple",
+				btrfsprim.BLOCK_GROUP_TREE_OBJECTID: "block group",
+			}[item.Key.ObjectID]
+			if !ok {
+				treeName = "file"
+			}
+			textui.Fprintf(out, "%v tree key %v \n", treeName, item.Key.Format(btrfsprim.ROOT_TREE_OBJECTID))
+			printTree(ctx, out, fs, item.Key.ObjectID)
+			return true
+		}); err != nil {
+			dlog.Errorf(ctx, "iterating over root tree: %v", err)
+		}
+	}
 	textui.Fprintf(out, "total bytes %v\n", superblock.TotalBytes)
 	textui.Fprintf(out, "bytes used %v\n", superblock.BytesUsed)
 	textui.Fprintf(out, "uuid %v\n", superblock.FSUUID)
@@ -95,7 +94,7 @@ var nodeHeaderSize = binstruct.StaticSize(btrfstree.NodeHeader{})
 // printTree mimics btrfs-progs
 // kernel-shared/print-tree.c:btrfs_print_tree() and
 // kernel-shared/print-tree.c:btrfs_print_leaf()
-func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfsprim.ObjID) {
+func printTree(ctx context.Context, out io.Writer, fs btrfs.ReadableFS, treeID btrfsprim.ObjID) {
 	var itemOffset uint32
 	handlers := btrfstree.TreeWalkHandler{
 		Node: func(path btrfstree.Path, node *btrfstree.Node) {
@@ -357,14 +356,13 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 		},
 	}
 	handlers.BadItem = handlers.Item
-	fs.TreeWalk(
-		ctx,
-		treeID,
-		func(err *btrfstree.TreeError) {
-			dlog.Error(ctx, err)
-		},
-		handlers,
-	)
+
+	tree, err := fs.ForrestLookup(ctx, treeID)
+	if err != nil {
+		dlog.Errorf(ctx, "tree %v: %v", treeID, err)
+		return
+	}
+	tree.TreeWalk(ctx, handlers)
 }
 
 // printHeaderInfo mimics btrfs-progs kernel-shared/print-tree.c:print_header_info()

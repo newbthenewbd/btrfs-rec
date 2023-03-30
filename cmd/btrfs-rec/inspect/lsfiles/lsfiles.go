@@ -20,9 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -30,11 +27,7 @@ import (
 func LsFiles(
 	ctx context.Context,
 	out io.Writer,
-	fs interface {
-		btrfstree.TreeOperator
-		Superblock() (*btrfstree.Superblock, error)
-		diskio.ReaderAt[btrfsvol.LogicalAddr]
-	},
+	fs btrfs.ReadableFS,
 ) (err error) {
 	defer func() {
 		if _err := derror.PanicToError(recover()); _err != nil {

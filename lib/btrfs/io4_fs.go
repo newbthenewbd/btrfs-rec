@@ -20,7 +20,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -63,17 +62,14 @@ type File struct {
 }
 
 type Subvolume struct {
-	ctx context.Context //nolint:containedctx // don't have an option while keeping the same API
-	fs  interface {
-		btrfstree.TreeOperator
-		Superblock() (*btrfstree.Superblock, error)
-		diskio.ReaderAt[btrfsvol.LogicalAddr]
-	}
+	ctx         context.Context //nolint:containedctx // don't have an option while keeping the same API
+	fs          ReadableFS
 	TreeID      btrfsprim.ObjID
 	noChecksums bool
 
-	rootInfo btrfstree.TreeRoot
 	rootErr  error
+	rootInfo btrfstree.TreeRoot
+	tree     btrfstree.Tree
 
 	bareInodeCache containers.Cache[btrfsprim.ObjID, BareInode]
 	fullInodeCache containers.Cache[btrfsprim.ObjID, FullInode]
@@ -83,31 +79,26 @@ type Subvolume struct {
 
 func NewSubvolume(
 	ctx context.Context,
-	fs interface {
-		btrfstree.TreeOperator
-		Superblock() (*btrfstree.Superblock, error)
-		diskio.ReaderAt[btrfsvol.LogicalAddr]
-	},
+	fs ReadableFS,
 	treeID btrfsprim.ObjID,
 	noChecksums bool,
 ) *Subvolume {
 	sv := &Subvolume{
+		ctx:         ctx,
 		fs:          fs,
 		TreeID:      treeID,
 		noChecksums: noChecksums,
 	}
 
-	sb, err := sv.fs.Superblock()
+	tree, err := sv.fs.ForrestLookup(ctx, sv.TreeID)
 	if err != nil {
 		sv.rootErr = err
 		return sv
 	}
-	rootInfo, err := btrfstree.LookupTreeRoot(ctx, sv.fs, *sb, sv.TreeID)
-	if err != nil {
-		sv.rootErr = err
-		return sv
-	}
+	sb, _ := sv.fs.Superblock()
+	rootInfo, _ := btrfstree.LookupTreeRoot(ctx, sv.fs, *sb, sv.TreeID)
 	sv.rootInfo = *rootInfo
+	sv.tree = tree
 
 	sv.bareInodeCache = containers.NewARCache[btrfsprim.ObjID, BareInode](textui.Tunable(128),
 		containers.SourceFunc[btrfsprim.ObjID, BareInode](sv.loadBareInode))
@@ -142,11 +133,11 @@ func (sv *Subvolume) ReleaseBareInode(inode btrfsprim.ObjID) {
 	sv.bareInodeCache.Release(inode)
 }
 
-func (sv *Subvolume) loadBareInode(_ context.Context, inode btrfsprim.ObjID, val *BareInode) {
+func (sv *Subvolume) loadBareInode(ctx context.Context, inode btrfsprim.ObjID, val *BareInode) {
 	*val = BareInode{
 		Inode: inode,
 	}
-	item, err := sv.fs.TreeLookup(sv.TreeID, btrfsprim.Key{
+	item, err := sv.tree.TreeLookup(ctx, btrfsprim.Key{
 		ObjectID: inode,
 		ItemType: btrfsitem.INODE_ITEM_KEY,
 		Offset:   0,
@@ -180,21 +171,14 @@ func (sv *Subvolume) ReleaseFullInode(inode btrfsprim.ObjID) {
 	sv.fullInodeCache.Release(inode)
 }
 
-func (sv *Subvolume) loadFullInode(_ context.Context, inode btrfsprim.ObjID, val *FullInode) {
+func (sv *Subvolume) loadFullInode(ctx context.Context, inode btrfsprim.ObjID, val *FullInode) {
 	*val = FullInode{
 		BareInode: BareInode{
 			Inode: inode,
 		},
 		XAttrs: make(map[string]string),
 	}
-	items, err := sv.fs.TreeSearchAll(sv.TreeID, btrfstree.SearchObject(inode))
-	if err != nil {
-		val.Errs = append(val.Errs, err)
-		if len(items) == 0 {
-			return
-		}
-	}
-	for _, item := range items {
+	if err := sv.tree.TreeSubrange(ctx, 1, btrfstree.SearchObject(inode), func(item btrfstree.Item) bool {
 		switch item.Key.ItemType {
 		case btrfsitem.INODE_ITEM_KEY:
 			switch itemBody := item.Body.(type) {
@@ -203,7 +187,7 @@ func (sv *Subvolume) loadFullInode(_ context.Context, inode btrfsprim.ObjID, val
 					if !reflect.DeepEqual(itemBody, *val.InodeItem) {
 						val.Errs = append(val.Errs, fmt.Errorf("multiple inodes"))
 					}
-					continue
+					return true
 				}
 				bodyCopy := itemBody.Clone()
 				val.InodeItem = &bodyCopy
@@ -222,8 +206,12 @@ func (sv *Subvolume) loadFullInode(_ context.Context, inode btrfsprim.ObjID, val
 				panic(fmt.Errorf("should not happen: XATTR_ITEM has unexpected item type: %T", itemBody))
 			}
 		default:
+			item.Body = item.Body.CloneItem()
 			val.OtherItems = append(val.OtherItems, item)
 		}
+		return true
+	}); err != nil {
+		val.Errs = append(val.Errs, err)
 	}
 }
 
@@ -503,7 +491,7 @@ func (file *File) maybeShortReadAt(dat []byte, off int64) (int, error) {
 				return 0, err
 			}
 			if !file.SV.noChecksums {
-				sumRun, err := LookupCSum(file.SV.fs, sb.ChecksumType, blockBeg)
+				sumRun, err := LookupCSum(file.SV.ctx, file.SV.fs, sb.ChecksumType, blockBeg)
 				if err != nil {
 					return 0, fmt.Errorf("checksum@%v: %w", blockBeg, err)
 				}

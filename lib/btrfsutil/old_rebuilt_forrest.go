@@ -85,7 +85,6 @@ func newOldRebuiltTree() oldRebuiltTree {
 }
 
 type OldRebuiltForrest struct {
-	ctx   context.Context //nolint:containedctx // don't have an option while keeping the same API
 	inner *btrfs.FS
 
 	// btrfsprim.ROOT_TREE_OBJECTID
@@ -96,35 +95,43 @@ type OldRebuiltForrest struct {
 	trees   map[btrfsprim.ObjID]oldRebuiltTree
 }
 
-var _ btrfstree.TreeOperator = (*OldRebuiltForrest)(nil)
+var _ btrfs.ReadableFS = (*OldRebuiltForrest)(nil)
 
 // NewOldRebuiltForrest wraps a *btrfs.FS to support looking up
 // information from broken trees.
 //
-// Of the btrfstree.TreeOperator methods:
+// Of the btrfstree.Tree methods:
 //
-//   - TreeWalk works on broken trees
-//   - TreeLookup relies on the tree being properly ordered (which a
+//   - TreeRange works on broken trees
+//   - TreeSubrange relies on the tree being properly ordered (which a
 //     broken tree might not be).
 //   - TreeSearch relies on the tree being properly ordered (which a
 //     broken tree might not be).
-//   - TreeSearchAll relies on the tree being properly ordered (which a
-//     broken tree might not be), and a bad node may cause it to not
-//     return a truncated list of results.
+//   - TreeLookup relies on the tree being properly ordered (which a
+//     broken tree might not be).
 //
-// NewOldRebuiltForrest attempts to remedy these deficiencies by using
-// .TreeWalk to build an out-of-FS index of all of the items in the
-// tree, and re-implements TreeLookup, TreeSearch, and TreeSearchAll
+// NewOldRebuiltForrest attempts to remedy these deficiencies by
+// building an out-of-FS index of all of the items in the tree, and
+// re-implements TreeLookup, TreeSearch, TreeSubrange, and TreeRange
 // using that index.
-func NewOldRebuiltForrest(ctx context.Context, inner *btrfs.FS) *OldRebuiltForrest {
+func NewOldRebuiltForrest(inner *btrfs.FS) *OldRebuiltForrest {
 	return &OldRebuiltForrest{
-		ctx:   ctx,
 		inner: inner,
 	}
 }
 
-// RebuiltTree returns a handle for an individual tree.  An error is
-// indicated by the ret.RootErr member.
+// ForrestLookup implements btrfstree.Forrest.
+func (bt *OldRebuiltForrest) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfstree.Tree, error) {
+	tree := bt.RebuiltTree(ctx, treeID)
+	if tree.RootErr != nil {
+		return nil, tree.RootErr
+	}
+	return tree, nil
+}
+
+// RebuiltTree is a variant of ForrestLookup that returns a concrete
+// type instead of an interface.  An error is indicated by the
+// ret.RootErr member.
 func (bt *OldRebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) oldRebuiltTree {
 	if treeID == btrfsprim.ROOT_TREE_OBJECTID {
 		bt.rootTreeMu.Lock()
@@ -172,7 +179,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		return
 	}
 	tree := &btrfstree.RawTree{
-		Forrest:  btrfstree.TreeOperatorImpl{NodeSource: bt.inner},
+		Forrest:  btrfstree.RawForrest{NodeSource: bt.inner},
 		TreeRoot: *root,
 	}
 
@@ -238,8 +245,8 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 	return errs
 }
 
-func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
-	node, err := bt.inner.AcquireNode(bt.ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
+func (bt *OldRebuiltForrest) readNode(ctx context.Context, nodeInfo nodeInfo) *btrfstree.Node {
+	node, err := bt.inner.AcquireNode(ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),
 		Generation: containers.OptionalValue(nodeInfo.Generation),
@@ -261,22 +268,13 @@ func (bt *OldRebuiltForrest) readNode(nodeInfo nodeInfo) *btrfstree.Node {
 	return node
 }
 
-// TreeLookup implements btrfstree.TreeOperator.
-func (bt *OldRebuiltForrest) TreeLookup(treeID btrfsprim.ObjID, key btrfsprim.Key) (btrfstree.Item, error) {
-	return bt.RebuiltTree(bt.ctx, treeID).treeLookup(bt.ctx, key)
-}
-
-func (tree oldRebuiltTree) treeLookup(ctx context.Context, key btrfsprim.Key) (btrfstree.Item, error) {
-	return tree.treeSearch(ctx, btrfstree.SearchExactKey(key))
-}
-
-// TreeSearch implements btrfstree.TreeOperator.
-func (bt *OldRebuiltForrest) TreeSearch(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
-	return bt.RebuiltTree(bt.ctx, treeID).treeSearch(bt.ctx, searcher)
+// TreeLookup implements btrfstree.Tree.
+func (tree oldRebuiltTree) TreeLookup(ctx context.Context, key btrfsprim.Key) (btrfstree.Item, error) {
+	return tree.TreeSearch(ctx, btrfstree.SearchExactKey(key))
 }
 
 // TreeSearch implements btrfstree.Tree.
-func (tree oldRebuiltTree) treeSearch(_ context.Context, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
+func (tree oldRebuiltTree) TreeSearch(ctx context.Context, searcher btrfstree.TreeSearcher) (btrfstree.Item, error) {
 	if tree.RootErr != nil {
 		return btrfstree.Item{}, tree.RootErr
 	}
@@ -288,7 +286,7 @@ func (tree oldRebuiltTree) treeSearch(_ context.Context, searcher btrfstree.Tree
 		return btrfstree.Item{}, fmt.Errorf("item with %s: %w", searcher, tree.addErrs(searcher.Search, btrfstree.ErrNoItem))
 	}
 
-	node := tree.forrest.readNode(indexItem.Value.Node)
+	node := tree.forrest.readNode(ctx, indexItem.Value.Node)
 	defer tree.forrest.inner.ReleaseNode(node)
 
 	item := node.BodyLeaf[indexItem.Value.Slot]
@@ -299,24 +297,28 @@ func (tree oldRebuiltTree) treeSearch(_ context.Context, searcher btrfstree.Tree
 	return item, nil
 }
 
-// TreeSearchAll implements btrfstree.TreeOperator.
-func (bt *OldRebuiltForrest) TreeSearchAll(treeID btrfsprim.ObjID, searcher btrfstree.TreeSearcher) ([]btrfstree.Item, error) {
-	tree := bt.RebuiltTree(bt.ctx, treeID)
+// TreeRange implements btrfstree.Tree.
+func (tree oldRebuiltTree) TreeRange(ctx context.Context, handleFn func(btrfstree.Item) bool) error {
 	if tree.RootErr != nil {
-		return nil, tree.RootErr
+		return tree.RootErr
 	}
 
-	var ret []btrfstree.Item
-	err := tree.treeSubrange(bt.ctx, 1, searcher, func(item btrfstree.Item) bool {
-		item.Body = item.Body.CloneItem()
-		ret = append(ret, item)
-		return true
-	})
+	var node *btrfstree.Node
+	tree.Items.Range(
+		func(rbnode *containers.RBNode[oldRebuiltTreeValue]) bool {
+			if node == nil || node.Head.Addr != rbnode.Value.Node.LAddr {
+				tree.forrest.inner.ReleaseNode(node)
+				node = tree.forrest.readNode(ctx, rbnode.Value.Node)
+			}
+			return handleFn(node.BodyLeaf[rbnode.Value.Slot])
+		})
+	tree.forrest.inner.ReleaseNode(node)
 
-	return ret, err
+	return tree.addErrs(func(btrfsprim.Key, uint32) int { return 0 }, nil)
 }
 
-func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btrfstree.TreeSearcher, handleFn func(btrfstree.Item) bool) error {
+// TreeSubrange implements btrfstree.Tree.
+func (tree oldRebuiltTree) TreeSubrange(ctx context.Context, min int, searcher btrfstree.TreeSearcher, handleFn func(btrfstree.Item) bool) error {
 	var node *btrfstree.Node
 	var cnt int
 	tree.Items.Subrange(
@@ -327,7 +329,7 @@ func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btr
 			cnt++
 			if node == nil || node.Head.Addr != rbNode.Value.Node.LAddr {
 				tree.forrest.inner.ReleaseNode(node)
-				node = tree.forrest.readNode(rbNode.Value.Node)
+				node = tree.forrest.readNode(ctx, rbNode.Value.Node)
 			}
 			return handleFn(node.BodyLeaf[rbNode.Value.Slot])
 		})
@@ -344,21 +346,9 @@ func (tree oldRebuiltTree) treeSubrange(_ context.Context, min int, searcher btr
 	return err
 }
 
-// TreeWalk implements btrfstree.TreeOperator.  It doesn't actually
-// visit nodes or keypointers (just items).
-func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjID, errHandle func(*btrfstree.TreeError), cbs btrfstree.TreeWalkHandler) {
-	tree := bt.RebuiltTree(ctx, treeID)
-	if tree.RootErr != nil {
-		errHandle(&btrfstree.TreeError{
-			Path: btrfstree.Path{btrfstree.PathRoot{TreeID: treeID}},
-			Err:  tree.RootErr,
-		})
-		return
-	}
-	tree.treeWalk(ctx, cbs)
-}
-
-func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+// TreeWalk implements btrfstree.Tree.  It doesn't actually visit
+// nodes or keypointers (just items).
+func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
 	if cbs.Item == nil && cbs.BadItem == nil {
 		return
 	}
@@ -367,12 +357,10 @@ func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		if ctx.Err() != nil {
 			return false
 		}
-		if tree.forrest.ctx.Err() != nil {
-			return false
-		}
+
 		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
 			tree.forrest.inner.ReleaseNode(node)
-			node = tree.forrest.readNode(indexItem.Value.Node)
+			node = tree.forrest.readNode(ctx, indexItem.Value.Node)
 		}
 		item := node.BodyLeaf[indexItem.Value.Slot]
 
@@ -415,6 +403,11 @@ func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, er
 	return bt.inner.ReadAt(p, off)
 }
 
+// Name implements btrfs.ReadableFS.
+func (bt *OldRebuiltForrest) Name() string {
+	return bt.inner.Name()
+}
+
 // TreeCheckOwner implements btrfstree.Tree.
 func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
 	var uuidTree oldRebuiltTree
@@ -439,7 +432,7 @@ func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, ow
 				return nil //nolint:nilerr // fail open
 			}
 		}
-		parentIDItem, err := uuidTree.treeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
+		parentIDItem, err := uuidTree.TreeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
 		if err != nil {
 			if failOpen {
 				return nil
