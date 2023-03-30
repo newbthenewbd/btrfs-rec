@@ -92,11 +92,13 @@ var _ btrfstree.Forrest = (*FS)(nil)
 // ReadableFS //////////////////////////////////////////////////////////////////
 
 type ReadableFS interface {
+	Name() string
+
+	// For reading btrees.
 	btrfstree.Forrest
 
-	Superblock() (*btrfstree.Superblock, error)
-
-	Name() string
+	// For reading the superblock and raw nodes.
+	btrfstree.NodeSource
 
 	// For reading file contents.
 	diskio.ReaderAt[btrfsvol.LogicalAddr]

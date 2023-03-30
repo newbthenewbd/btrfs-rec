@@ -461,6 +461,16 @@ func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
 	return bt.inner.Superblock()
 }
 
+// AcquireNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp btrfstree.NodeExpectations) (*btrfstree.Node, error) {
+	return bt.inner.AcquireNode(ctx, addr, exp)
+}
+
+// ReleaseNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) ReleaseNode(node *btrfstree.Node) {
+	bt.inner.ReleaseNode(node)
+}
+
 // ReadAt implements diskio.ReaderAt[btrfsvol.LogicalAddr] (and btrfs.ReadableFS).
 func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
