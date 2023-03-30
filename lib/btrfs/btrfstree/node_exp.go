@@ -35,6 +35,10 @@ func (exp NodeExpectations) Check(node *Node) error {
 		errs = append(errs, fmt.Errorf("expected level=%v but claims to be level=%v",
 			exp.Level.Val, node.Head.Level))
 	}
+	if node.Head.Level > MaxLevel {
+		errs = append(errs, fmt.Errorf("maximum level=%v but claims to be level=%v",
+			MaxLevel, node.Head.Level))
+	}
 	if exp.Generation.OK && node.Head.Generation != exp.Generation.Val {
 		errs = append(errs, fmt.Errorf("expected generation=%v but claims to be generation=%v",
 			exp.Generation.Val, node.Head.Generation))

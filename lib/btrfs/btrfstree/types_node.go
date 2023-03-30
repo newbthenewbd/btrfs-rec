@@ -103,9 +103,12 @@ type NodeHeader struct {
 	Generation    btrfsprim.Generation `bin:"off=0x50, siz=0x8"`
 	Owner         btrfsprim.ObjID      `bin:"off=0x58, siz=0x8"` // The ID of the tree that contains this node
 	NumItems      uint32               `bin:"off=0x60, siz=0x4"` // [ignored-when-writing]
-	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for interior nodes
+	Level         uint8                `bin:"off=0x64, siz=0x1"` // 0 for leaf nodes, >=1 for interior nodes (max 8)
 	binstruct.End `bin:"off=0x65"`
 }
+
+// MaxLevel is the maximum valid NodeHeader.Level.
+const MaxLevel = 8
 
 // MaxItems returns the maximum possible valid value of
 // .Head.NumItems.
