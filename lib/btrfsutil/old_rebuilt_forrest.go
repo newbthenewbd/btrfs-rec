@@ -393,21 +393,6 @@ func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 	tree.forrest.inner.ReleaseNode(node)
 }
 
-// Superblock implements btrfs.ReadableFS.
-func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
-	return bt.inner.Superblock()
-}
-
-// ReadAt implements diskio.ReaderAt (and btrfs.ReadableFS).
-func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
-	return bt.inner.ReadAt(p, off)
-}
-
-// Name implements btrfs.ReadableFS.
-func (bt *OldRebuiltForrest) Name() string {
-	return bt.inner.Name()
-}
-
 // TreeCheckOwner implements btrfstree.Tree.
 func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
 	var uuidTree oldRebuiltTree
@@ -462,4 +447,21 @@ func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, ow
 			panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
 		}
 	}
+}
+
+// btrfs.ReadableFS (other than btrfstree.Forrest) /////////////////////////////////////////////////////////////////////
+
+// Name implements btrfs.ReadableFS.
+func (bt *OldRebuiltForrest) Name() string {
+	return bt.inner.Name()
+}
+
+// Superblock implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
+	return bt.inner.Superblock()
+}
+
+// ReadAt implements diskio.ReaderAt[btrfsvol.LogicalAddr] (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
+	return bt.inner.ReadAt(p, off)
 }
