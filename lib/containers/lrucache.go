@@ -73,19 +73,24 @@ func (c *lruCache[K, V]) waitForAvail() {
 	ch := make(chan struct{})
 	c.waiters.Store(&LinkedListEntry[chan struct{}]{Value: ch})
 	c.mu.Unlock()
-	<-ch
-	c.mu.Lock()
+	<-ch // receive the lock from .Release()
+	if c.unused.IsEmpty() && c.evictable.IsEmpty() {
+		panic(fmt.Errorf("should not happen: waitForAvail is returning, but nothing is available"))
+	}
 }
 
-// notifyAvail is called when an entry becomes unused or evictable,
-// and wakes up the highest-priority .waitForAvail() waiter (if there
-// is one).
-func (c *lruCache[K, V]) notifyAvail() {
+// unlockAndNotifyAvail is called when an entry becomes unused or
+// evictable, and wakes up the highest-priority .waitForAvail() waiter
+// (if there is one).
+func (c *lruCache[K, V]) unlockAndNotifyAvail() {
 	waiter := c.waiters.Oldest
 	if waiter == nil {
+		c.mu.Unlock()
 		return
 	}
 	c.waiters.Delete(waiter)
+	// We don't actually unlock, we're "transferring" the lock to
+	// the waiter.
 	close(waiter.Value)
 }
 
@@ -171,8 +176,8 @@ func (c *lruCache[K, V]) Delete(k K) {
 	c.evictable.Delete(entry)
 	c.unused.Store(entry)
 
-	// No need to call c.notifyAvail(); if we were able to delete
-	// it, it was already available.
+	// No need to call c.unlockAndNotifyAvail(); if we were able
+	// to delete it, it was already available.
 
 	c.mu.Unlock()
 }
@@ -180,7 +185,6 @@ func (c *lruCache[K, V]) Delete(k K) {
 // Release implements the 'Cache' interface.
 func (c *lruCache[K, V]) Release(k K) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	entry := c.byName[k]
 	if entry == nil || entry.Value.refs <= 0 {
@@ -196,7 +200,9 @@ func (c *lruCache[K, V]) Release(k K) {
 		} else {
 			c.evictable.Store(entry)
 		}
-		c.notifyAvail()
+		c.unlockAndNotifyAvail()
+	} else {
+		c.mu.Unlock()
 	}
 }
 
