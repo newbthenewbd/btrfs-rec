@@ -230,7 +230,7 @@ type arCache[K comparable, V any] struct {
 //   Before getting to the meaty ARC stuff, let's get some
 //   boring/simple synchronization/blocking primitives out of the way:
 
-// waitForEval is called before storing something into the cache.
+// waitForAvail is called before storing something into the cache.
 // This is nescessary because if the cache is full and all entries are
 // pinned, then we won't have to store the entry until something gets
 // unpinned ("Release()d").

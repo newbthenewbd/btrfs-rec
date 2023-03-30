@@ -60,12 +60,14 @@ type lruCache[K comparable, V any] struct {
 
 // Blocking primitives /////////////////////////////////////////////////////////
 
-// Because of pinning, there might not actually be an available entry
-// for us to use/evict.  If we need an entry to use or evict, we'll
-// call waitForAvail to block until there is en entry that is either
-// unused or evictable.  We'll give waiters FIFO priority.
+// waitForAvail is called before storing something into the cache.
+// This is nescessary because if the cache is full and all entries are
+// pinned, then we won't have to store the entry until something gets
+// unpinned ("Release()d").
 func (c *lruCache[K, V]) waitForAvail() {
 	if !(c.unused.IsEmpty() && c.evictable.IsEmpty()) {
+		// There is already an available `lruEntry` that we
+		// can either use or evict.
 		return
 	}
 	ch := make(chan struct{})
