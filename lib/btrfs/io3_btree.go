@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -17,68 +16,6 @@ import (
 )
 
 // This file is ordered from low-level to high-level.
-
-// btrfstree.NodeFile //////////////////////////////////////////////////////////
-
-type treeInfo struct {
-	UUID       btrfsprim.UUID
-	ParentUUID btrfsprim.UUID
-	ParentGen  btrfsprim.Generation
-}
-
-func (fs *FS) populateTreeUUIDs(ctx context.Context) {
-	if fs.cacheObjID2All != nil && fs.cacheUUID2ObjID != nil {
-		return
-	}
-	fs.cacheObjID2All = make(map[btrfsprim.ObjID]treeInfo)
-	fs.cacheUUID2ObjID = make(map[btrfsprim.UUID]btrfsprim.ObjID)
-	fs.TreeWalk(ctx, btrfsprim.ROOT_TREE_OBJECTID,
-		func(err *btrfstree.TreeError) {
-			// do nothing
-		},
-		btrfstree.TreeWalkHandler{
-			Item: func(_ btrfstree.Path, item btrfstree.Item) {
-				itemBody, ok := item.Body.(*btrfsitem.Root)
-				if !ok {
-					return
-				}
-				fs.cacheObjID2All[item.Key.ObjectID] = treeInfo{
-					UUID:       itemBody.UUID,
-					ParentUUID: itemBody.ParentUUID,
-					ParentGen:  btrfsprim.Generation(item.Key.Offset),
-				}
-				fs.cacheUUID2ObjID[itemBody.UUID] = item.Key.ObjectID
-			},
-		},
-	)
-}
-
-// ParentTree implements btrfstree.NodeFile.
-func (fs *FS) ParentTree(tree btrfsprim.ObjID) (btrfsprim.ObjID, btrfsprim.Generation, bool) {
-	if tree < btrfsprim.FIRST_FREE_OBJECTID || tree > btrfsprim.LAST_FREE_OBJECTID {
-		// no parent
-		return 0, 0, true
-	}
-	fs.populateTreeUUIDs(context.TODO())
-
-	all, ok := fs.cacheObjID2All[tree]
-	if !ok {
-		// could not look up parent info
-		return 0, 0, false
-	}
-	if all.ParentUUID == (btrfsprim.UUID{}) {
-		// no parent
-		return 0, 0, true
-	}
-	parentObjID, ok := fs.cacheUUID2ObjID[all.ParentUUID]
-	if !ok {
-		// could not look up parent info
-		return 0, 0, false
-	}
-	return parentObjID, all.ParentGen, true
-}
-
-var _ btrfstree.NodeFile = (*FS)(nil)
 
 // btrfstree.NodeSource ////////////////////////////////////////////////////////
 

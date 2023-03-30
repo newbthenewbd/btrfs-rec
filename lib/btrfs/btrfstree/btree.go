@@ -14,6 +14,17 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
+type Tree interface {
+	// CheckOwner returns whether it is permissible for a node
+	// with .Head.Owner=owner and .Head.Generation=gen to be in
+	// this tree.
+	//
+	// If there is an error determining this, then `failOpen`
+	// specifies whether it should return an error (false) or nil
+	// (true).
+	TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error
+}
+
 type TreeSearcher interface {
 	// How the search should be described in the event of an
 	// error.

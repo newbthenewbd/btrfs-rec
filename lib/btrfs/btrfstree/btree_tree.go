@@ -22,27 +22,35 @@ type RawTree struct {
 }
 
 func (tree *RawTree) TreeWalk(ctx context.Context, cbs TreeWalkHandler) {
+	sb, err := tree.Forrest.NodeSource.Superblock()
+	if err != nil {
+		if cbs.BadSuperblock != nil {
+			cbs.BadSuperblock(err)
+		}
+		return
+	}
 	if tree.RootNode == 0 {
 		return
 	}
-	path := Path{{
-		FromTree:         tree.ID,
-		FromItemSlot:     -1,
-		ToNodeAddr:       tree.RootNode,
-		ToNodeGeneration: tree.Generation,
-		ToNodeLevel:      tree.Level,
-		ToMaxKey:         btrfsprim.MaxKey,
-	}}
-	tree.walk(ctx, path, cbs)
+	path := Path{
+		PathRoot{
+			Tree:         tree,
+			TreeID:       tree.ID,
+			ToAddr:       tree.RootNode,
+			ToGeneration: tree.Generation,
+			ToLevel:      tree.Level,
+		},
+	}
+	tree.walk(ctx, *sb, path, cbs)
 }
 
-func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
+func (tree *RawTree) walk(ctx context.Context, sb Superblock, path Path, cbs TreeWalkHandler) {
 	if ctx.Err() != nil {
 		return
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(tree.Forrest.NodeSource)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, true) // TODO(lukeshu): Consider whether failing open is the right thing here
 	if !ok {
 		return
 	}
@@ -74,18 +82,20 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 	}
 	// branch a (interior)
 	for i, item := range node.BodyInterior {
-		toMaxKey := path.Node(-1).ToMaxKey
+		toMaxKey := nodeExp.MaxItem.Val
 		if i+1 < len(node.BodyInterior) {
 			toMaxKey = node.BodyInterior[i+1].Key.Mm()
 		}
-		itemPath := append(path, PathElem{
-			FromTree:         node.Head.Owner,
-			FromItemSlot:     i,
-			ToNodeAddr:       item.BlockPtr,
-			ToNodeGeneration: item.Generation,
-			ToNodeLevel:      node.Head.Level - 1,
-			ToKey:            item.Key,
-			ToMaxKey:         toMaxKey,
+		itemPath := append(path, PathKP{
+			FromTree: node.Head.Owner,
+			FromSlot: i,
+
+			ToAddr:       item.BlockPtr,
+			ToGeneration: item.Generation,
+			ToMinKey:     item.Key,
+
+			ToMaxKey: toMaxKey,
+			ToLevel:  node.Head.Level - 1,
 		})
 		// 003a
 		recurse := cbs.KeyPointer == nil || cbs.KeyPointer(itemPath, item)
@@ -94,7 +104,7 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 		}
 		// 004a
 		if recurse {
-			tree.walk(ctx, itemPath, cbs)
+			tree.walk(ctx, sb, itemPath, cbs)
 			if ctx.Err() != nil {
 				return
 			}
@@ -105,11 +115,11 @@ func (tree *RawTree) walk(ctx context.Context, path Path, cbs TreeWalkHandler) {
 		return
 	}
 	for i, item := range node.BodyLeaf {
-		itemPath := append(path, PathElem{
-			FromTree:     node.Head.Owner,
-			FromItemSlot: i,
-			ToKey:        item.Key,
-			ToMaxKey:     item.Key,
+		itemPath := append(path, PathItem{
+			FromTree: node.Head.Owner,
+			FromSlot: i,
+
+			ToKey: item.Key,
 		})
 		// 003b
 		switch item.Body.(type) {
@@ -270,4 +280,65 @@ func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSea
 		return fmt.Errorf("items with %s: %w", searcher, errs)
 	}
 	return nil
+}
+
+// TreeCheckOwner implements the 'Tree' interface.
+func (tree *RawTree) TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
+	var uuidTree *RawTree
+	for {
+		// Main.
+		if owner == tree.ID {
+			return nil
+		}
+		if tree.ParentUUID == (btrfsprim.UUID{}) {
+			return fmt.Errorf("owner=%v is not acceptable in this tree",
+				owner)
+		}
+		if gen > tree.ParentGen {
+			return fmt.Errorf("claimed owner=%v might be acceptable in this tree (if generation<=%v) but not with claimed generation=%v",
+				owner, tree.ParentGen, gen)
+		}
+
+		// Loop update.
+		if uuidTree == nil {
+			var err error
+			uuidTree, err = tree.Forrest.RawTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+			if err != nil {
+				if failOpen {
+					return nil
+				}
+				return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+					owner, gen, err)
+			}
+		}
+		parentIDItem, err := uuidTree.TreeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
+		if err != nil {
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				owner, gen, err)
+		}
+		switch parentIDBody := parentIDItem.Body.(type) {
+		case *btrfsitem.UUIDMap:
+			tree, err = tree.Forrest.RawTree(ctx, parentIDBody.ObjID)
+			if err != nil {
+				if failOpen {
+					return nil
+				}
+				return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+					owner, gen, err)
+			}
+		case *btrfsitem.Error:
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				owner, gen, parentIDBody.Err)
+		default:
+			// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+			// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+			panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
+		}
+	}
 }

@@ -23,12 +23,16 @@ import (
 type oldRebuiltTree struct {
 	forrest *OldRebuiltForrest
 
-	ID btrfsprim.ObjID
+	ID         btrfsprim.ObjID
+	ParentUUID btrfsprim.UUID
+	ParentGen  btrfsprim.Generation // offset of this tree's root item
 
 	RootErr error
 	Items   *containers.RBTree[oldRebuiltTreeValue]
 	Errors  *containers.IntervalTree[btrfsprim.Key, oldRebuiltTreeError]
 }
+
+var _ btrfstree.Tree = oldRebuiltTree{}
 
 type oldRebuiltTreeError struct {
 	Min btrfsprim.Key
@@ -172,19 +176,23 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 		TreeRoot: *root,
 	}
 
+	cacheEntry.ParentUUID = root.ParentUUID
+	cacheEntry.ParentGen = root.ParentGen
+
 	var curNode nodeInfo
 	cbs := btrfstree.TreeWalkHandler{
 		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
+			_, nodeExp, _ := path.NodeExpectations(ctx, false)
 			cacheEntry.Errors.Insert(oldRebuiltTreeError{
-				Min: path.Node(-1).ToKey,
-				Max: path.Node(-1).ToMaxKey,
+				Min: nodeExp.MinItem.Val,
+				Max: nodeExp.MaxItem.Val,
 				Err: err,
 			})
 			return false
 		},
 		Node: func(path btrfstree.Path, node *btrfstree.Node) {
 			curNode = nodeInfo{
-				LAddr:      path.Node(-1).ToNodeAddr,
+				LAddr:      node.Head.Addr,
 				Level:      node.Head.Level,
 				Generation: node.Head.Generation,
 				Owner:      node.Head.Owner,
@@ -204,7 +212,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 				ItemSize: item.BodySize,
 
 				Node: curNode,
-				Slot: path.Node(-1).FromItemSlot,
+				Slot: path[len(path)-1].(btrfstree.PathItem).FromSlot, //nolint:forcetypeassert // has to be
 			})
 		},
 	}
@@ -342,11 +350,8 @@ func (bt *OldRebuiltForrest) TreeWalk(ctx context.Context, treeID btrfsprim.ObjI
 	tree := bt.RebuiltTree(ctx, treeID)
 	if tree.RootErr != nil {
 		errHandle(&btrfstree.TreeError{
-			Path: btrfstree.Path{{
-				FromTree: treeID,
-				ToMaxKey: btrfsprim.MaxKey,
-			}},
-			Err: tree.RootErr,
+			Path: btrfstree.Path{btrfstree.PathRoot{TreeID: treeID}},
+			Err:  tree.RootErr,
 		})
 		return
 	}
@@ -372,19 +377,17 @@ func (tree oldRebuiltTree) treeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		item := node.BodyLeaf[indexItem.Value.Slot]
 
 		itemPath := btrfstree.Path{
-			{
-				FromTree:         tree.ID,
-				ToNodeAddr:       indexItem.Value.Node.LAddr,
-				ToNodeGeneration: indexItem.Value.Node.Generation,
-				ToNodeLevel:      indexItem.Value.Node.Level,
-				ToKey:            indexItem.Value.Node.MinItem,
-				ToMaxKey:         indexItem.Value.Node.MaxItem,
+			btrfstree.PathRoot{
+				Tree:         tree,
+				TreeID:       tree.ID,
+				ToAddr:       indexItem.Value.Node.LAddr,
+				ToGeneration: indexItem.Value.Node.Generation,
+				ToLevel:      indexItem.Value.Node.Level,
 			},
-			{
-				FromTree:     indexItem.Value.Node.Owner,
-				FromItemSlot: indexItem.Value.Slot,
-				ToKey:        indexItem.Value.Key,
-				ToMaxKey:     indexItem.Value.Key,
+			btrfstree.PathItem{
+				FromTree: indexItem.Value.Node.Owner,
+				FromSlot: indexItem.Value.Slot,
+				ToKey:    indexItem.Value.Key,
 			},
 		}
 		switch item.Body.(type) {
@@ -410,4 +413,60 @@ func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
 // ReadAt implements diskio.ReaderAt (and btrfs.ReadableFS).
 func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
 	return bt.inner.ReadAt(p, off)
+}
+
+// TreeCheckOwner implements btrfstree.Tree.
+func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
+	var uuidTree oldRebuiltTree
+	for {
+		// Main.
+		if owner == tree.ID {
+			return nil
+		}
+		if tree.ParentUUID == (btrfsprim.UUID{}) {
+			return fmt.Errorf("owner=%v is not acceptable in this tree",
+				owner)
+		}
+		if gen > tree.ParentGen {
+			return fmt.Errorf("claimed owner=%v might be acceptable in this tree (if generation<=%v) but not with claimed generation=%v",
+				owner, tree.ParentGen, gen)
+		}
+
+		// Loop update.
+		if uuidTree.forrest == nil {
+			uuidTree = tree.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+			if uuidTree.RootErr != nil {
+				return nil //nolint:nilerr // fail open
+			}
+		}
+		parentIDItem, err := uuidTree.treeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
+		if err != nil {
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				owner, gen, err)
+		}
+		switch parentIDBody := parentIDItem.Body.(type) {
+		case *btrfsitem.UUIDMap:
+			tree = tree.forrest.RebuiltTree(ctx, parentIDBody.ObjID)
+			if tree.RootErr != nil {
+				if failOpen {
+					return nil
+				}
+				return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+					owner, gen, tree.RootErr)
+			}
+		case *btrfsitem.Error:
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				owner, gen, parentIDBody.Err)
+		default:
+			// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+			// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+			panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
+		}
+	}
 }

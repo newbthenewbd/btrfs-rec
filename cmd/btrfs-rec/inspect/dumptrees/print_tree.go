@@ -102,8 +102,7 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			printHeaderInfo(out, node)
 			itemOffset = node.Size - uint32(nodeHeaderSize)
 		},
-		KeyPointer: func(path btrfstree.Path, item btrfstree.KeyPointer) bool {
-			treeID := path[0].FromTree
+		KeyPointer: func(_ btrfstree.Path, item btrfstree.KeyPointer) bool {
 			textui.Fprintf(out, "\tkey %v block %v gen %v\n",
 				item.Key.Format(treeID),
 				item.BlockPtr,
@@ -111,13 +110,11 @@ func printTree(ctx context.Context, out io.Writer, fs *btrfs.FS, treeID btrfspri
 			return true
 		},
 		Item: func(path btrfstree.Path, item btrfstree.Item) {
-			treeID := path[0].FromTree
-			i := path.Node(-1).FromItemSlot
 			bs, _ := binstruct.Marshal(item.Body)
 			itemSize := uint32(len(bs))
 			itemOffset -= itemSize
 			textui.Fprintf(out, "\titem %v key %v itemoff %v itemsize %v\n",
-				i,
+				path[len(path)-1].(btrfstree.PathItem).FromSlot, //nolint:forcetypeassert // has to be
 				item.Key.Format(treeID),
 				itemOffset,
 				itemSize)
