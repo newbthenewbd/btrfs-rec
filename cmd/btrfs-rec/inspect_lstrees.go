@@ -101,16 +101,16 @@ func init() {
 				treeErrCnt = 0
 				treeItemCnt = make(map[btrfsitem.Type]int)
 				textui.Fprintf(os.Stdout, "lost+found\n")
-				sb, _ := fs.Superblock()
 				for _, laddr := range nodeList {
 					if visitedNodes.Has(laddr) {
 						continue
 					}
 					visitedNodes.Insert(laddr)
-					node, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, *sb, laddr, btrfstree.NodeExpectations{
+					node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 						LAddr: containers.OptionalValue(laddr),
 					})
 					if err != nil {
+						fs.ReleaseNode(node)
 						treeErrCnt++
 						continue
 					}
@@ -118,6 +118,7 @@ func init() {
 						typ := item.Key.ItemType
 						treeItemCnt[typ]++
 					}
+					fs.ReleaseNode(node)
 				}
 				flush()
 			}

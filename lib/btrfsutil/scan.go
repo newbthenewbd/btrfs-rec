@@ -122,7 +122,7 @@ func ScanOneDevice[Stats comparable, Result any](ctx context.Context, dev *btrfs
 		}
 
 		if checkForNode {
-			node, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, *sb, pos, btrfstree.NodeExpectations{})
+			node, err := btrfstree.ReadNode[btrfsvol.PhysicalAddr](dev, *sb, pos)
 			if err != nil {
 				if !errors.Is(err, btrfstree.ErrNotANode) {
 					dlog.Errorf(ctx, "error: %v", err)
@@ -134,7 +134,7 @@ func ScanOneDevice[Stats comparable, Result any](ctx context.Context, dev *btrfs
 				}
 				minNextNode = pos + btrfsvol.PhysicalAddr(sb.NodeSize)
 			}
-			node.Free()
+			node.RawFree()
 		}
 	}
 

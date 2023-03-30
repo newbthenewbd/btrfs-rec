@@ -83,11 +83,14 @@ func LookupTreeRoot(_ context.Context, fs TreeOperator, sb Superblock, treeID bt
 }
 
 type TreeOperatorImpl struct {
-	NodeSource
+	NodeSource interface {
+		NodeSource
+		NodeFile
+	}
 }
 
 func (fs TreeOperatorImpl) RawTree(ctx context.Context, treeID btrfsprim.ObjID) (*RawTree, error) {
-	sb, err := fs.Superblock()
+	sb, err := fs.NodeSource.Superblock()
 	if err != nil {
 		return nil, err
 	}

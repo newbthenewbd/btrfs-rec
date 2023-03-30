@@ -230,7 +230,7 @@ type arCache[K comparable, V any] struct {
 //   Before getting to the meaty ARC stuff, let's get some
 //   boring/simple synchronization/blocking primitives out of the way:
 
-// waitForEval is called before storing something into the cache.
+// waitForAvail is called before storing something into the cache.
 // This is nescessary because if the cache is full and all entries are
 // pinned, then we won't have to store the entry until something gets
 // unpinned ("Release()d").
@@ -243,19 +243,24 @@ func (c *arCache[K, V]) waitForAvail() {
 	ch := make(chan struct{})
 	c.waiters.Store(&LinkedListEntry[chan struct{}]{Value: ch})
 	c.mu.Unlock()
-	<-ch
-	c.mu.Lock()
+	<-ch // receive the lock from .Release()
+	if c.recentLive.IsEmpty() && c.frequentLive.IsEmpty() && c.unusedLive.IsEmpty() {
+		panic(fmt.Errorf("should not happen: waitForAvail is returning, but nothing is available"))
+	}
 }
 
-// notifyAvail is called when an entry gets unpinned ("Release()d"),
-// and wakes up the highest-priority .waitForAvail() waiter (if there
-// is one).
-func (c *arCache[K, V]) notifyAvail() {
+// unlockAndNotifyAvail is called when an entry gets unpinned
+// ("Release()d"), and wakes up the highest-priority .waitForAvail()
+// waiter (if there is one).
+func (c *arCache[K, V]) unlockAndNotifyAvail() {
 	waiter := c.waiters.Oldest
 	if waiter == nil {
+		c.mu.Unlock()
 		return
 	}
 	c.waiters.Delete(waiter)
+	// We don't actually unlock, we're "transferring" the lock to
+	// the waiter.
 	close(waiter.Value)
 }
 
@@ -419,7 +424,8 @@ func (c *arCache[K, V]) arcReplace(ghostEntry *LinkedListEntry[arcGhostEntry[K]]
 	// order to support "delete"; because without "delete",
 	// arcReplace wouldn't ever be called when the cache isn't
 	// full.)
-	if entry := c.unusedLive.Oldest; entry != nil && !forceEviction {
+	if !c.unusedLive.IsEmpty() && !forceEviction {
+		entry := c.unusedLive.Oldest
 		c.unusedLive.Delete(entry)
 		return entry
 	}
@@ -446,15 +452,16 @@ func (c *arCache[K, V]) arcReplace(ghostEntry *LinkedListEntry[arcGhostEntry[K]]
 	// Make the decision.
 	recentLive := c.recentPinned.Len + c.recentLive.Len
 	switch { // NB: Also check .IsEmpty() in order to support pinning.
-	case recentLive > c.recentLiveTarget, c.frequentLive.IsEmpty():
+	case recentLive > c.recentLiveTarget && !c.recentLive.IsEmpty():
 		evictFrom, evictTo = &c.recentLive, &c.recentGhost
-	case recentLive < c.recentLiveTarget, c.recentLive.IsEmpty():
+	case recentLive < c.recentLiveTarget && !c.frequentLive.IsEmpty():
 		evictFrom, evictTo = &c.frequentLive, &c.frequentGhost
-	case recentLive == c.recentLiveTarget:
+	default: // case recentLive == c.recentLiveTarget || the_normal_list_was_empty:
+
 		// The original paper says "The last replacement
 		// decision is somewhat arbitrary, and can be made
 		// differently if desired."
-		if arbitrary && c.recentLive.Len > 0 {
+		if arbitrary && !c.recentLive.IsEmpty() {
 			evictFrom, evictTo = &c.recentLive, &c.recentGhost
 		} else {
 			evictFrom, evictTo = &c.frequentLive, &c.frequentGhost
@@ -562,8 +569,8 @@ func (c *arCache[K, V]) Delete(k K) {
 		c.unusedGhost.Store(entry)
 	}
 
-	// No need to call c.notifyAvail(); if we were able to delete
-	// it, it was already available.
+	// No need to call c.unlockAndNotifyAvail(); if we were able
+	// to delete it, it was already available.
 
 	c.mu.Unlock()
 }
@@ -571,7 +578,6 @@ func (c *arCache[K, V]) Delete(k K) {
 // Release implements the 'Cache' interface.
 func (c *arCache[K, V]) Release(k K) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	entry := c.liveByName[k]
 	if entry == nil || entry.Value.refs <= 0 {
@@ -592,8 +598,12 @@ func (c *arCache[K, V]) Release(k K) {
 		case entry.List == &c.frequentPinned:
 			c.frequentPinned.Delete(entry)
 			c.frequentLive.Store(entry)
+		default:
+			panic(fmt.Errorf("should not happen: entry is not pending deletion, and is not in a pinned list"))
 		}
-		c.notifyAvail()
+		c.unlockAndNotifyAvail()
+	} else {
+		c.mu.Unlock()
 	}
 }
 

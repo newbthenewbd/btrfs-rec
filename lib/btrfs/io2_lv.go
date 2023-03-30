@@ -16,6 +16,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 )
 
@@ -26,6 +27,8 @@ type FS struct {
 
 	cacheSuperblocks []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
 	cacheSuperblock  *btrfstree.Superblock
+
+	cacheNodes containers.Cache[btrfsvol.LogicalAddr, nodeCacheEntry]
 
 	cacheObjID2All  map[btrfsprim.ObjID]treeInfo
 	cacheUUID2ObjID map[btrfsprim.UUID]btrfsprim.ObjID

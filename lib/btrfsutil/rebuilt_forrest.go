@@ -15,7 +15,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -130,7 +129,7 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
-	file  diskio.File[btrfsvol.LogicalAddr]
+	file  btrfstree.NodeSource
 	sb    btrfstree.Superblock
 	graph Graph
 	cb    RebuiltForrestCallbacks
@@ -142,13 +141,11 @@ type RebuiltForrest struct {
 	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
 	incItems containers.Cache[btrfsprim.ObjID, itemIndex]
 	excItems containers.Cache[btrfsprim.ObjID, itemIndex]
-
-	nodes containers.Cache[btrfsvol.LogicalAddr, btrfstree.Node]
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
 // RebuiltForrestCallbacks may be nil.
-func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	ret := &RebuiltForrest{
 		file:  file,
 		sb:    sb,
@@ -171,9 +168,6 @@ func NewRebuiltForrest(file diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Supe
 		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, excItems *itemIndex) {
 			*excItems = ret.trees[treeID].uncachedExcItems(ctx)
 		}))
-	ret.nodes = containers.NewARCache[btrfsvol.LogicalAddr, btrfstree.Node](textui.Tunable(8),
-		containers.SourceFunc[btrfsvol.LogicalAddr, btrfstree.Node](ret.readNode))
-
 	if ret.cb == nil {
 		ret.cb = noopRebuiltForrestCallbacks{
 			forrest: ret,

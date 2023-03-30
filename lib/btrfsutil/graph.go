@@ -17,7 +17,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
-	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
@@ -199,7 +198,7 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 	}
 }
 
-func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAddr], sb btrfstree.Superblock) error {
+func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
 	var stats textui.Portion[int]
 
 	dlog.Info(ctx, "Checking keypointers for dead-ends...")
@@ -208,9 +207,10 @@ func (g Graph) FinalCheck(ctx context.Context, fs diskio.File[btrfsvol.LogicalAd
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
 		if _, ok := g.Nodes[laddr]; !ok {
-			_, err := btrfstree.ReadNode[btrfsvol.LogicalAddr](fs, sb, laddr, btrfstree.NodeExpectations{
+			node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 				LAddr: containers.OptionalValue(laddr),
 			})
+			fs.ReleaseNode(node)
 			if err == nil {
 				progressWriter.Done()
 				return fmt.Errorf("node@%v exists but was not in node scan results", laddr)
