@@ -59,7 +59,7 @@ type GraphEdge struct {
 	// superblock.
 	FromRoot btrfsvol.LogicalAddr
 	FromNode btrfsvol.LogicalAddr
-	FromItem int // only valid if one of FromRoot or FromNode is non-zero
+	FromSlot int // only valid if one of FromRoot or FromNode is non-zero
 
 	FromTree btrfsprim.ObjID
 
@@ -74,10 +74,10 @@ func (kp GraphEdge) String() string {
 	switch {
 	case kp.FromRoot != 0:
 		from = fmt.Sprintf("root@%v[%d]:%v",
-			kp.FromRoot, kp.FromItem, kp.FromTree)
+			kp.FromRoot, kp.FromSlot, kp.FromTree)
 	case kp.FromNode != 0:
 		from = fmt.Sprintf("{node:%v, tree:%v}[%d]",
-			kp.FromNode, kp.FromTree, kp.FromItem)
+			kp.FromNode, kp.FromTree, kp.FromSlot)
 	default:
 		from = fmt.Sprintf("superblock:%v", kp.FromTree)
 	}
@@ -103,8 +103,8 @@ func (g Graph) insertEdge(ptr *GraphEdge) {
 	if ptr.FromRoot != 0 && ptr.FromNode != 0 {
 		panic("kp.FromRoot and kp.FromNode should not both be set")
 	}
-	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromItem != 0 {
-		panic("kp.FromItem should only be set if either kp.FromRoot or kp.FromItem is set")
+	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromSlot != 0 {
+		panic("kp.FromSlot should only be set if either kp.FromRoot or kp.FromSlot is set")
 	}
 	g.EdgesFrom[ptr.FromNode] = append(g.EdgesFrom[ptr.FromNode], ptr)
 	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
@@ -171,7 +171,7 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
 				kps = append(kps, GraphEdge{
 					FromRoot:     node.Head.Addr,
-					FromItem:     i,
+					FromSlot:     i,
 					FromTree:     item.Key.ObjectID,
 					ToNode:       itemBody.ByteNr,
 					ToLevel:      itemBody.Level,
@@ -186,7 +186,7 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 		for i, kp := range node.BodyInterior {
 			kps[i] = GraphEdge{
 				FromNode:     node.Head.Addr,
-				FromItem:     i,
+				FromSlot:     i,
 				FromTree:     node.Head.Owner,
 				ToNode:       kp.BlockPtr,
 				ToLevel:      node.Head.Level - 1,

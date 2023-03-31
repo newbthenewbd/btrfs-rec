@@ -43,7 +43,7 @@ func (g Graph) renderNode(node btrfsvol.LogicalAddr) []string {
 }
 
 func (g Graph) renderEdge(kp GraphEdge) []string {
-	a := fmt.Sprintf("[%d]={", kp.FromItem)
+	a := fmt.Sprintf("[%d]={", kp.FromSlot)
 	b := strings.Repeat(" ", len(a))
 	ret := []string{
 		a + fmt.Sprintf("ToNode:  %v,", kp.ToNode),
