@@ -328,6 +328,10 @@ func fieldOrd(key string) int {
 	case "btrfs.inspect.rebuild-trees.rebuild.want.reason":
 		return -8
 
+	// btrfsutil.Graph /////////////////////////////////////////////////////
+	case "btrfs.util.read-graph.step":
+		return -1
+
 	// btrfsutil.RebuiltForrest ////////////////////////////////////////////
 	case "btrfs.util.rebuilt-forrest.add-tree":
 		return -7
@@ -426,10 +430,14 @@ func writeField(w io.Writer, key string, val any) {
 					name = strings.TrimPrefix(name, "rebuild.")
 				}
 			}
-		case strings.HasPrefix(name, "util.rebuilt-forrest."):
-			name = strings.TrimPrefix(name, "util.rebuilt-forrest.")
-		case strings.HasPrefix(name, "util.rebuilt-tree."):
-			name = strings.TrimPrefix(name, "util.rebuilt-tree.")
+		case strings.HasPrefix(name, "util."):
+			name = strings.TrimPrefix(name, "util.")
+			switch {
+			case strings.HasPrefix(name, "rebuilt-forrest."):
+				name = strings.TrimPrefix(name, "rebuilt-forrest.")
+			case strings.HasPrefix(name, "rebuilt-tree."):
+				name = strings.TrimPrefix(name, "rebuilt-tree.")
+			}
 		}
 	}
 
