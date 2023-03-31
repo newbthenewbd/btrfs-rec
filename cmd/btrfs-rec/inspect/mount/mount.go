@@ -29,23 +29,12 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
-func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string, noChecksums bool) error {
-	pvs := fs.LV.PhysicalVolumes()
-	if len(pvs) < 1 {
-		return errors.New("no devices")
-	}
-
-	deviceName := pvs[maps.SortedKeys(pvs)[0]].Name()
-	if abs, err := filepath.Abs(deviceName); err == nil {
-		deviceName = abs
-	}
-
+func MountRO(ctx context.Context, fs btrfs.ReadableFS, mountpoint string, noChecksums bool) error {
 	sb, err := fs.Superblock()
 	if err != nil {
 		return err
@@ -54,11 +43,11 @@ func MountRO(ctx context.Context, fs *btrfs.FS, mountpoint string, noChecksums b
 	rootSubvol := &subvolume{
 		Subvolume: btrfs.NewSubvolume(
 			ctx,
-			btrfsutil.NewOldRebuiltForrest(fs),
+			fs,
 			btrfsprim.FS_TREE_OBJECTID,
 			noChecksums,
 		),
-		DeviceName: deviceName,
+		DeviceName: fs.Name(),
 		Mountpoint: mountpoint,
 
 		sb: sb,

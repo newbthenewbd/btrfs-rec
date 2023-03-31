@@ -13,7 +13,6 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/lsfiles"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 )
 
 func init() {
@@ -21,7 +20,7 @@ func init() {
 		Use:   "ls-files",
 		Short: "A listing of all files in the filesystem",
 		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+		RunE: runWithReadableFS(func(fs btrfs.ReadableFS, cmd *cobra.Command, _ []string) (err error) {
 			out := bufio.NewWriter(os.Stdout)
 			defer func() {
 				if _err := out.Flush(); _err != nil && err == nil {
@@ -32,7 +31,7 @@ func init() {
 			return lsfiles.LsFiles(
 				cmd.Context(),
 				out,
-				btrfsutil.NewOldRebuiltForrest(fs))
+				fs)
 		}),
 	})
 }

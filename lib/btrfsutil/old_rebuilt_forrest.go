@@ -246,7 +246,7 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 }
 
 func (bt *OldRebuiltForrest) readNode(ctx context.Context, nodeInfo nodeInfo) *btrfstree.Node {
-	node, err := bt.inner.AcquireNode(ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
+	node, err := bt.AcquireNode(ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),
 		Generation: containers.OptionalValue(nodeInfo.Generation),
@@ -287,7 +287,7 @@ func (tree oldRebuiltTree) TreeSearch(ctx context.Context, searcher btrfstree.Tr
 	}
 
 	node := tree.forrest.readNode(ctx, indexItem.Value.Node)
-	defer tree.forrest.inner.ReleaseNode(node)
+	defer tree.forrest.ReleaseNode(node)
 
 	item := node.BodyLeaf[indexItem.Value.Slot]
 	item.Body = item.Body.CloneItem()
@@ -307,12 +307,12 @@ func (tree oldRebuiltTree) TreeRange(ctx context.Context, handleFn func(btrfstre
 	tree.Items.Range(
 		func(rbnode *containers.RBNode[oldRebuiltTreeValue]) bool {
 			if node == nil || node.Head.Addr != rbnode.Value.Node.LAddr {
-				tree.forrest.inner.ReleaseNode(node)
+				tree.forrest.ReleaseNode(node)
 				node = tree.forrest.readNode(ctx, rbnode.Value.Node)
 			}
 			return handleFn(node.BodyLeaf[rbnode.Value.Slot])
 		})
-	tree.forrest.inner.ReleaseNode(node)
+	tree.forrest.ReleaseNode(node)
 
 	return tree.addErrs(func(btrfsprim.Key, uint32) int { return 0 }, nil)
 }
@@ -328,12 +328,12 @@ func (tree oldRebuiltTree) TreeSubrange(ctx context.Context, min int, searcher b
 		func(rbNode *containers.RBNode[oldRebuiltTreeValue]) bool {
 			cnt++
 			if node == nil || node.Head.Addr != rbNode.Value.Node.LAddr {
-				tree.forrest.inner.ReleaseNode(node)
+				tree.forrest.ReleaseNode(node)
 				node = tree.forrest.readNode(ctx, rbNode.Value.Node)
 			}
 			return handleFn(node.BodyLeaf[rbNode.Value.Slot])
 		})
-	tree.forrest.inner.ReleaseNode(node)
+	tree.forrest.ReleaseNode(node)
 
 	var err error
 	if cnt < min {
@@ -359,7 +359,7 @@ func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		}
 
 		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
-			tree.forrest.inner.ReleaseNode(node)
+			tree.forrest.ReleaseNode(node)
 			node = tree.forrest.readNode(ctx, indexItem.Value.Node)
 		}
 		item := node.BodyLeaf[indexItem.Value.Slot]
@@ -390,22 +390,7 @@ func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		}
 		return ctx.Err() == nil
 	})
-	tree.forrest.inner.ReleaseNode(node)
-}
-
-// Superblock implements btrfs.ReadableFS.
-func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
-	return bt.inner.Superblock()
-}
-
-// ReadAt implements diskio.ReaderAt (and btrfs.ReadableFS).
-func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
-	return bt.inner.ReadAt(p, off)
-}
-
-// Name implements btrfs.ReadableFS.
-func (bt *OldRebuiltForrest) Name() string {
-	return bt.inner.Name()
+	tree.forrest.ReleaseNode(node)
 }
 
 // TreeCheckOwner implements btrfstree.Tree.
@@ -462,4 +447,31 @@ func (tree oldRebuiltTree) TreeCheckOwner(ctx context.Context, failOpen bool, ow
 			panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
 		}
 	}
+}
+
+// btrfs.ReadableFS (other than btrfstree.Forrest) /////////////////////////////////////////////////////////////////////
+
+// Name implements btrfs.ReadableFS.
+func (bt *OldRebuiltForrest) Name() string {
+	return bt.inner.Name()
+}
+
+// Superblock implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
+	return bt.inner.Superblock()
+}
+
+// AcquireNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp btrfstree.NodeExpectations) (*btrfstree.Node, error) {
+	return bt.inner.AcquireNode(ctx, addr, exp)
+}
+
+// ReleaseNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) ReleaseNode(node *btrfstree.Node) {
+	bt.inner.ReleaseNode(node)
+}
+
+// ReadAt implements diskio.ReaderAt[btrfsvol.LogicalAddr] (and btrfs.ReadableFS).
+func (bt *OldRebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
+	return bt.inner.ReadAt(p, off)
 }
