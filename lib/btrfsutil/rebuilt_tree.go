@@ -73,10 +73,17 @@ func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 
 // evictable member 1: .acquireNodeIndex() /////////////////////////////////////////////////////////////////////////////
 
+type rebuiltRoots = map[btrfsvol.LogicalAddr]rebuiltPathInfo
+
+type rebuiltPathInfo struct {
+	loMaxItem btrfsprim.Key
+	hiMaxItem btrfsprim.Key
+}
+
 type rebuiltNodeIndex struct {
 	// leafToRoots contains all leafs (lvl=0) in the filesystem
 	// that pass .isOwnerOK, whether or not they're in the tree.
-	leafToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
+	leafToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
 }
 
 func (tree *RebuiltTree) acquireNodeIndex(ctx context.Context) rebuiltNodeIndex {
@@ -93,11 +100,11 @@ func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex
 	indexer := &rebuiltNodeIndexer{
 		tree: tree,
 
-		nodeToRoots: make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]),
+		nodeToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
 	}
 
 	ret := rebuiltNodeIndex{
-		leafToRoots: make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]),
+		leafToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
 	}
 	for node, roots := range indexer.run(ctx) {
 		if tree.forrest.graph.Nodes[node].Level == 0 && len(roots) > 0 {
@@ -112,14 +119,14 @@ type rebuiltNodeIndexer struct {
 	tree *RebuiltTree
 
 	// Output
-	nodeToRoots map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]
+	nodeToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
 
 	// State
 	stats          textui.Portion[int]
 	progressWriter *textui.Progress[textui.Portion[int]]
 }
 
-func (indexer *rebuiltNodeIndexer) run(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+func (indexer *rebuiltNodeIndexer) run(ctx context.Context) map[btrfsvol.LogicalAddr]rebuiltRoots {
 	indexer.stats.D = len(indexer.tree.forrest.graph.Nodes)
 	indexer.progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	indexer.updateProgress()
@@ -154,7 +161,7 @@ func (indexer *rebuiltNodeIndexer) node(ctx context.Context, node btrfsvol.Logic
 	}
 
 	stack = append(stack, node)
-	var roots containers.Set[btrfsvol.LogicalAddr]
+	var roots rebuiltRoots
 	for _, kp := range indexer.tree.forrest.graph.EdgesTo[node] {
 		if !indexer.tree.isOwnerOK(indexer.tree.forrest.graph.Nodes[kp.FromNode].Owner, indexer.tree.forrest.graph.Nodes[kp.FromNode].Generation) {
 			continue
@@ -162,13 +169,31 @@ func (indexer *rebuiltNodeIndexer) node(ctx context.Context, node btrfsvol.Logic
 		indexer.node(ctx, kp.FromNode, stack)
 		if len(indexer.nodeToRoots[kp.FromNode]) > 0 {
 			if roots == nil {
-				roots = make(containers.Set[btrfsvol.LogicalAddr])
+				roots = make(rebuiltRoots)
 			}
-			roots.InsertFrom(indexer.nodeToRoots[kp.FromNode])
+			for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
+				if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+					rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+					rootInfo.hiMaxItem = rootInfo.loMaxItem
+				}
+				oldRootInfo, ok := roots[root]
+				if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
+					rootInfo.loMaxItem = oldRootInfo.loMaxItem
+				}
+				if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
+					rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
+				}
+				roots[root] = rootInfo
+			}
 		}
 	}
 	if roots == nil {
-		roots = containers.NewSet[btrfsvol.LogicalAddr](node)
+		roots = rebuiltRoots{
+			node: rebuiltPathInfo{
+				loMaxItem: btrfsprim.MaxKey,
+				hiMaxItem: btrfsprim.MaxKey,
+			},
+		}
 	}
 	indexer.nodeToRoots[node] = roots
 }
@@ -254,7 +279,7 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 
 	var leafs []btrfsvol.LogicalAddr
 	for leaf, roots := range tree.acquireNodeIndex(ctx).leafToRoots {
-		if tree.Roots.HasAny(roots) == inc {
+		if maps.HaveAnyKeysInCommon(tree.Roots, roots) == inc {
 			leafs = append(leafs, leaf)
 		}
 	}
@@ -358,7 +383,7 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 			stats.Leafs.N = i
 			progressWriter.Set(stats)
 
-			if tree.Roots.HasAny(leafToRoots[leaf]) || !leafToRoots[leaf].Has(rootNode) {
+			if maps.HaveAnyKeysInCommon(tree.Roots, leafToRoots[leaf]) || !maps.HasKey(leafToRoots[leaf], rootNode) {
 				continue
 			}
 
