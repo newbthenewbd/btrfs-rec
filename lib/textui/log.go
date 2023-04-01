@@ -26,6 +26,8 @@ import (
 	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type LogLevelFlag struct {
@@ -201,7 +203,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	fields := make(map[string]any)
 	var fieldKeys []string
 	for f := l; f.parent != nil; f = f.parent {
-		if _, exists := fields[f.fieldKey]; exists {
+		if maps.HasKey(fields, f.fieldKey) {
 			continue
 		}
 		fields[f.fieldKey] = f.fieldVal

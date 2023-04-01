@@ -38,7 +38,7 @@ func RebuildMappings(ctx context.Context, fs *btrfs.FS, scanResults ScanDevicesR
 	devIDs := maps.SortedKeys(scanResults)
 	devices := fs.LV.PhysicalVolumes()
 	for _, devID := range devIDs {
-		if _, ok := devices[devID]; !ok {
+		if !maps.HasKey(devices, devID) {
 			return fmt.Errorf("device ID %v mentioned in scan results is not part of the filesystem", devID)
 		}
 		devResults := scanResults[devID]

@@ -226,7 +226,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
 	stats.D = len(g.EdgesTo)
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
-		if _, ok := g.Nodes[laddr]; !ok {
+		if !maps.HasKey(g.Nodes, laddr) {
 			node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 				LAddr: containers.OptionalValue(laddr),
 			})

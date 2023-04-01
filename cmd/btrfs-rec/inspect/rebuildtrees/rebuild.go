@@ -517,24 +517,12 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (queue *treeAugmentQueue) has(wantKey want) bool {
-	if queue != nil {
-		if queue.zero != nil {
-			if _, ok := queue.zero[wantKey]; ok {
-				return true
-			}
-		}
-		if queue.single != nil {
-			if _, ok := queue.single[wantKey]; ok {
-				return true
-			}
-		}
-		if queue.multi != nil {
-			if _, ok := queue.multi[wantKey]; ok {
-				return true
-			}
-		}
+	if queue == nil {
+		return false
 	}
-	return false
+	return (queue.zero != nil && maps.HasKey(queue.zero, wantKey)) ||
+		(queue.single != nil && maps.HasKey(queue.single, wantKey)) ||
+		(queue.multi != nil && maps.HasKey(queue.multi, wantKey))
 }
 
 func (queue *treeAugmentQueue) store(wantKey want, choices containers.Set[btrfsvol.LogicalAddr]) {

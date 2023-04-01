@@ -85,7 +85,7 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if _, done := index[node]; done {
+	if maps.HasKey(index, node) {
 		return
 	}
 	if slices.Contains(node, stack) {

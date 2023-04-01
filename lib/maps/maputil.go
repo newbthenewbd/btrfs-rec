@@ -25,3 +25,20 @@ func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
 	slices.Sort(ret)
 	return ret
 }
+
+func HasKey[K comparable, V any](m map[K]V, k K) bool {
+	_, has := m[k]
+	return has
+}
+
+func HaveAnyKeysInCommon[K comparable, V1, V2 any](small map[K]V1, big map[K]V2) bool {
+	if len(big) < len(small) {
+		return HaveAnyKeysInCommon(big, small)
+	}
+	for v := range small {
+		if _, ok := big[v]; ok {
+			return true
+		}
+	}
+	return false
+}

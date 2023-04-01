@@ -17,6 +17,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type LogicalVolume[PhysicalVolume diskio.File[PhysicalAddr]] struct {
@@ -41,7 +42,7 @@ func (lv *LogicalVolume[PhysicalVolume]) init() {
 		lv.physical2logical = make(map[DeviceID]*containers.RBTree[devextMapping], len(lv.id2pv))
 	}
 	for devid := range lv.id2pv {
-		if _, ok := lv.physical2logical[devid]; !ok {
+		if !maps.HasKey(lv.physical2logical, devid) {
 			lv.physical2logical[devid] = new(containers.RBTree[devextMapping])
 		}
 	}
@@ -120,7 +121,7 @@ func (lv *LogicalVolume[PhysicalVolume]) AddMapping(m Mapping) error {
 func (lv *LogicalVolume[PhysicalVolume]) addMapping(m Mapping, dryRun bool) error {
 	lv.init()
 	// sanity check
-	if _, haveDev := lv.id2pv[m.PAddr.Dev]; !haveDev {
+	if !maps.HasKey(lv.id2pv, m.PAddr.Dev) {
 		return fmt.Errorf("(%p).AddMapping: do not have a physical volume with id=%v",
 			lv, m.PAddr.Dev)
 	}
@@ -228,12 +229,12 @@ func (lv *LogicalVolume[PhysicalVolume]) fsck() error {
 	lv.logical2physical.Range(func(node *containers.RBNode[chunkMapping]) bool {
 		chunk := node.Value
 		for _, stripe := range chunk.PAddrs {
-			if _, devOK := lv.id2pv[stripe.Dev]; !devOK {
+			if !maps.HasKey(lv.id2pv, stripe.Dev) {
 				err = fmt.Errorf("(%p).fsck: chunk references physical volume %v which does not exist",
 					lv, stripe.Dev)
 				return false
 			}
-			if _, exists := physical2logical[stripe.Dev]; !exists {
+			if !maps.HasKey(physical2logical, stripe.Dev) {
 				physical2logical[stripe.Dev] = new(containers.RBTree[devextMapping])
 			}
 			physical2logical[stripe.Dev].Insert(devextMapping{
