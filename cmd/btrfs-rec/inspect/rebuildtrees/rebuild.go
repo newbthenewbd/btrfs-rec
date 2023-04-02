@@ -198,11 +198,13 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
 		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
-		incPtr, ok := tree.RebuiltItems(ctx).Load(key.Key)
+		incPtr, ok := tree.RebuiltAcquireItems(ctx).Load(key.Key)
+		tree.RebuiltReleaseItems()
 		if !ok {
 			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
 		}
-		excPtr, ok := tree.RebuiltPotentialItems(ctx).Load(key.Key)
+		excPtr, ok := tree.RebuiltAcquirePotentialItems(ctx).Load(key.Key)
+		tree.RebuiltReleasePotentialItems()
 		if ok && tree.RebuiltShouldReplace(incPtr.Node, excPtr.Node) {
 			wantKey := wantWithTree{
 				TreeID: key.TreeID,

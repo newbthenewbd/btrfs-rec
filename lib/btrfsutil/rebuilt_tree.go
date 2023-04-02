@@ -37,19 +37,21 @@ type RebuiltTree struct {
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
 	//
-	//  1. tree.leafToRoots()           = tree.forrest.leafs.Acquire(tree.ID)
-	//  2. tree.RebuiltItems()          = tree.forrest.incItems.Acquire(tree.ID)
-	//  3. tree.RebuiltPotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
+	//  1. tree.acquireLeafToRoots()           = tree.forrest.leafs.Acquire(tree.ID)
+	//  2. tree.RebuiltAcquireItems()          = tree.forrest.incItems.Acquire(tree.ID)
+	//  3. tree.RebuiltAcquirePotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
 }
 
-// evictable member 1: .leafToRoots() //////////////////////////////////////////////////////////////////////////////////
+// evictable member 1: .acquireLeafToRoots() ///////////////////////////////////////////////////////////////////////////
 
-// leafToRoots returns all leafs (lvl=0) in the filesystem that pass
-// .isOwnerOK, whether or not they're in the tree.
-func (tree *RebuiltTree) leafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
-	ret := *tree.forrest.leafs.Acquire(ctx, tree.ID)
+// acquireLeafToRoots returns all leafs (lvl=0) in the filesystem that
+// pass .isOwnerOK, whether or not they're in the tree.
+func (tree *RebuiltTree) acquireLeafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+	return *tree.forrest.leafs.Acquire(ctx, tree.ID)
+}
+
+func (tree *RebuiltTree) releaseLeafToRoots() {
 	tree.forrest.leafs.Release(tree.ID)
-	return ret
 }
 
 func (tree *RebuiltTree) uncachedLeafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
@@ -133,35 +135,48 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 	}
 }
 
-// evictable members 2 and 3: .RebuiltItems() and .RebuiltPotentialItems() /////////////////////////////////////////////
+// evictable members 2 and 3: .Rebuilt{Acquire,Release}{Potential,}Items() /////////////////////////////////////////////
 
-// RebuiltItems returns a map of the items contained in this tree.
+// RebuiltAcquireItems returns a map of the items contained in this
+// tree.
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) RebuiltItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	ret := *tree.forrest.incItems.Acquire(ctx, tree.ID)
+//
+// When done with the map, call .RebuiltReleaseItems().
+func (tree *RebuiltTree) RebuiltAcquireItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	return tree.forrest.incItems.Acquire(ctx, tree.ID)
+}
+
+// RebuiltReleaseItems releases resources after a call to
+// .RebuiltAcquireItems().
+func (tree *RebuiltTree) RebuiltReleaseItems() {
 	tree.forrest.incItems.Release(tree.ID)
-	return ret
 }
 
-// RebuiltPotentialItems returns a map of items that could be added to
-// this tree with .RebuiltAddRoot().
+// RebuiltAcquirePotentialItems returns a map of items that could be
+// added to this tree with .RebuiltAddRoot().
 //
 // Do not mutate the returned map; it is a pointer to the
 // RebuiltTree's internal map!
-func (tree *RebuiltTree) RebuiltPotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	ret := *tree.forrest.excItems.Acquire(ctx, tree.ID)
-	tree.forrest.excItems.Release(tree.ID)
-	return ret
+//
+// When done with the map, call .RebuiltReleasePotentialItems().
+func (tree *RebuiltTree) RebuiltAcquirePotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	return tree.forrest.excItems.Acquire(ctx, tree.ID)
 }
 
-func (tree *RebuiltTree) uncachedIncItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+// RebuiltReleasePotentialItems releases resources after a call to
+// .RebuiltAcquirePotentialItems().
+func (tree *RebuiltTree) RebuiltReleasePotentialItems() {
+	tree.forrest.excItems.Release(tree.ID)
+}
+
+func (tree *RebuiltTree) uncachedIncItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, tree.Roots.HasAny)
 }
 
-func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx,
 		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
@@ -169,7 +184,7 @@ func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) *containers.Sorte
 		})
 }
 
-type itemIndex = *containers.SortedMap[btrfsprim.Key, ItemPtr]
+type itemIndex = containers.SortedMap[btrfsprim.Key, ItemPtr]
 
 type itemStats struct {
 	Leafs    textui.Portion[int]
@@ -182,23 +197,24 @@ func (s itemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+func (tree *RebuiltTree) items(ctx context.Context, leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
 	var leafs []btrfsvol.LogicalAddr
-	for leaf, roots := range tree.leafToRoots(ctx) {
+	for leaf, roots := range tree.acquireLeafToRoots(ctx) {
 		if leafFn(roots) {
 			leafs = append(leafs, leaf)
 		}
 	}
+	tree.releaseLeafToRoots()
 	slices.Sort(leafs)
 
 	var stats itemStats
 	stats.Leafs.D = len(leafs)
 	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 
-	index := new(containers.SortedMap[btrfsprim.Key, ItemPtr])
+	var index containers.SortedMap[btrfsprim.Key, ItemPtr]
 	for i, leaf := range leafs {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
@@ -282,9 +298,8 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
-	leafToRoots := tree.leafToRoots(ctx)
-
 	var stats rootStats
+	leafToRoots := tree.acquireLeafToRoots(ctx)
 	stats.Leafs.D = len(leafToRoots)
 	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	for i, leaf := range maps.SortedKeys(leafToRoots) {
@@ -305,6 +320,7 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 		}
 	}
 	stats.Leafs.N = len(leafToRoots)
+	tree.releaseLeafToRoots()
 	progressWriter.Set(stats)
 	progressWriter.Done()
 
@@ -335,7 +351,8 @@ func (tree *RebuiltTree) RebuiltCOWDistance(parentID btrfsprim.ObjID) (dist int,
 
 // ReadItem reads an item from a tree.
 func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
-	ptr, ok := tree.RebuiltItems(ctx).Load(key)
+	ptr, ok := tree.RebuiltAcquireItems(ctx).Load(key)
+	tree.RebuiltReleaseItems()
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
 	}
@@ -352,13 +369,14 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
-	for root := range tree.leafToRoots(ctx)[leaf] {
+	for root := range tree.acquireLeafToRoots(ctx)[leaf] {
 		if tree.Roots.Has(root) {
 			panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): tree contains root=%v but not leaf",
 				tree.ID, leaf, root))
 		}
 		ret.Insert(root)
 	}
+	tree.releaseLeafToRoots()
 	if len(ret) == 0 {
 		return nil
 	}

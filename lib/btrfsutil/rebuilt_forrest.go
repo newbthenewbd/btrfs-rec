@@ -43,10 +43,11 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 		ObjectID: tree,
 		ItemType: btrfsprim.ROOT_ITEM_KEY,
 	}
-	itemKey, itemPtr, ok := rootTree.RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
+	itemKey, itemPtr, ok := rootTree.RebuiltAcquireItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
 		key.Offset = 0
 		return tgt.Compare(key)
 	})
+	rootTree.RebuiltReleaseItems()
 	if !ok {
 		return 0, btrfsitem.Root{}, false
 	}
@@ -70,7 +71,8 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 		return 0, false
 	}
 	tgt := btrfsitem.UUIDToKey(uuid)
-	itemPtr, ok := uuidTree.RebuiltItems(ctx).Load(tgt)
+	itemPtr, ok := uuidTree.RebuiltAcquireItems(ctx).Load(tgt)
+	uuidTree.RebuiltReleaseItems()
 	if !ok {
 		return 0, false
 	}
@@ -118,8 +120,9 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 //   - it provides several RebuiltTree methods that provide advice on
 //     what roots should be added to a tree in order to repair it:
 //
-//     .RebuiltItems() and RebuiltPotentialItems() to compare what's
-//     in the tree and what could be in the tree.
+//     .RebuiltAcquireItems()/.RebuiltReleaseItems() and
+//     .RebuiltAcquirePotentialItems()/.RebuiltReleasePotentialItems()
+//     to compare what's in the tree and what could be in the tree.
 //
 //     .RebuiltLeafToRoots() to map potential items to things that can
 //     be passed to .RebuiltAddRoot().
