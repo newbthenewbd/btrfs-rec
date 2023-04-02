@@ -33,13 +33,13 @@ type RebuiltTree struct {
 	mu    sync.RWMutex
 	Roots containers.Set[btrfsvol.LogicalAddr]
 	// There are 3 more mutable "members" that are protected by
-	// `mu`; but they live in a shared ARCache.  They are all
+	// `mu`; but they live in a shared Cache.  They are all
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
 	//
-	//  1. tree.leafToRoots()           = tree.forrest.leafs.Load(tree.ID)
-	//  2. tree.RebuiltItems()          = tree.forrest.incItems.Load(tree.ID)
-	//  3. tree.RebuiltPotentialItems() = tree.forrest.excItems.Load(tree.ID)
+	//  1. tree.leafToRoots()           = tree.forrest.leafs.Acquire(tree.ID)
+	//  2. tree.RebuiltItems()          = tree.forrest.incItems.Acquire(tree.ID)
+	//  3. tree.RebuiltPotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
 }
 
 // evictable member 1: .leafToRoots() //////////////////////////////////////////////////////////////////////////////////
