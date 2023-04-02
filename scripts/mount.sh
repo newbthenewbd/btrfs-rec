@@ -15,6 +15,7 @@ mkdir -p "$mountpoint"
 sudo ./bin/btrfs-rec \
      --pv="$image"
      --mappings="$gendir/2.mappings.json" \
+     --rebuild \
      inspect mount \
      --skip-filesums \
      "$mountpoint"

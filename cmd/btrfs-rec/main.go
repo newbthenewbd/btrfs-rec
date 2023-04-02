@@ -48,7 +48,9 @@ var (
 var globalFlags struct {
 	logLevel textui.LogLevelFlag
 	pvs      []string
+
 	mappings string
+	rebuild  bool
 
 	stopProfiling profile.StopFunc
 
@@ -93,6 +95,9 @@ func main() {
 	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "",
 		"load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
 	noError(argparser.MarkPersistentFlagFilename("mappings"))
+
+	argparser.PersistentFlags().BoolVar(&globalFlags.rebuild, "rebuild", false,
+		"attempt to rebuild broken btrees when reading")
 
 	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
@@ -180,6 +185,10 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 
 func runWithReadableFS(runE func(btrfs.ReadableFS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
-		return runE(btrfsutil.NewOldRebuiltForrest(fs), cmd, args)
+		var rfs btrfs.ReadableFS = fs
+		if globalFlags.rebuild {
+			rfs = btrfsutil.NewOldRebuiltForrest(fs)
+		}
+		return runE(rfs, cmd, args)
 	})
 }

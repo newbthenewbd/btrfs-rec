@@ -68,6 +68,7 @@ run-btrfs-rec $gendir/3.trees.json \
 
 run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
+    --rebuild \
     inspect ls-files
 run-btrfs-rec $gendir/4.ls-trees.txt \
     --mappings=$gendir/2.mappings.json \
