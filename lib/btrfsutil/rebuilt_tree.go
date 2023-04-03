@@ -173,15 +173,12 @@ func (tree *RebuiltTree) RebuiltReleasePotentialItems() {
 
 func (tree *RebuiltTree) uncachedIncItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, tree.Roots.HasAny)
+	return tree.items(ctx, true)
 }
 
 func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx,
-		func(roots containers.Set[btrfsvol.LogicalAddr]) bool {
-			return !tree.Roots.HasAny(roots)
-		})
+	return tree.items(ctx, false)
 }
 
 type itemIndex = containers.SortedMap[btrfsprim.Key, ItemPtr]
@@ -197,13 +194,13 @@ func (s itemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, leafFn func(roots containers.Set[btrfsvol.LogicalAddr]) bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
+func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
 	var leafs []btrfsvol.LogicalAddr
 	for leaf, roots := range tree.acquireLeafToRoots(ctx) {
-		if leafFn(roots) {
+		if tree.Roots.HasAny(roots) == inc {
 			leafs = append(leafs, leaf)
 		}
 	}
