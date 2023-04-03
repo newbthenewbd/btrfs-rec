@@ -260,7 +260,7 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 		}
 	}
 	if stats.Leafs.N > 0 {
-		stats.Leafs.N = len(leafs)
+		stats.Leafs.N = stats.Leafs.D
 		progressWriter.Set(stats)
 		progressWriter.Done()
 	}
