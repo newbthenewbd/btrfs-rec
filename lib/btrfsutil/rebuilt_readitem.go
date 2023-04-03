@@ -48,8 +48,8 @@ func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfsitem.I
 			}
 			return nil
 		},
-		MinItem: containers.OptionalValue(graphInfo.MinItem()),
-		MaxItem: containers.OptionalValue(graphInfo.MaxItem()),
+		MinItem: containers.OptionalValue(graphInfo.MinItem(ts.graph)),
+		MaxItem: containers.OptionalValue(graphInfo.MaxItem(ts.graph)),
 	})
 	defer ts.file.ReleaseNode(node)
 	if err != nil {

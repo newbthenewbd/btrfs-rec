@@ -24,13 +24,13 @@ func (g Graph) renderNode(node btrfsvol.LogicalAddr) []string {
 			fmt.Sprintf(" gen:       %v,", nodeData.Generation),
 			fmt.Sprintf(" num_items: %v,", len(nodeData.Items)),
 			fmt.Sprintf(" min_item:  {%d,%v,%d},",
-				nodeData.MinItem().ObjectID,
-				nodeData.MinItem().ItemType,
-				nodeData.MinItem().Offset),
+				nodeData.MinItem(g).ObjectID,
+				nodeData.MinItem(g).ItemType,
+				nodeData.MinItem(g).Offset),
 			fmt.Sprintf(" max_item:  {%d,%v,%d}}",
-				nodeData.MaxItem().ObjectID,
-				nodeData.MaxItem().ItemType,
-				nodeData.MaxItem().Offset),
+				nodeData.MaxItem(g).ObjectID,
+				nodeData.MaxItem(g).ItemType,
+				nodeData.MaxItem(g).Offset),
 		}
 	} else if nodeErr, ok := g.BadNodes[node]; ok {
 		return []string{
@@ -59,7 +59,7 @@ func (g Graph) renderEdge(kp GraphEdge) []string {
 	if toNode, ok := g.Nodes[kp.ToNode]; !ok {
 		err = g.BadNodes[kp.ToNode]
 	} else {
-		err = checkNodeExpectations(kp, toNode)
+		err = g.loopCheckNodeExpectations(kp, toNode)
 	}
 	if err != nil {
 		c := strings.Repeat(" ", len(a)-1)
@@ -110,7 +110,7 @@ func (g Graph) renderLoop(stack []btrfsvol.LogicalAddr) []string {
 	return lines
 }
 
-func checkNodeExpectations(kp GraphEdge, toNode GraphNode) error {
+func (g Graph) loopCheckNodeExpectations(kp GraphEdge, toNode GraphNode) error {
 	var errs derror.MultiError
 	if toNode.Level != kp.ToLevel {
 		errs = append(errs, fmt.Errorf("kp.level=%v != node.level=%v",
@@ -123,9 +123,9 @@ func checkNodeExpectations(kp GraphEdge, toNode GraphNode) error {
 	switch {
 	case len(toNode.Items) == 0:
 		errs = append(errs, fmt.Errorf("node.num_items=0"))
-	case kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem() != kp.ToKey:
+	case kp.ToKey != (btrfsprim.Key{}) && toNode.MinItem(g) != kp.ToKey:
 		errs = append(errs, fmt.Errorf("kp.key=%v != node.items[0].key=%v",
-			kp.ToKey, toNode.MinItem()))
+			kp.ToKey, toNode.MinItem(g)))
 	}
 	if len(errs) > 0 {
 		return errs
