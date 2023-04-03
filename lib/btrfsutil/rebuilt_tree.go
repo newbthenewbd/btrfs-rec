@@ -42,6 +42,35 @@ type RebuiltTree struct {
 	//  3. tree.RebuiltAcquirePotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
 }
 
+type rebuiltSharedCache struct {
+	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
+	incItems containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
+	excItems containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
+}
+
+func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
+	var ret rebuiltSharedCache
+	ret.leafs = containers.NewARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
+		textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
+			func(ctx context.Context, treeID btrfsprim.ObjID, leafs *map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]) {
+				*leafs = forrest.trees[treeID].uncachedLeafToRoots(ctx)
+			}))
+	ret.incItems = containers.NewARCache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
+		textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
+			func(ctx context.Context, treeID btrfsprim.ObjID, incItems *containers.SortedMap[btrfsprim.Key, ItemPtr]) {
+				*incItems = forrest.trees[treeID].uncachedIncItems(ctx)
+			}))
+	ret.excItems = containers.NewARCache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
+		textui.Tunable(8),
+		containers.SourceFunc[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
+			func(ctx context.Context, treeID btrfsprim.ObjID, excItems *containers.SortedMap[btrfsprim.Key, ItemPtr]) {
+				*excItems = forrest.trees[treeID].uncachedExcItems(ctx)
+			}))
+	return ret
+}
+
 // evictable member 1: .acquireLeafToRoots() ///////////////////////////////////////////////////////////////////////////
 
 // acquireLeafToRoots returns all leafs (lvl=0) in the filesystem that
@@ -180,8 +209,6 @@ func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.Sorted
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
 	return tree.items(ctx, false)
 }
-
-type itemIndex = containers.SortedMap[btrfsprim.Key, ItemPtr]
 
 type itemStats struct {
 	Leafs    textui.Portion[int]

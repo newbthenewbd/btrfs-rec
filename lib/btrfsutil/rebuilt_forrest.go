@@ -16,7 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
-	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type RebuiltForrestCallbacks interface {
@@ -142,11 +141,10 @@ type RebuiltForrest struct {
 
 	// mutable
 
-	treesMu  nestedMutex
-	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
-	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	incItems containers.Cache[btrfsprim.ObjID, itemIndex]
-	excItems containers.Cache[btrfsprim.ObjID, itemIndex]
+	treesMu nestedMutex
+	trees   map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
+
+	rebuiltSharedCache
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
@@ -161,19 +159,8 @@ func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
 	}
 
-	ret.leafs = containers.NewARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
-			func(ctx context.Context, treeID btrfsprim.ObjID, leafs *map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]) {
-				*leafs = ret.trees[treeID].uncachedLeafToRoots(ctx)
-			}))
-	ret.incItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, incItems *itemIndex) {
-			*incItems = ret.trees[treeID].uncachedIncItems(ctx)
-		}))
-	ret.excItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, excItems *itemIndex) {
-			*excItems = ret.trees[treeID].uncachedExcItems(ctx)
-		}))
+	ret.rebuiltSharedCache = makeRebuiltSharedCache(ret)
+
 	if ret.cb == nil {
 		ret.cb = noopRebuiltForrestCallbacks{
 			forrest: ret,
