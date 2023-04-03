@@ -210,13 +210,13 @@ func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.Sorted
 	return tree.items(ctx, false)
 }
 
-type itemStats struct {
+type rebuiltItemStats struct {
 	Leafs    textui.Portion[int]
 	NumItems int
 	NumDups  int
 }
 
-func (s itemStats) String() string {
+func (s rebuiltItemStats) String() string {
 	return textui.Sprintf("%v (%v items, %v dups)",
 		s.Leafs, s.NumItems, s.NumDups)
 }
@@ -234,9 +234,9 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 	tree.releaseLeafToRoots()
 	slices.Sort(leafs)
 
-	var stats itemStats
+	var stats rebuiltItemStats
 	stats.Leafs.D = len(leafs)
-	progressWriter := textui.NewProgress[itemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter := textui.NewProgress[rebuiltItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 
 	var index containers.SortedMap[btrfsprim.Key, ItemPtr]
 	for i, leaf := range leafs {
@@ -302,13 +302,13 @@ func (tree *RebuiltTree) RebuiltShouldReplace(oldNode, newNode btrfsvol.LogicalA
 	}
 }
 
-type rootStats struct {
+type rebuiltRootStats struct {
 	Leafs      textui.Portion[int]
 	AddedLeafs int
 	AddedItems int
 }
 
-func (s rootStats) String() string {
+func (s rebuiltRootStats) String() string {
 	return textui.Sprintf("%v (added %v leafs, added %v items)",
 		s.Leafs, s.AddedLeafs, s.AddedItems)
 }
@@ -322,10 +322,10 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
-	var stats rootStats
+	var stats rebuiltRootStats
 	leafToRoots := tree.acquireLeafToRoots(ctx)
 	stats.Leafs.D = len(leafToRoots)
-	progressWriter := textui.NewProgress[rootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter := textui.NewProgress[rebuiltRootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 	for i, leaf := range maps.SortedKeys(leafToRoots) {
 		stats.Leafs.N = i
 		progressWriter.Set(stats)
