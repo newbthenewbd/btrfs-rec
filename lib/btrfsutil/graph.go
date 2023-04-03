@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/datawire/dlib/derror"
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
@@ -70,6 +71,47 @@ func (n GraphNode) String() string {
 	}
 	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v}`,
 		n.Level, n.Generation, n.Owner, len(n.Items))
+}
+
+func (n GraphNode) CheckExpectations(g Graph, exp btrfstree.NodeExpectations) error {
+	var errs derror.MultiError
+	if exp.LAddr.OK && n.Addr != exp.LAddr.Val {
+		errs = append(errs, fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
+			exp.LAddr.Val, n.Addr))
+	}
+	if exp.Level.OK && n.Level != exp.Level.Val {
+		errs = append(errs, fmt.Errorf("expected level=%v but claims to be level=%v",
+			exp.Level.Val, n.Level))
+	}
+	if n.Level > btrfstree.MaxLevel {
+		errs = append(errs, fmt.Errorf("maximum level=%v but claims to be level=%v",
+			btrfstree.MaxLevel, n.Level))
+	}
+	if exp.Generation.OK && n.Generation != exp.Generation.Val {
+		errs = append(errs, fmt.Errorf("expected generation=%v but claims to be generation=%v",
+			exp.Generation.Val, n.Generation))
+	}
+	if exp.Owner != nil {
+		if err := exp.Owner(n.Owner, n.Generation); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if n.NumItems(g) == 0 {
+		errs = append(errs, fmt.Errorf("has no items"))
+	} else {
+		if minItem := n.MinItem(g); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
+			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
+				exp.MinItem.Val, minItem))
+		}
+		if maxItem := n.MaxItem(g); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
+			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
+				exp.MaxItem.Val, maxItem))
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
 }
 
 type GraphEdge struct {
