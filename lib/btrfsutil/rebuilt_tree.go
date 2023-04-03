@@ -120,7 +120,7 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 }
 
 // isOwnerOK returns whether it is permissible for a node with
-// .Head.Owner=owner to be in this tree.
+// .Head.Owner=owner and .Head.Generation=gen to be in this tree.
 func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generation) bool {
 	for {
 		if owner == tree.ID {
