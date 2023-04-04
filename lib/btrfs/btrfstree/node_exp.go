@@ -53,11 +53,11 @@ func (exp NodeExpectations) Check(node *Node) error {
 	} else {
 		if minItem, _ := node.MinItem(); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
 			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
-				exp.MinItem, minItem))
+				exp.MinItem.Val, minItem))
 		}
 		if maxItem, _ := node.MaxItem(); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
 			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
-				exp.MaxItem, maxItem))
+				exp.MaxItem.Val, maxItem))
 		}
 	}
 	if len(errs) > 0 {
