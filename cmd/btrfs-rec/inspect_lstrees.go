@@ -79,8 +79,6 @@ func init() {
 						visitedNodes.Insert(node.Head.Addr)
 					},
 					BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
-						nodeAddr, _, _ := path.NodeExpectations(ctx, false)
-						visitedNodes.Insert(nodeAddr)
 						treeErrCnt++
 						return false
 					},

@@ -47,6 +47,9 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 		key.Offset = 0
 		return tgt.Compare(key)
 	})
+	if !ok {
+		return 0, btrfsitem.Root{}, false
+	}
 	itemBody := cb.forrest.readItem(ctx, itemPtr)
 	defer itemBody.Free()
 	switch itemBody := itemBody.(type) {

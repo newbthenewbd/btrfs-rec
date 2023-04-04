@@ -23,34 +23,52 @@ import (
 )
 
 type GraphNode struct {
+	Addr       btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
 	Owner      btrfsprim.ObjID
 	Items      []btrfsprim.Key
 }
 
-func (n GraphNode) MinItem() btrfsprim.Key {
-	if len(n.Items) == 0 {
-		return btrfsprim.Key{}
+func (n GraphNode) NumItems(g Graph) int {
+	switch n.Level {
+	case 0:
+		return len(n.Items)
+	default:
+		return len(g.EdgesFrom[n.Addr])
 	}
-	return n.Items[0]
 }
 
-func (n GraphNode) MaxItem() btrfsprim.Key {
-	if len(n.Items) == 0 {
+func (n GraphNode) MinItem(g Graph) btrfsprim.Key {
+	if n.NumItems(g) == 0 {
 		return btrfsprim.Key{}
 	}
-	return n.Items[len(n.Items)-1]
+	switch n.Level {
+	case 0:
+		return n.Items[0]
+	default:
+		return g.EdgesFrom[n.Addr][0].ToKey
+	}
+}
+
+func (n GraphNode) MaxItem(g Graph) btrfsprim.Key {
+	if n.NumItems(g) == 0 {
+		return btrfsprim.Key{}
+	}
+	switch n.Level {
+	case 0:
+		return n.Items[len(n.Items)-1]
+	default:
+		return g.EdgesFrom[n.Addr][len(g.EdgesFrom[n.Addr])-1].ToKey
+	}
 }
 
 func (n GraphNode) String() string {
 	if reflect.ValueOf(n).IsZero() {
 		return "{}"
 	}
-	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v, min:(%v,%v,%v), max:(%v,%v,%v)}`,
-		n.Level, n.Generation, n.Owner, len(n.Items),
-		n.MinItem().ObjectID, n.MinItem().ItemType, n.MinItem().Offset,
-		n.MaxItem().ObjectID, n.MaxItem().ItemType, n.MaxItem().Offset)
+	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v}`,
+		n.Level, n.Generation, n.Owner, len(n.Items))
 }
 
 type GraphEdge struct {
@@ -59,7 +77,7 @@ type GraphEdge struct {
 	// superblock.
 	FromRoot btrfsvol.LogicalAddr
 	FromNode btrfsvol.LogicalAddr
-	FromItem int // only valid if one of FromRoot or FromNode is non-zero
+	FromSlot int // only valid if one of FromRoot or FromNode is non-zero
 
 	FromTree btrfsprim.ObjID
 
@@ -74,10 +92,10 @@ func (kp GraphEdge) String() string {
 	switch {
 	case kp.FromRoot != 0:
 		from = fmt.Sprintf("root@%v[%d]:%v",
-			kp.FromRoot, kp.FromItem, kp.FromTree)
+			kp.FromRoot, kp.FromSlot, kp.FromTree)
 	case kp.FromNode != 0:
 		from = fmt.Sprintf("{node:%v, tree:%v}[%d]",
-			kp.FromNode, kp.FromTree, kp.FromItem)
+			kp.FromNode, kp.FromTree, kp.FromSlot)
 	default:
 		from = fmt.Sprintf("superblock:%v", kp.FromTree)
 	}
@@ -103,8 +121,8 @@ func (g Graph) insertEdge(ptr *GraphEdge) {
 	if ptr.FromRoot != 0 && ptr.FromNode != 0 {
 		panic("kp.FromRoot and kp.FromNode should not both be set")
 	}
-	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromItem != 0 {
-		panic("kp.FromItem should only be set if either kp.FromRoot or kp.FromItem is set")
+	if (ptr.FromRoot == 0 && ptr.FromNode == 0) && ptr.FromSlot != 0 {
+		panic("kp.FromSlot should only be set if either kp.FromRoot or kp.FromSlot is set")
 	}
 	g.EdgesFrom[ptr.FromNode] = append(g.EdgesFrom[ptr.FromNode], ptr)
 	g.EdgesTo[ptr.ToNode] = append(g.EdgesTo[ptr.ToNode], ptr)
@@ -150,6 +168,7 @@ func NewGraph(ctx context.Context, sb btrfstree.Superblock) Graph {
 
 func (g Graph) InsertNode(node *btrfstree.Node) {
 	nodeData := GraphNode{
+		Addr:       node.Head.Addr,
 		Level:      node.Head.Level,
 		Generation: node.Head.Generation,
 		Owner:      node.Head.Owner,
@@ -171,7 +190,7 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
 				kps = append(kps, GraphEdge{
 					FromRoot:     node.Head.Addr,
-					FromItem:     i,
+					FromSlot:     i,
 					FromTree:     item.Key.ObjectID,
 					ToNode:       itemBody.ByteNr,
 					ToLevel:      itemBody.Level,
@@ -186,7 +205,7 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 		for i, kp := range node.BodyInterior {
 			kps[i] = GraphEdge{
 				FromNode:     node.Head.Addr,
-				FromItem:     i,
+				FromSlot:     i,
 				FromTree:     node.Head.Owner,
 				ToNode:       kp.BlockPtr,
 				ToLevel:      node.Head.Level - 1,

@@ -346,12 +346,13 @@ func (tree oldRebuiltTree) TreeSubrange(ctx context.Context, min int, searcher b
 	return err
 }
 
-// TreeWalk implements btrfstree.Tree.  It doesn't actually visit
-// nodes or keypointers (just items).
+// TreeWalk implements btrfstree.Tree.  It only visits items and valid
+// leaf nodes (not the superblock, interior nodes, or bad nodes).
 func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
-	if cbs.Item == nil && cbs.BadItem == nil {
+	if cbs.Node == nil && cbs.Item == nil && cbs.BadItem == nil {
 		return
 	}
+	visitedNodes := make(containers.Set[btrfsvol.LogicalAddr])
 	var node *btrfstree.Node
 	tree.Items.Range(func(indexItem *containers.RBNode[oldRebuiltTreeValue]) bool {
 		if ctx.Err() != nil {
@@ -361,34 +362,56 @@ func (tree oldRebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkH
 		if node == nil || node.Head.Addr != indexItem.Value.Node.LAddr {
 			tree.forrest.ReleaseNode(node)
 			node = tree.forrest.readNode(ctx, indexItem.Value.Node)
+			if cbs.Node != nil && !visitedNodes.Has(indexItem.Value.Node.LAddr) {
+				nodePath := btrfstree.Path{
+					btrfstree.PathRoot{
+						Tree:         tree,
+						TreeID:       tree.ID,
+						ToAddr:       indexItem.Value.Node.LAddr,
+						ToGeneration: indexItem.Value.Node.Generation,
+						ToLevel:      indexItem.Value.Node.Level,
+					},
+				}
+				cbs.Node(nodePath, node)
+				if ctx.Err() != nil {
+					return false
+				}
+				visitedNodes.Insert(indexItem.Value.Node.LAddr)
+			}
 		}
-		item := node.BodyLeaf[indexItem.Value.Slot]
 
-		itemPath := btrfstree.Path{
-			btrfstree.PathRoot{
-				Tree:         tree,
-				TreeID:       tree.ID,
-				ToAddr:       indexItem.Value.Node.LAddr,
-				ToGeneration: indexItem.Value.Node.Generation,
-				ToLevel:      indexItem.Value.Node.Level,
-			},
-			btrfstree.PathItem{
-				FromTree: indexItem.Value.Node.Owner,
-				FromSlot: indexItem.Value.Slot,
-				ToKey:    indexItem.Value.Key,
-			},
-		}
-		switch item.Body.(type) {
-		case *btrfsitem.Error:
-			if cbs.BadItem != nil {
-				cbs.BadItem(itemPath, item)
+		if cbs.Item != nil || cbs.BadItem != nil {
+			item := node.BodyLeaf[indexItem.Value.Slot]
+			itemPath := btrfstree.Path{
+				btrfstree.PathRoot{
+					Tree:         tree,
+					TreeID:       tree.ID,
+					ToAddr:       indexItem.Value.Node.LAddr,
+					ToGeneration: indexItem.Value.Node.Generation,
+					ToLevel:      indexItem.Value.Node.Level,
+				},
+				btrfstree.PathItem{
+					FromTree: indexItem.Value.Node.Owner,
+					FromSlot: indexItem.Value.Slot,
+					ToKey:    indexItem.Value.Key,
+				},
 			}
-		default:
-			if cbs.Item != nil {
-				cbs.Item(itemPath, item)
+			switch item.Body.(type) {
+			case *btrfsitem.Error:
+				if cbs.BadItem != nil {
+					cbs.BadItem(itemPath, item)
+				}
+			default:
+				if cbs.Item != nil {
+					cbs.Item(itemPath, item)
+				}
+			}
+			if ctx.Err() != nil {
+				return false
 			}
 		}
-		return ctx.Err() == nil
+
+		return true
 	})
 	tree.forrest.ReleaseNode(node)
 }
