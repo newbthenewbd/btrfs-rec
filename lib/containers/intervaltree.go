@@ -4,6 +4,10 @@
 
 package containers
 
+import (
+	"fmt"
+)
+
 type interval[K Ordered[K]] struct {
 	Min, Max K
 }
@@ -71,11 +75,17 @@ func (t *IntervalTree[K, V]) Equal(u *IntervalTree[K, V]) bool {
 
 func (t *IntervalTree[K, V]) Insert(val V) {
 	t.init()
+	min := t.MinFn(val)
+	max := t.MaxFn(val)
+	if max.Compare(min) < 0 {
+		panic(fmt.Errorf("containers.IntervalTree.Insert: max < min: [%v, %v]: %v",
+			min, max, val))
+	}
 	t.inner.Insert(intervalValue[K, V]{
 		Val: val,
 		ValSpan: interval[K]{
-			Min: t.MinFn(val),
-			Max: t.MaxFn(val),
+			Min: min,
+			Max: max,
 		},
 	})
 }
