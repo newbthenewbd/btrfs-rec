@@ -239,11 +239,11 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			}
 			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
-				dlog.Error(ctx, "failed to add tree: lookup UUID")
+				dlog.Errorf(ctx, "failed to add tree: lookup UUID %v", rootItem.ParentUUID)
 				return false
 			}
 			if !ts.addTree(ctx, parentID, stack) {
-				dlog.Error(ctx, "failed to add tree: add parent tree")
+				dlog.Errorf(ctx, "failed to add tree: add parent tree %v", parentID)
 				return false
 			}
 			tree.Parent = ts.trees[parentID]
