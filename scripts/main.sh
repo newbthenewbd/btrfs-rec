@@ -31,10 +31,15 @@ export GOMEMLIMIT="$(awk '/^MemTotal:/{ print $2 "KiB" }' </proc/meminfo)"
 
 ######################################################################
 
+# 0: initial scan ##########################################
+
 run-btrfs-rec $gendir/0.scandevices.json \
     inspect rebuild-mappings scan
 run-btrfs-rec $gendir/0.nodes.json \
     inspect rebuild-mappings list-nodes $gendir/0.scandevices.json
+
+# 1-2: rebuild chunk/dev-ext/blockgroup trees ##############
+
 run-btrfs-rec $gendir/1.mappings.json \
     inspect rebuild-mappings process $gendir/0.scandevices.json
 
@@ -62,10 +67,14 @@ run-btrfs-rec $gendir/2.mappings.json \
       -e '2a{"LAddr":13631488,"PAddr":{"Dev":1,"Addr":13631488},"Size":1},') \
     inspect rebuild-mappings process $gendir/0.scandevices.json
 
+# 3: rebuild other trees ###################################
+
 run-btrfs-rec $gendir/3.trees.json \
     --mappings=$gendir/2.mappings.json \
     --node-list=$gendir/0.nodes.json \
     inspect rebuild-trees
+
+# 4: dump data from the FS #################################
 
 run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
