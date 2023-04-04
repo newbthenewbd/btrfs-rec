@@ -35,13 +35,14 @@ type oldRebuiltTree struct {
 var _ btrfstree.Tree = oldRebuiltTree{}
 
 type oldRebuiltTreeError struct {
-	Min btrfsprim.Key
-	Max btrfsprim.Key
-	Err error
+	Min  btrfsprim.Key
+	Max  btrfsprim.Key
+	Node btrfsvol.LogicalAddr
+	Err  error
 }
 
 func (e oldRebuiltTreeError) Error() string {
-	return fmt.Sprintf("keys %v-%v: %v", e.Min, e.Max, e.Err)
+	return fmt.Sprintf("keys %v-%v: node@%v: %v", e.Min, e.Max, e.Node, e.Err)
 }
 
 func (e oldRebuiltTreeError) Unwrap() error {
@@ -189,11 +190,12 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 	var curNode nodeInfo
 	cbs := btrfstree.TreeWalkHandler{
 		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
-			_, nodeExp, _ := path.NodeExpectations(ctx, false)
+			nodeAddr, nodeExp, _ := path.NodeExpectations(ctx, false)
 			cacheEntry.Errors.Insert(oldRebuiltTreeError{
-				Min: nodeExp.MinItem.Val,
-				Max: nodeExp.MaxItem.Val,
-				Err: err,
+				Min:  nodeExp.MinItem.Val,
+				Max:  nodeExp.MaxItem.Val,
+				Node: nodeAddr,
+				Err:  err,
 			})
 			return false
 		},
