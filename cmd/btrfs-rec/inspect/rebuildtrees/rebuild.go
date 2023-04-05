@@ -159,7 +159,7 @@ func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 		}
 		// This will call o.AddedItem as nescessary, which
 		// inserts to o.addedItemQueue.
-		_ = o.rebuilt.RebuiltTree(ctx, o.curKey.TreeID)
+		_, _ = o.rebuilt.RebuiltTree(ctx, o.curKey.TreeID)
 	}
 
 	return nil
@@ -197,7 +197,7 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 
 	for _, key := range queue {
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
-		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
+		tree := discardErr(o.rebuilt.RebuiltTree(ctx, key.TreeID))
 		incPtr, ok := tree.RebuiltAcquireItems(ctx).Load(key.Key)
 		tree.RebuiltReleaseItems()
 		if !ok {
@@ -333,9 +333,8 @@ func (o *rebuilder) sortSettledItemQueue(ctx context.Context, unorderedQueue con
 	// EXTENT_TREE; if that fails, then there can't be any items
 	// in the EXTENT_TREE for us to have to handle special, and
 	// all of the following code will fall through common-path.
-	extentTree := o.rebuilt.RebuiltTree(ctx, btrfsprim.EXTENT_TREE_OBJECTID)
 	var extentItems *containers.SortedMap[btrfsprim.Key, btrfsutil.ItemPtr]
-	if extentTree != nil {
+	if extentTree, err := o.rebuilt.RebuiltTree(ctx, btrfsprim.EXTENT_TREE_OBJECTID); err == nil {
 		extentItems = extentTree.RebuiltAcquireItems(ctx)
 		defer extentTree.RebuiltReleaseItems()
 	}
@@ -416,7 +415,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", key)
 			item := keyAndBody{
 				itemToVisit: key,
-				Body:        o.rebuilt.RebuiltTree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+				Body:        discardErr(o.rebuilt.RebuiltTree(ctx, key.TreeID)).ReadItem(ctx, key.Key),
 			}
 			if key.TreeID == btrfsprim.EXTENT_TREE_OBJECTID &&
 				(key.ItemType == btrfsprim.EXTENT_ITEM_KEY || key.ItemType == btrfsprim.METADATA_ITEM_KEY) {
@@ -503,7 +502,7 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 			}
 			// This will call o.AddedItem as nescessary, which
 			// inserts to o.addedItemQueue.
-			o.rebuilt.RebuiltTree(ctx, treeID).RebuiltAddRoot(ctx, nodeAddr)
+			discardErr(o.rebuilt.RebuiltTree(ctx, treeID)).RebuiltAddRoot(ctx, nodeAddr)
 			progress.N++
 			progressWriter.Set(progress)
 		}
@@ -550,7 +549,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		} else {
 			choices[choice] = ChoiceInfo{
 				Count:      1,
-				Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
+				Distance:   discardOK(discardErr(o.rebuilt.RebuiltTree(ctx, treeID)).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
 				Generation: o.scan.Graph.Nodes[choice].Generation,
 			}
 		}
@@ -564,7 +563,7 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 			} else {
 				choices[choice] = ChoiceInfo{
 					Count:      1,
-					Distance:   discardOK(o.rebuilt.RebuiltTree(ctx, treeID).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
+					Distance:   discardOK(discardErr(o.rebuilt.RebuiltTree(ctx, treeID)).RebuiltCOWDistance(o.scan.Graph.Nodes[choice].Owner)),
 					Generation: o.scan.Graph.Nodes[choice].Generation,
 				}
 			}

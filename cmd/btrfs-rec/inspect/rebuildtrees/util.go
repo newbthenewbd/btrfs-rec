@@ -19,3 +19,7 @@ func roundUp[T constraints.Integer](n, d T) T {
 func discardOK[T any](val T, _ bool) T {
 	return val
 }
+
+func discardErr[T any](val T, _ error) T {
+	return val
+}

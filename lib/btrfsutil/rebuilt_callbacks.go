@@ -32,8 +32,8 @@ func (noopRebuiltForrestCallbacks) AddedRoot(context.Context, btrfsprim.ObjID, b
 }
 
 func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, _item btrfsitem.Root, ok bool) {
-	rootTree := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
-	if rootTree == nil {
+	rootTree, err := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if err != nil {
 		return 0, btrfsitem.Root{}, false
 	}
 	tgt := btrfsprim.Key{
@@ -63,8 +63,8 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 }
 
 func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	uuidTree := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
-	if uuidTree == nil {
+	uuidTree, err := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+	if err != nil {
 		return 0, false
 	}
 	tgt := btrfsitem.UUIDToKey(uuid)

@@ -43,8 +43,8 @@ func (o graphCallbacks) Want(ctx context.Context, reason string, treeID btrfspri
 }
 
 func (o *rebuilder) _want(ctx context.Context, wantKey wantWithTree) (key btrfsprim.Key, ok bool) {
-	tree := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID)
-	if tree == nil {
+	tree, err := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID)
+	if err != nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return btrfsprim.Key{}, false
 	}
@@ -98,8 +98,8 @@ func (o graphCallbacks) WantOff(ctx context.Context, reason string, treeID btrfs
 }
 
 func (o *rebuilder) _wantOff(ctx context.Context, wantKey wantWithTree) (ok bool) {
-	tree := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID)
-	if tree == nil {
+	tree, err := o.rebuilt.RebuiltTree(ctx, wantKey.TreeID)
+	if err != nil {
 		o.enqueueRetry(wantKey.TreeID)
 		return false
 	}
@@ -144,8 +144,8 @@ func (o graphCallbacks) WantDirIndex(ctx context.Context, reason string, treeID 
 	}
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 
-	tree := o.rebuilt.RebuiltTree(ctx, treeID)
-	if tree == nil {
+	tree, err := o.rebuilt.RebuiltTree(ctx, treeID)
+	if err != nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -273,8 +273,8 @@ func (o graphCallbacks) _wantRange(
 	ctx = withWant(ctx, logFieldItemWant, reason, wantKey)
 	wantKey.Key.OffsetType = offsetRange
 
-	tree := o.rebuilt.RebuiltTree(ctx, treeID)
-	if tree == nil {
+	tree, err := o.rebuilt.RebuiltTree(ctx, treeID)
+	if err != nil {
 		o.enqueueRetry(treeID)
 		return
 	}
@@ -389,7 +389,7 @@ func (o graphCallbacks) WantCSum(ctx context.Context, reason string, inodeTree, 
 		o.enqueueRetry(inodeTree)
 		return
 	}
-	tree := o.rebuilt.RebuiltTree(inodeCtx, inodeTree)
+	tree := discardErr(o.rebuilt.RebuiltTree(inodeCtx, inodeTree))
 	inodePtr, ok := tree.RebuiltAcquireItems(inodeCtx).Load(inodeWant.Key.Key())
 	tree.RebuiltReleaseItems()
 	if !ok {

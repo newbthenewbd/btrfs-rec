@@ -23,6 +23,10 @@ import (
 
 type RebuiltTree struct {
 	// static
+
+	rootErr      error
+	ancestorLoop bool
+
 	ID        btrfsprim.ObjID
 	UUID      btrfsprim.UUID
 	Parent    *RebuiltTree
@@ -30,8 +34,11 @@ type RebuiltTree struct {
 	forrest   *RebuiltForrest
 
 	// mutable
-	mu    sync.RWMutex
+
+	mu sync.RWMutex
+
 	Roots containers.Set[btrfsvol.LogicalAddr]
+
 	// There are 3 more mutable "members" that are protected by
 	// `mu`; but they live in a shared Cache.  They are all
 	// derived from tree.Roots, which is why it's OK if they get
