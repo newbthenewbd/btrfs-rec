@@ -10,9 +10,9 @@ import (
 
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
@@ -134,8 +134,7 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
-	file  btrfstree.NodeSource
-	sb    btrfstree.Superblock
+	inner btrfs.ReadableFS
 	graph Graph
 	cb    RebuiltForrestCallbacks
 
@@ -149,10 +148,9 @@ type RebuiltForrest struct {
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
 // RebuiltForrestCallbacks may be nil.
-func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	ret := &RebuiltForrest{
-		file:  file,
-		sb:    sb,
+		inner: fs,
 		graph: graph,
 		cb:    cb,
 
@@ -213,13 +211,17 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	var root btrfsvol.LogicalAddr
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
-		root = ts.sb.RootTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.RootTree
 	case btrfsprim.CHUNK_TREE_OBJECTID:
-		root = ts.sb.ChunkTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.ChunkTree
 	case btrfsprim.TREE_LOG_OBJECTID:
-		root = ts.sb.LogTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.LogTree
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
-		root = ts.sb.BlockGroupRoot
+		sb, _ := ts.inner.Superblock()
+		root = sb.BlockGroupRoot
 	default:
 		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
 			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")

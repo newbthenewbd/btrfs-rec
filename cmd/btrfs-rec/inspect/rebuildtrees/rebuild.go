@@ -85,7 +85,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 	o := &rebuilder{
 		scan: scanData,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Superblock, scanData.Graph, forrestCallbacks{o})
+	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Graph, forrestCallbacks{o})
 	return o, nil
 }
 

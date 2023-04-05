@@ -32,8 +32,6 @@ type FlagsAndErr struct {
 }
 
 type ScanDevicesResult struct {
-	Superblock btrfstree.Superblock
-
 	Graph btrfsutil.Graph
 
 	Flags map[btrfsutil.ItemPtr]FlagsAndErr // INODE_ITEM
@@ -53,8 +51,6 @@ func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 	// read-roots //////////////////////////////////////////////////////////////////
 	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-roots")
 	ret := ScanDevicesResult{
-		Superblock: *sb,
-
 		Graph: btrfsutil.NewGraph(ctx, *sb),
 		Flags: make(map[btrfsutil.ItemPtr]FlagsAndErr),
 		Names: make(map[btrfsutil.ItemPtr][]byte),
