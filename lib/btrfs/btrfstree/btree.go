@@ -21,6 +21,11 @@ type Forrest interface {
 }
 
 type Tree interface {
+	// TreeParentID returns the ID of this tree's parent and the
+	// generation that this tree was split from its parent.  If
+	// this tree has no parent, then (0, 0, nil) is returned.
+	TreeParentID(ctx context.Context) (btrfsprim.ObjID, btrfsprim.Generation, error)
+
 	// TreeLookup looks up the Item for a given key.
 	//
 	// If no such Item exists, but there is otherwise no error,
@@ -69,15 +74,6 @@ type Tree interface {
 		search TreeSearcher,
 		handleFn func(Item) bool,
 	) error
-
-	// CheckOwner returns whether it is permissible for a node
-	// with .Head.Owner=owner and .Head.Generation=gen to be in
-	// this tree.
-	//
-	// If there is an error determining this, then `failOpen`
-	// specifies whether it should return an error (false) or nil
-	// (true).
-	TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error
 
 	// TreeWalk is a lower-level call than TreeSubrange.  Use with
 	// hesitancy.
