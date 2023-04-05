@@ -48,7 +48,10 @@ var (
 var globalFlags struct {
 	logLevel textui.LogLevelFlag
 	pvs      []string
+
 	mappings string
+	nodeList string
+	rebuild  bool
 
 	stopProfiling profile.StopFunc
 
@@ -86,11 +89,20 @@ func main() {
 	globalFlags.logLevel.Level = dlog.LogLevelInfo
 	argparser.PersistentFlags().Var(&globalFlags.logLevel, "verbosity", "set the verbosity")
 
-	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil, "open the file `physical_volume` as part of the filesystem")
+	argparser.PersistentFlags().StringArrayVar(&globalFlags.pvs, "pv", nil,
+		"open the file `physical_volume` as part of the filesystem")
 	noError(argparser.MarkPersistentFlagFilename("pv"))
 
-	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "", "load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
+	argparser.PersistentFlags().StringVar(&globalFlags.mappings, "mappings", "",
+		"load chunk/dev-extent/blockgroup data from external JSON file `mappings.json`")
 	noError(argparser.MarkPersistentFlagFilename("mappings"))
+
+	argparser.PersistentFlags().StringVar(&globalFlags.nodeList, "node-list", "",
+		"load node list (output of 'btrfs-recs inspect [rebuild-mappings] list-nodes') from external JSON file `nodes.json`")
+	noError(argparser.MarkPersistentFlagFilename("node-list"))
+
+	argparser.PersistentFlags().BoolVar(&globalFlags.rebuild, "rebuild", false,
+		"attempt to rebuild broken btrees when reading")
 
 	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
@@ -176,8 +188,51 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 	})
 }
 
-func runWithReadableFS(runE func(btrfs.ReadableFS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+func runWithRawFSAndNodeList(runE func(*btrfs.FS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
-		return runE(btrfsutil.NewOldRebuiltForrest(fs), cmd, args)
+		ctx := cmd.Context()
+
+		var nodeList []btrfsvol.LogicalAddr
+		var err error
+		if globalFlags.nodeList != "" {
+			nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](ctx, globalFlags.nodeList)
+		} else {
+			nodeList, err = btrfsutil.ListNodes(ctx, fs)
+		}
+		if err != nil {
+			return err
+		}
+
+		return runE(fs, nodeList, cmd, args)
+	})
+}
+
+func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	inner := func(fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, args []string) error {
+		var rfs btrfs.ReadableFS = fs
+		if globalFlags.rebuild {
+			rfs = btrfsutil.NewOldRebuiltForrest(fs)
+		}
+
+		return runE(rfs, nodeList, cmd, args)
+	}
+
+	return func(cmd *cobra.Command, args []string) error {
+		if wantNodeList {
+			return runWithRawFSAndNodeList(inner)(cmd, args)
+		}
+		return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+			return inner(fs, nil, cmd, args)
+		})(cmd, args)
+	}
+}
+
+func runWithReadableFSAndNodeList(runE func(btrfs.ReadableFS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return _runWithReadableFS(true, runE)
+}
+
+func runWithReadableFS(runE func(btrfs.ReadableFS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return _runWithReadableFS(false, func(fs btrfs.ReadableFS, _ []btrfsvol.LogicalAddr, cmd *cobra.Command, args []string) error {
+		return runE(fs, cmd, args)
 	})
 }

@@ -16,7 +16,6 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
-	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 type RebuiltForrestCallbacks interface {
@@ -43,10 +42,11 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 		ObjectID: tree,
 		ItemType: btrfsprim.ROOT_ITEM_KEY,
 	}
-	itemKey, itemPtr, ok := rootTree.RebuiltItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
+	itemKey, itemPtr, ok := rootTree.RebuiltAcquireItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
 		key.Offset = 0
 		return tgt.Compare(key)
 	})
+	rootTree.RebuiltReleaseItems()
 	if !ok {
 		return 0, btrfsitem.Root{}, false
 	}
@@ -70,7 +70,8 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 		return 0, false
 	}
 	tgt := btrfsitem.UUIDToKey(uuid)
-	itemPtr, ok := uuidTree.RebuiltItems(ctx).Load(tgt)
+	itemPtr, ok := uuidTree.RebuiltAcquireItems(ctx).Load(tgt)
+	uuidTree.RebuiltReleaseItems()
 	if !ok {
 		return 0, false
 	}
@@ -118,8 +119,9 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 //   - it provides several RebuiltTree methods that provide advice on
 //     what roots should be added to a tree in order to repair it:
 //
-//     .RebuiltItems() and RebuiltPotentialItems() to compare what's
-//     in the tree and what could be in the tree.
+//     .RebuiltAcquireItems()/.RebuiltReleaseItems() and
+//     .RebuiltAcquirePotentialItems()/.RebuiltReleasePotentialItems()
+//     to compare what's in the tree and what could be in the tree.
 //
 //     .RebuiltLeafToRoots() to map potential items to things that can
 //     be passed to .RebuiltAddRoot().
@@ -139,11 +141,10 @@ type RebuiltForrest struct {
 
 	// mutable
 
-	treesMu  nestedMutex
-	trees    map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
-	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	incItems containers.Cache[btrfsprim.ObjID, itemIndex]
-	excItems containers.Cache[btrfsprim.ObjID, itemIndex]
+	treesMu nestedMutex
+	trees   map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
+
+	rebuiltSharedCache
 }
 
 // NewRebuiltForrest returns a new RebuiltForrest instance.  The
@@ -158,19 +159,8 @@ func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
 	}
 
-	ret.leafs = containers.NewARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
-			func(ctx context.Context, treeID btrfsprim.ObjID, leafs *map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]) {
-				*leafs = ret.trees[treeID].uncachedLeafToRoots(ctx)
-			}))
-	ret.incItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, incItems *itemIndex) {
-			*incItems = ret.trees[treeID].uncachedIncItems(ctx)
-		}))
-	ret.excItems = containers.NewARCache[btrfsprim.ObjID, itemIndex](textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, itemIndex](func(ctx context.Context, treeID btrfsprim.ObjID, excItems *itemIndex) {
-			*excItems = ret.trees[treeID].uncachedExcItems(ctx)
-		}))
+	ret.rebuiltSharedCache = makeRebuiltSharedCache(ret)
+
 	if ret.cb == nil {
 		ret.cb = noopRebuiltForrestCallbacks{
 			forrest: ret,
@@ -249,11 +239,11 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 			}
 			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
-				dlog.Error(ctx, "failed to add tree: lookup UUID")
+				dlog.Errorf(ctx, "failed to add tree: lookup UUID %v", rootItem.ParentUUID)
 				return false
 			}
 			if !ts.addTree(ctx, parentID, stack) {
-				dlog.Error(ctx, "failed to add tree: add parent tree")
+				dlog.Errorf(ctx, "failed to add tree: add parent tree %v", parentID)
 				return false
 			}
 			tree.Parent = ts.trees[parentID]

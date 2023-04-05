@@ -15,45 +15,45 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
-type nodeScanner struct {
+type nodeLister struct {
 	nodes containers.Set[btrfsvol.LogicalAddr]
 }
 
-type nodeStats struct {
+type nodeListStats struct {
 	numNodes int
 }
 
-func (s nodeStats) String() string {
+func (s nodeListStats) String() string {
 	return textui.Sprintf("found: %d nodes", s.numNodes)
 }
 
-var _ DeviceScanner[nodeStats, containers.Set[btrfsvol.LogicalAddr]] = (*nodeScanner)(nil)
+var _ DeviceScanner[nodeListStats, containers.Set[btrfsvol.LogicalAddr]] = (*nodeLister)(nil)
 
-func newNodeScanner(context.Context, btrfstree.Superblock, btrfsvol.PhysicalAddr, int) DeviceScanner[nodeStats, containers.Set[btrfsvol.LogicalAddr]] {
-	s := new(nodeScanner)
+func newNodeLister(context.Context, btrfstree.Superblock, btrfsvol.PhysicalAddr, int) DeviceScanner[nodeListStats, containers.Set[btrfsvol.LogicalAddr]] {
+	s := new(nodeLister)
 	s.nodes = make(containers.Set[btrfsvol.LogicalAddr])
 	return s
 }
 
-func (s *nodeScanner) ScanStats() nodeStats {
-	return nodeStats{numNodes: len(s.nodes)}
+func (s *nodeLister) ScanStats() nodeListStats {
+	return nodeListStats{numNodes: len(s.nodes)}
 }
 
-func (*nodeScanner) ScanSector(context.Context, *btrfs.Device, btrfsvol.PhysicalAddr) error {
+func (*nodeLister) ScanSector(context.Context, *btrfs.Device, btrfsvol.PhysicalAddr) error {
 	return nil
 }
 
-func (s *nodeScanner) ScanNode(_ context.Context, _ btrfsvol.PhysicalAddr, node *btrfstree.Node) error {
+func (s *nodeLister) ScanNode(_ context.Context, _ btrfsvol.PhysicalAddr, node *btrfstree.Node) error {
 	s.nodes.Insert(node.Head.Addr)
 	return nil
 }
 
-func (s *nodeScanner) ScanDone(_ context.Context) (containers.Set[btrfsvol.LogicalAddr], error) {
+func (s *nodeLister) ScanDone(_ context.Context) (containers.Set[btrfsvol.LogicalAddr], error) {
 	return s.nodes, nil
 }
 
 func ListNodes(ctx context.Context, fs *btrfs.FS) ([]btrfsvol.LogicalAddr, error) {
-	perDev, err := ScanDevices[nodeStats, containers.Set[btrfsvol.LogicalAddr]](ctx, fs, newNodeScanner)
+	perDev, err := ScanDevices[nodeListStats, containers.Set[btrfsvol.LogicalAddr]](ctx, fs, newNodeLister)
 	if err != nil {
 		return nil, err
 	}

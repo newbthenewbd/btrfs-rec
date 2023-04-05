@@ -198,11 +198,13 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
 		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
-		incPtr, ok := tree.RebuiltItems(ctx).Load(key.Key)
+		incPtr, ok := tree.RebuiltAcquireItems(ctx).Load(key.Key)
+		tree.RebuiltReleaseItems()
 		if !ok {
 			panic(fmt.Errorf("should not happen: failed to load already-added item: %v", key))
 		}
-		excPtr, ok := tree.RebuiltPotentialItems(ctx).Load(key.Key)
+		excPtr, ok := tree.RebuiltAcquirePotentialItems(ctx).Load(key.Key)
+		tree.RebuiltReleasePotentialItems()
 		if ok && tree.RebuiltShouldReplace(incPtr.Node, excPtr.Node) {
 			wantKey := wantWithTree{
 				TreeID: key.TreeID,
@@ -517,24 +519,12 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (queue *treeAugmentQueue) has(wantKey want) bool {
-	if queue != nil {
-		if queue.zero != nil {
-			if _, ok := queue.zero[wantKey]; ok {
-				return true
-			}
-		}
-		if queue.single != nil {
-			if _, ok := queue.single[wantKey]; ok {
-				return true
-			}
-		}
-		if queue.multi != nil {
-			if _, ok := queue.multi[wantKey]; ok {
-				return true
-			}
-		}
+	if queue == nil {
+		return false
 	}
-	return false
+	return (queue.zero != nil && maps.HasKey(queue.zero, wantKey)) ||
+		(queue.single != nil && maps.HasKey(queue.single, wantKey)) ||
+		(queue.multi != nil && maps.HasKey(queue.multi, wantKey))
 }
 
 func (queue *treeAugmentQueue) store(wantKey want, choices containers.Set[btrfsvol.LogicalAddr]) {

@@ -10,8 +10,10 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/datawire/dlib/derror"
 	"github.com/datawire/dlib/dlog"
 
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -69,6 +71,47 @@ func (n GraphNode) String() string {
 	}
 	return fmt.Sprintf(`{lvl:%v, gen:%v, tree:%v, cnt:%v}`,
 		n.Level, n.Generation, n.Owner, len(n.Items))
+}
+
+func (n GraphNode) CheckExpectations(g Graph, exp btrfstree.NodeExpectations) error {
+	var errs derror.MultiError
+	if exp.LAddr.OK && n.Addr != exp.LAddr.Val {
+		errs = append(errs, fmt.Errorf("read from laddr=%v but claims to be at laddr=%v",
+			exp.LAddr.Val, n.Addr))
+	}
+	if exp.Level.OK && n.Level != exp.Level.Val {
+		errs = append(errs, fmt.Errorf("expected level=%v but claims to be level=%v",
+			exp.Level.Val, n.Level))
+	}
+	if n.Level > btrfstree.MaxLevel {
+		errs = append(errs, fmt.Errorf("maximum level=%v but claims to be level=%v",
+			btrfstree.MaxLevel, n.Level))
+	}
+	if exp.Generation.OK && n.Generation != exp.Generation.Val {
+		errs = append(errs, fmt.Errorf("expected generation=%v but claims to be generation=%v",
+			exp.Generation.Val, n.Generation))
+	}
+	if exp.Owner != nil {
+		if err := exp.Owner(n.Owner, n.Generation); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if n.NumItems(g) == 0 {
+		errs = append(errs, fmt.Errorf("has no items"))
+	} else {
+		if minItem := n.MinItem(g); exp.MinItem.OK && exp.MinItem.Val.Compare(minItem) > 0 {
+			errs = append(errs, fmt.Errorf("expected minItem>=%v but node has minItem=%v",
+				exp.MinItem.Val, minItem))
+		}
+		if maxItem := n.MaxItem(g); exp.MaxItem.OK && exp.MaxItem.Val.Compare(maxItem) < 0 {
+			errs = append(errs, fmt.Errorf("expected maxItem<=%v but node has maxItem=%v",
+				exp.MaxItem.Val, maxItem))
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
 }
 
 type GraphEdge struct {
@@ -225,7 +268,7 @@ func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
 	stats.D = len(g.EdgesTo)
 	progressWriter.Set(stats)
 	for laddr := range g.EdgesTo {
-		if _, ok := g.Nodes[laddr]; !ok {
+		if !maps.HasKey(g.Nodes, laddr) {
 			node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
 				LAddr: containers.OptionalValue(laddr),
 			})
@@ -282,4 +325,58 @@ func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
 	dlog.Info(ctx, "... done checking for loops")
 
 	return nil
+}
+
+func ReadGraph(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (Graph, error) {
+	// read-superblock /////////////////////////////////////////////////////////////
+	ctx := dlog.WithField(_ctx, "btrfs.util.read-graph.step", "read-superblock")
+	dlog.Info(ctx, "Reading superblock...")
+	sb, err := fs.Superblock()
+	if err != nil {
+		return Graph{}, err
+	}
+
+	// read-roots //////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.util.read-graph.step", "read-roots")
+	graph := NewGraph(ctx, *sb)
+
+	// read-nodes //////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.util.read-graph.step", "read-nodes")
+	dlog.Infof(ctx, "Reading node data from FS...")
+	var stats textui.Portion[int]
+	stats.D = len(nodeList)
+	progressWriter := textui.NewProgress[textui.Portion[int]](
+		ctx,
+		dlog.LogLevelInfo,
+		textui.Tunable(1*time.Second))
+	progressWriter.Set(stats)
+	for _, laddr := range nodeList {
+		if err := ctx.Err(); err != nil {
+			return Graph{}, err
+		}
+		node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
+			LAddr: containers.OptionalValue(laddr),
+		})
+		if err != nil {
+			fs.ReleaseNode(node)
+			return Graph{}, err
+		}
+		graph.InsertNode(node)
+		fs.ReleaseNode(node)
+		stats.N++
+		progressWriter.Set(stats)
+	}
+	if stats.N != stats.D {
+		panic("should not happen")
+	}
+	progressWriter.Done()
+	dlog.Info(ctx, "... done reading node data")
+
+	// check ///////////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.util.read-graph.step", "check")
+	if err := graph.FinalCheck(ctx, fs); err != nil {
+		return Graph{}, err
+	}
+
+	return graph, nil
 }

@@ -17,13 +17,11 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/cmd/btrfs-rec/inspect/rebuildtrees"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
 func init() {
-	var nodeListFilename string
-	cmd := &cobra.Command{
+	inspectors.AddCommand(&cobra.Command{
 		Use: "rebuild-trees",
 		Long: "" +
 			"Rebuild broken btrees based on missing items that are implied " +
@@ -34,19 +32,8 @@ func init() {
 			"If no --node-list is given, then a slow sector-by-sector scan " +
 			"will be used to find all nodes.",
 		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		RunE: runWithRawFSAndNodeList(func(fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-
-			var nodeList []btrfsvol.LogicalAddr
-			var err error
-			if nodeListFilename != "" {
-				nodeList, err = readJSONFile[[]btrfsvol.LogicalAddr](ctx, nodeListFilename)
-			} else {
-				nodeList, err = btrfsutil.ListNodes(ctx, fs)
-			}
-			if err != nil {
-				return err
-			}
 
 			rebuilder, err := rebuildtrees.NewRebuilder(ctx, fs, nodeList)
 			if err != nil {
@@ -78,10 +65,5 @@ func init() {
 
 			return rebuildErr
 		}),
-	}
-	cmd.Flags().StringVar(&nodeListFilename, "node-list", "",
-		"Output of 'btrfs-recs inspect [rebuild-mappings] list-nodes' to use for the node list")
-	noError(cmd.MarkFlagFilename("node-list"))
-
-	inspectors.AddCommand(cmd)
+	})
 }

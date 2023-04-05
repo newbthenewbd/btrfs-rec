@@ -53,11 +53,11 @@ type oldRebuiltTreeValue struct {
 	Key      btrfsprim.Key
 	ItemSize uint32
 
-	Node nodeInfo
+	Node oldRebuiltNodeInfo
 	Slot int
 }
 
-type nodeInfo struct {
+type oldRebuiltNodeInfo struct {
 	LAddr      btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
@@ -187,7 +187,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 	cacheEntry.ParentUUID = root.ParentUUID
 	cacheEntry.ParentGen = root.ParentGen
 
-	var curNode nodeInfo
+	var curNode oldRebuiltNodeInfo
 	cbs := btrfstree.TreeWalkHandler{
 		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
 			nodeAddr, nodeExp, _ := path.NodeExpectations(ctx, false)
@@ -200,7 +200,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 			return false
 		},
 		Node: func(path btrfstree.Path, node *btrfstree.Node) {
-			curNode = nodeInfo{
+			curNode = oldRebuiltNodeInfo{
 				LAddr:      node.Head.Addr,
 				Level:      node.Head.Level,
 				Generation: node.Head.Generation,
@@ -247,7 +247,7 @@ func (tree oldRebuiltTree) addErrs(fn func(btrfsprim.Key, uint32) int, err error
 	return errs
 }
 
-func (bt *OldRebuiltForrest) readNode(ctx context.Context, nodeInfo nodeInfo) *btrfstree.Node {
+func (bt *OldRebuiltForrest) readNode(ctx context.Context, nodeInfo oldRebuiltNodeInfo) *btrfstree.Node {
 	node, err := bt.AcquireNode(ctx, nodeInfo.LAddr, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(nodeInfo.LAddr),
 		Level:      containers.OptionalValue(nodeInfo.Level),

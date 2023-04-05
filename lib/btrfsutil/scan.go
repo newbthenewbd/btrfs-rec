@@ -33,12 +33,12 @@ type DeviceScanner[Stats comparable, Result any] interface {
 	ScanDone(ctx context.Context) (Result, error)
 }
 
-type scanStats[T comparable] struct {
+type devScanStats[T comparable] struct {
 	portion textui.Portion[btrfsvol.PhysicalAddr]
 	stats   T
 }
 
-func (s scanStats[T]) String() string {
+func (s devScanStats[T]) String() string {
 	return textui.Sprintf("scanned %v (%v)",
 		s.portion, s.stats)
 }
@@ -91,8 +91,8 @@ func ScanOneDevice[Stats comparable, Result any](ctx context.Context, dev *btrfs
 
 	scanner := newScanner(ctx, *sb, numBytes, numSectors)
 
-	progressWriter := textui.NewProgress[scanStats[Stats]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	var stats scanStats[Stats]
+	progressWriter := textui.NewProgress[devScanStats[Stats]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	var stats devScanStats[Stats]
 	stats.portion.D = numBytes
 
 	var minNextNode btrfsvol.PhysicalAddr

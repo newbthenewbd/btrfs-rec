@@ -26,6 +26,8 @@ import (
 	"git.lukeshu.com/go/typedsync"
 	"github.com/datawire/dlib/dlog"
 	"github.com/spf13/pflag"
+
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 )
 
 type LogLevelFlag struct {
@@ -201,7 +203,7 @@ func (l *logger) log(lvl dlog.LogLevel, writeMsg func(io.Writer)) {
 	fields := make(map[string]any)
 	var fieldKeys []string
 	for f := l; f.parent != nil; f = f.parent {
-		if _, exists := fields[f.fieldKey]; exists {
+		if maps.HasKey(fields, f.fieldKey) {
 			continue
 		}
 		fields[f.fieldKey] = f.fieldVal
@@ -328,6 +330,10 @@ func fieldOrd(key string) int {
 	case "btrfs.inspect.rebuild-trees.rebuild.want.reason":
 		return -8
 
+	// btrfsutil.Graph /////////////////////////////////////////////////////
+	case "btrfs.util.read-graph.step":
+		return -1
+
 	// btrfsutil.RebuiltForrest ////////////////////////////////////////////
 	case "btrfs.util.rebuilt-forrest.add-tree":
 		return -7
@@ -426,10 +432,14 @@ func writeField(w io.Writer, key string, val any) {
 					name = strings.TrimPrefix(name, "rebuild.")
 				}
 			}
-		case strings.HasPrefix(name, "util.rebuilt-forrest."):
-			name = strings.TrimPrefix(name, "util.rebuilt-forrest.")
-		case strings.HasPrefix(name, "util.rebuilt-tree."):
-			name = strings.TrimPrefix(name, "util.rebuilt-tree.")
+		case strings.HasPrefix(name, "util."):
+			name = strings.TrimPrefix(name, "util.")
+			switch {
+			case strings.HasPrefix(name, "rebuilt-forrest."):
+				name = strings.TrimPrefix(name, "rebuilt-forrest.")
+			case strings.HasPrefix(name, "rebuilt-tree."):
+				name = strings.TrimPrefix(name, "rebuilt-tree.")
+			}
 		}
 	}
 

@@ -138,20 +138,11 @@ func (o Set[T]) TakeOne() T {
 }
 
 func (o Set[T]) Has(v T) bool {
-	_, has := o[v]
-	return has
+	return maps.HasKey(o, v)
 }
 
-func (small Set[T]) HasAny(big Set[T]) bool {
-	if len(big) < len(small) {
-		small, big = big, small
-	}
-	for v := range small {
-		if _, ok := big[v]; ok {
-			return true
-		}
-	}
-	return false
+func (a Set[T]) HasAny(b Set[T]) bool {
+	return maps.HaveAnyKeysInCommon(a, b)
 }
 
 func (small Set[T]) Intersection(big Set[T]) Set[T] {
@@ -160,7 +151,7 @@ func (small Set[T]) Intersection(big Set[T]) Set[T] {
 	}
 	ret := make(Set[T])
 	for v := range small {
-		if _, ok := big[v]; ok {
+		if maps.HasKey(big, v) {
 			ret.Insert(v)
 		}
 	}

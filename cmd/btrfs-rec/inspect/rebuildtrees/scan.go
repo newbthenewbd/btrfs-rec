@@ -41,31 +41,35 @@ type ScanDevicesResult struct {
 	Sizes map[btrfsutil.ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
 }
 
-func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (ScanDevicesResult, error) {
+func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (ScanDevicesResult, error) {
+	// read-superblock /////////////////////////////////////////////////////////////
+	ctx := dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-superblock")
 	dlog.Info(ctx, "Reading superblock...")
 	sb, err := fs.Superblock()
 	if err != nil {
 		return ScanDevicesResult{}, err
 	}
 
-	dlog.Infof(ctx, "Reading node data from FS...")
-
-	var stats textui.Portion[int]
-	stats.D = len(nodeList)
-	progressWriter := textui.NewProgress[textui.Portion[int]](
-		dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-nodes"),
-		dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-
+	// read-roots //////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-roots")
 	ret := ScanDevicesResult{
 		Superblock: *sb,
 
 		Graph: btrfsutil.NewGraph(ctx, *sb),
-
 		Flags: make(map[btrfsutil.ItemPtr]FlagsAndErr),
 		Names: make(map[btrfsutil.ItemPtr][]byte),
 		Sizes: make(map[btrfsutil.ItemPtr]SizeAndErr),
 	}
 
+	// read-nodes //////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-nodes")
+	dlog.Infof(ctx, "Reading node data from FS...")
+	var stats textui.Portion[int]
+	stats.D = len(nodeList)
+	progressWriter := textui.NewProgress[textui.Portion[int]](
+		ctx,
+		dlog.LogLevelInfo,
+		textui.Tunable(1*time.Second))
 	progressWriter.Set(stats)
 	for _, laddr := range nodeList {
 		if err := ctx.Err(); err != nil {
@@ -78,11 +82,8 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 			fs.ReleaseNode(node)
 			return ScanDevicesResult{}, err
 		}
-
 		ret.insertNode(node)
-
 		fs.ReleaseNode(node)
-
 		stats.N++
 		progressWriter.Set(stats)
 	}
@@ -92,7 +93,8 @@ func ScanDevices(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalA
 	progressWriter.Done()
 	dlog.Info(ctx, "... done reading node data")
 
-	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.read.substep", "check")
+	// check ///////////////////////////////////////////////////////////////////////
+	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "check")
 	if err := ret.Graph.FinalCheck(ctx, fs); err != nil {
 		return ScanDevicesResult{}, err
 	}
