@@ -473,7 +473,7 @@ func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsi
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
 	}
-	return tree.forrest.readItem(ctx, ptr)
+	return tree.forrest.readItem(ctx, ptr).Body
 }
 
 // RebuiltLeafToRoots returns the list of potential roots (to pass to

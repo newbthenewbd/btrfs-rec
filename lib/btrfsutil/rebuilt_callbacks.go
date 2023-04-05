@@ -48,9 +48,9 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 	if !ok {
 		return 0, btrfsitem.Root{}, false
 	}
-	itemBody := cb.forrest.readItem(ctx, itemPtr)
-	defer itemBody.Free()
-	switch itemBody := itemBody.(type) {
+	item := cb.forrest.readItem(ctx, itemPtr)
+	defer item.Body.Free()
+	switch itemBody := item.Body.(type) {
 	case *btrfsitem.Root:
 		return btrfsprim.Generation(itemKey.Offset), *itemBody, true
 	case *btrfsitem.Error:
@@ -73,9 +73,9 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 	if !ok {
 		return 0, false
 	}
-	itemBody := cb.forrest.readItem(ctx, itemPtr)
-	defer itemBody.Free()
-	switch itemBody := itemBody.(type) {
+	item := cb.forrest.readItem(ctx, itemPtr)
+	defer item.Body.Free()
+	switch itemBody := item.Body.(type) {
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, true
 	case *btrfsitem.Error:

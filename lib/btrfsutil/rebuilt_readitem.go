@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
@@ -24,7 +23,7 @@ func (ptr ItemPtr) String() string {
 	return fmt.Sprintf("node@%v[%v]", ptr.Node, ptr.Slot)
 }
 
-func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfsitem.Item {
+func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfstree.Item {
 	graphInfo, ok := ts.graph.Nodes[ptr.Node]
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltForrest.readItem called for node@%v not mentioned in the in-memory graph", ptr.Node))
@@ -62,5 +61,8 @@ func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfsitem.I
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltForrest.readItem called for out-of-bounds item slot: slot=%v len=%v",
 			ptr.Slot, len(items)))
 	}
-	return items[ptr.Slot].Body.CloneItem()
+
+	item := items[ptr.Slot]
+	item.Body = item.Body.CloneItem()
+	return item
 }
