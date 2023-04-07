@@ -30,11 +30,14 @@ type RebuiltTree struct {
 
 	ID        btrfsprim.ObjID
 	UUID      btrfsprim.UUID
+	Root      btrfsvol.LogicalAddr
 	Parent    *RebuiltTree
 	ParentGen btrfsprim.Generation // offset of this tree's root item
 	forrest   *RebuiltForrest
 
 	// mutable
+
+	initRootsOnce sync.Once
 
 	mu sync.RWMutex
 
@@ -77,6 +80,14 @@ func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 				*excItems = forrest.trees[treeID].uncachedExcItems(ctx)
 			}))
 	return ret
+}
+
+func (tree *RebuiltTree) initRoots(ctx context.Context) {
+	tree.initRootsOnce.Do(func() {
+		if tree.Root != 0 {
+			tree.RebuiltAddRoot(ctx, tree.Root)
+		}
+	})
 }
 
 // evictable member 1: .acquireNodeIndex() /////////////////////////////////////////////////////////////////////////////
@@ -273,6 +284,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 //
 // When done with the map, call .RebuiltReleaseItems().
 func (tree *RebuiltTree) RebuiltAcquireItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
@@ -293,6 +305,7 @@ func (tree *RebuiltTree) RebuiltReleaseItems() {
 //
 // When done with the map, call .RebuiltReleasePotentialItems().
 func (tree *RebuiltTree) RebuiltAcquirePotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
@@ -490,6 +503,7 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 			tree.ID, leaf))
 	}
 
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
@@ -589,6 +603,7 @@ func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
 
 // TreeWalk implements btrfstree.Tree.
 func (tree *RebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 

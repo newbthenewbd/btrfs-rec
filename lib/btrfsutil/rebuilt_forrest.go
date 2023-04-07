@@ -124,6 +124,7 @@ func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjI
 	if tree.rootErr != nil {
 		return nil, tree.rootErr
 	}
+	tree.initRoots(ctx)
 	return tree, nil
 }
 
@@ -156,27 +157,26 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 		Roots:   make(containers.Set[btrfsvol.LogicalAddr]),
 		forrest: ts,
 	}
-	var root btrfsvol.LogicalAddr
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
 		sb, _ := ts.Superblock()
-		root = sb.RootTree
+		ts.trees[treeID].Root = sb.RootTree
 	case btrfsprim.CHUNK_TREE_OBJECTID:
 		sb, _ := ts.Superblock()
-		root = sb.ChunkTree
+		ts.trees[treeID].Root = sb.ChunkTree
 	case btrfsprim.TREE_LOG_OBJECTID:
 		sb, _ := ts.Superblock()
-		root = sb.LogTree
+		ts.trees[treeID].Root = sb.LogTree
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
 		sb, _ := ts.Superblock()
-		root = sb.BlockGroupRoot
+		ts.trees[treeID].Root = sb.BlockGroupRoot
 	default:
 		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
 		if !ok {
 			ts.trees[treeID].rootErr = btrfstree.ErrNoTree
 			return
 		}
-		root = rootItem.ByteNr
+		ts.trees[treeID].Root = rootItem.ByteNr
 		ts.trees[treeID].UUID = rootItem.UUID
 		if rootItem.ParentUUID != (btrfsprim.UUID{}) {
 			ts.trees[treeID].ParentGen = rootOff
@@ -196,10 +196,6 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 				return
 			}
 		}
-	}
-
-	if root != 0 {
-		ts.trees[treeID].RebuiltAddRoot(ctx, root)
 	}
 }
 
