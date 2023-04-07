@@ -73,8 +73,11 @@ type RebuiltForrest struct {
 	rebuiltSharedCache
 }
 
-// NewRebuiltForrest returns a new RebuiltForrest instance.  The
-// RebuiltForrestCallbacks may be nil.
+// NewRebuiltForrest returns a new RebuiltForrest instance.
+//
+// The `cb` RebuiltForrestCallbacks may be nil.  If `cb` also
+// implements RebuiltForrestExtendedCallbacks, then a series of
+// .AddedItem() calls will be made before each call to .AddedRoot().
 func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	ret := &RebuiltForrest{
 		inner: fs,

@@ -320,37 +320,45 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
-	var stats rebuiltRootStats
-	leafToRoots := tree.acquireLeafToRoots(ctx)
-	stats.Leafs.D = len(leafToRoots)
-	progressWriter := textui.NewProgress[rebuiltRootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	for i, leaf := range maps.SortedKeys(leafToRoots) {
-		stats.Leafs.N = i
-		progressWriter.Set(stats)
+	shouldFlush := tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID
 
-		if tree.Roots.HasAny(leafToRoots[leaf]) || !leafToRoots[leaf].Has(rootNode) {
-			continue
-		}
-
-		stats.AddedLeafs++
-		progressWriter.Set(stats)
-
-		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			tree.forrest.cb.AddedItem(ctx, tree.ID, itemKey)
-			stats.AddedItems++
+	if extCB, ok := tree.forrest.cb.(RebuiltForrestExtendedCallbacks); ok {
+		var stats rebuiltRootStats
+		leafToRoots := tree.acquireLeafToRoots(ctx)
+		stats.Leafs.D = len(leafToRoots)
+		progressWriter := textui.NewProgress[rebuiltRootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+		for i, leaf := range maps.SortedKeys(leafToRoots) {
+			stats.Leafs.N = i
 			progressWriter.Set(stats)
+
+			if tree.Roots.HasAny(leafToRoots[leaf]) || !leafToRoots[leaf].Has(rootNode) {
+				continue
+			}
+
+			stats.AddedLeafs++
+			progressWriter.Set(stats)
+
+			for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+				extCB.AddedItem(ctx, tree.ID, itemKey)
+				stats.AddedItems++
+				progressWriter.Set(stats)
+			}
+		}
+		stats.Leafs.N = len(leafToRoots)
+		tree.releaseLeafToRoots()
+		progressWriter.Set(stats)
+		progressWriter.Done()
+
+		if stats.AddedItems == 0 {
+			shouldFlush = false
 		}
 	}
-	stats.Leafs.N = len(leafToRoots)
-	tree.releaseLeafToRoots()
-	progressWriter.Set(stats)
-	progressWriter.Done()
 
 	tree.Roots.Insert(rootNode)
 	tree.forrest.incItems.Delete(tree.ID) // force re-gen
 	tree.forrest.excItems.Delete(tree.ID) // force re-gen
 
-	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
+	if shouldFlush {
 		tree.forrest.flushNegativeCache(ctx)
 	}
 	tree.forrest.cb.AddedRoot(ctx, tree.ID, rootNode)
