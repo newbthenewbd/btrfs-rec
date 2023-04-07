@@ -57,11 +57,17 @@ func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfs
 func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 	uuidTree, err := cb.forrest.ForrestLookup(ctx, btrfsprim.UUID_TREE_OBJECTID)
 	if err != nil {
+		if id, ok := cb.slowLookupUUID(ctx, uuid); ok {
+			return id, nil
+		}
 		return 0, err
 	}
 	tgt := btrfsitem.UUIDToKey(uuid)
 	item, err := uuidTree.TreeLookup(ctx, tgt)
 	if err != nil {
+		if id, ok := cb.slowLookupUUID(ctx, uuid); ok {
+			return id, nil
+		}
 		return 0, err
 	}
 	defer item.Body.Free()
@@ -69,10 +75,44 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 	case *btrfsitem.UUIDMap:
 		return itemBody.ObjID, nil
 	case *btrfsitem.Error:
-		return 0, itemBody.Err
+		if id, ok := cb.slowLookupUUID(ctx, uuid); ok {
+			return id, nil
+		}
+		return 0, err
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
 		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
 		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
 	}
+}
+
+func (cb noopRebuiltForrestCallbacks) slowLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	rootTree, err := cb.forrest.ForrestLookup(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if err != nil {
+		return 0, false
+	}
+	var ret btrfsprim.ObjID
+	_ = rootTree.TreeRange(ctx, func(item btrfstree.Item) bool {
+		if item.Key.ItemType != btrfsprim.ROOT_ITEM_KEY {
+			return true
+		}
+		switch itemBody := item.Body.(type) {
+		case *btrfsitem.Root:
+			if itemBody.UUID == uuid {
+				ret = item.Key.ObjectID
+				return false
+			}
+		case *btrfsitem.Error:
+			// do nothing
+		default:
+			// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
+			// btrfsitem.Root or btrfsitem.Error without this code also being updated.
+			panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
+		}
+		return true
+	})
+	if ret == 0 {
+		return 0, false
+	}
+	return ret, true
 }
