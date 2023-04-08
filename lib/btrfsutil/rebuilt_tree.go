@@ -98,9 +98,13 @@ func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
 
 	indexer := &rebuiltNodeIndexer{
-		tree: tree,
+		tree:     tree,
+		idToTree: make(map[btrfsprim.ObjID]*RebuiltTree),
 
 		nodeToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
+	}
+	for ancestor := tree; ancestor != nil; ancestor = ancestor.Parent {
+		indexer.idToTree[ancestor.ID] = ancestor
 	}
 
 	ret := rebuiltNodeIndex{
@@ -116,7 +120,8 @@ func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex
 
 type rebuiltNodeIndexer struct {
 	// Input
-	tree *RebuiltTree
+	tree     *RebuiltTree
+	idToTree map[btrfsprim.ObjID]*RebuiltTree
 
 	// Output
 	nodeToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
@@ -155,26 +160,53 @@ func (indexer *rebuiltNodeIndexer) node(ctx context.Context, node btrfsvol.Logic
 		// have already checked for loops.
 		panic("loop")
 	}
-	if !indexer.tree.isOwnerOK(indexer.tree.forrest.graph.Nodes[node].Owner, indexer.tree.forrest.graph.Nodes[node].Generation) {
+	nodeInfo := indexer.tree.forrest.graph.Nodes[node]
+	if !indexer.tree.isOwnerOK(nodeInfo.Owner, nodeInfo.Generation) {
 		indexer.nodeToRoots[node] = nil
 		return
 	}
 
 	stack = append(stack, node)
 	var roots rebuiltRoots
+nextKP:
 	for _, kp := range indexer.tree.forrest.graph.EdgesTo[node] {
-		if !indexer.tree.isOwnerOK(indexer.tree.forrest.graph.Nodes[kp.FromNode].Owner, indexer.tree.forrest.graph.Nodes[kp.FromNode].Generation) {
-			continue
+		// The cheap expectations to check.
+		if kp.ToLevel != nodeInfo.Level ||
+			kp.ToKey.Compare(nodeInfo.MinItem(indexer.tree.forrest.graph)) > 0 ||
+			kp.ToGeneration != nodeInfo.Generation {
+			continue nextKP
 		}
+		// The MaxItem expectation is only cheap to check if
+		// the KP isn't in the last slot.  If it isn't in the
+		// last slot, we'll wait to check it until after we've
+		// indexed kp.FromNode.
+		if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+			kpMaxItem := indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+			if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+				continue nextKP
+			}
+		}
+		// isOwnerOK is O(n) on the number of parents, so
+		// avoid doing it if possible.
+		if fromTree := indexer.idToTree[kp.FromTree]; fromTree == nil || !fromTree.isOwnerOK(nodeInfo.Owner, nodeInfo.Generation) {
+			continue nextKP
+		}
+
 		indexer.node(ctx, kp.FromNode, stack)
 		if len(indexer.nodeToRoots[kp.FromNode]) > 0 {
-			if roots == nil {
-				roots = make(rebuiltRoots)
-			}
 			for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
 				if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
 					rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
 					rootInfo.hiMaxItem = rootInfo.loMaxItem
+				} else {
+					// OK, now check the MaxItem expectation.
+					//
+					// We'll use the hiMaxItem, because it only needs to be
+					// valid in *one* of the paths to this node.
+					kpMaxItem := rootInfo.hiMaxItem
+					if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+						continue nextKP
+					}
 				}
 				oldRootInfo, ok := roots[root]
 				if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
@@ -182,6 +214,9 @@ func (indexer *rebuiltNodeIndexer) node(ctx context.Context, node btrfsvol.Logic
 				}
 				if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
 					rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
+				}
+				if roots == nil {
+					roots = make(rebuiltRoots)
 				}
 				roots[root] = rootInfo
 			}
