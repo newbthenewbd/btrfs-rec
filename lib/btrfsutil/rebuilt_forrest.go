@@ -278,7 +278,7 @@ func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.Ob
 	defer ts.treesMu.Unlock()
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
 	for treeID, tree := range ts.trees {
-		if tree != nil {
+		if tree != nil && len(tree.Roots) > 0 {
 			ret[treeID] = tree.Roots
 		}
 	}
