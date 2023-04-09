@@ -81,6 +81,9 @@ type rebuiltPathInfo struct {
 }
 
 type rebuiltNodeIndex struct {
+	// idToTree contains this tree, and all of its ancestor trees.
+	idToTree map[btrfsprim.ObjID]*RebuiltTree
+
 	// nodeToRoots contains all nodes in the filesystem that pass
 	// .isOwnerOK, whether or not they're in the tree.
 	nodeToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
@@ -108,6 +111,7 @@ func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex
 	}
 
 	ret := rebuiltNodeIndex{
+		idToTree:    indexer.idToTree,
 		nodeToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
 	}
 	for node, roots := range indexer.run(ctx) {
