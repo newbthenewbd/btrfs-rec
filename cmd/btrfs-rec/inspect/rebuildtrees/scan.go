@@ -31,12 +31,21 @@ type FlagsAndErr struct {
 	Err       error
 }
 
+// ExtentDataRefPtr is a pointer to a *btrfsitem.ExtentDataRef,
+// whether it be to an EXTENT_DATA_REF item proper, or to an inline
+// ref inside of another EXTENT_ITEM or METADATA_ITEM.
+type ExtentDataRefPtr struct {
+	btrfsutil.ItemPtr
+	RefNum int // Only for EXTENT_ITEM and METADATA_ITEM
+}
+
 type ScanDevicesResult struct {
 	Graph btrfsutil.Graph
 
-	Flags map[btrfsutil.ItemPtr]FlagsAndErr // INODE_ITEM
-	Names map[btrfsutil.ItemPtr][]byte      // DIR_INDEX
-	Sizes map[btrfsutil.ItemPtr]SizeAndErr  // EXTENT_CSUM and EXTENT_DATA
+	Flags        map[btrfsutil.ItemPtr]FlagsAndErr       // INODE_ITEM
+	Names        map[btrfsutil.ItemPtr][]byte            // DIR_INDEX
+	Sizes        map[btrfsutil.ItemPtr]SizeAndErr        // EXTENT_CSUM and EXTENT_DATA
+	DataBackrefs map[btrfsutil.ItemPtr][]btrfsprim.ObjID // EXTENT_DATA_REF, EXTENT_ITEM, and METADATA_ITEM
 }
 
 func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr) (ScanDevicesResult, error) {
@@ -52,9 +61,11 @@ func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 	ctx = dlog.WithField(_ctx, "btrfs.inspect.rebuild-trees.read.substep", "read-roots")
 	ret := ScanDevicesResult{
 		Graph: btrfsutil.NewGraph(ctx, *sb),
-		Flags: make(map[btrfsutil.ItemPtr]FlagsAndErr),
-		Names: make(map[btrfsutil.ItemPtr][]byte),
-		Sizes: make(map[btrfsutil.ItemPtr]SizeAndErr),
+
+		Flags:        make(map[btrfsutil.ItemPtr]FlagsAndErr),
+		Names:        make(map[btrfsutil.ItemPtr][]byte),
+		Sizes:        make(map[btrfsutil.ItemPtr]SizeAndErr),
+		DataBackrefs: make(map[btrfsutil.ItemPtr][]btrfsprim.ObjID),
 	}
 
 	// read-nodes //////////////////////////////////////////////////////////////////
@@ -128,6 +139,22 @@ func (o *ScanDevicesResult) insertNode(node *btrfstree.Node) {
 				Size: uint64(size),
 				Err:  err,
 			}
+		case *btrfsitem.Extent:
+			o.DataBackrefs[ptr] = make([]btrfsprim.ObjID, len(itemBody.Refs))
+			for i, ref := range itemBody.Refs {
+				if refBody, ok := ref.Body.(*btrfsitem.ExtentDataRef); ok {
+					o.DataBackrefs[ptr][i] = refBody.Root
+				}
+			}
+		case *btrfsitem.Metadata:
+			o.DataBackrefs[ptr] = make([]btrfsprim.ObjID, len(itemBody.Refs))
+			for i, ref := range itemBody.Refs {
+				if refBody, ok := ref.Body.(*btrfsitem.ExtentDataRef); ok {
+					o.DataBackrefs[ptr][i] = refBody.Root
+				}
+			}
+		case *btrfsitem.ExtentDataRef:
+			o.DataBackrefs[ptr] = []btrfsprim.ObjID{itemBody.Root}
 		case *btrfsitem.Error:
 			switch item.Key.ItemType {
 			case btrfsprim.INODE_ITEM_KEY:
