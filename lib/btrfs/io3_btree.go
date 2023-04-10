@@ -44,7 +44,7 @@ func (fs *FS) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp bt
 	if nodeEntry.node != nil {
 		if err := exp.Check(nodeEntry.node); err != nil {
 			fs.cacheNodes.Release(addr)
-			return nil, fmt.Errorf("btrfstree.ReadNode: node@%v: %w", addr, err) // fmt.Errorf("btrfs.FS.AcquireNode: node@%v: %w", addr, err)
+			return nil, fmt.Errorf("btrfs.FS.AcquireNode: node@%v: %w", addr, err)
 		}
 	}
 

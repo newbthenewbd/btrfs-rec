@@ -38,7 +38,7 @@ func (tree *RawTree) TreeWalk(ctx context.Context, cbs TreeWalkHandler) {
 	}
 	path := Path{
 		PathRoot{
-			Tree:         tree,
+			Forrest:      tree.Forrest,
 			TreeID:       tree.ID,
 			ToAddr:       tree.RootNode,
 			ToGeneration: tree.Generation,
@@ -317,63 +317,27 @@ func (tree *RawTree) TreeSubrange(ctx context.Context, min int, searcher TreeSea
 	return nil
 }
 
-// TreeCheckOwner implements the 'Tree' interface.
-func (tree *RawTree) TreeCheckOwner(ctx context.Context, failOpen bool, owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-	var uuidTree *RawTree
-	for {
-		// Main.
-		if owner == tree.ID {
-			return nil
-		}
-		if tree.ParentUUID == (btrfsprim.UUID{}) {
-			return fmt.Errorf("owner=%v is not acceptable in this tree",
-				owner)
-		}
-		if gen > tree.ParentGen {
-			return fmt.Errorf("claimed owner=%v might be acceptable in this tree (if generation<=%v) but not with claimed generation=%v",
-				owner, tree.ParentGen, gen)
-		}
-
-		// Loop update.
-		if uuidTree == nil {
-			var err error
-			uuidTree, err = tree.Forrest.RawTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
-			if err != nil {
-				if failOpen {
-					return nil
-				}
-				return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
-					owner, gen, err)
-			}
-		}
-		parentIDItem, err := uuidTree.TreeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
-		if err != nil {
-			if failOpen {
-				return nil
-			}
-			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
-				owner, gen, err)
-		}
-		switch parentIDBody := parentIDItem.Body.(type) {
-		case *btrfsitem.UUIDMap:
-			tree, err = tree.Forrest.RawTree(ctx, parentIDBody.ObjID)
-			if err != nil {
-				if failOpen {
-					return nil
-				}
-				return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
-					owner, gen, err)
-			}
-		case *btrfsitem.Error:
-			if failOpen {
-				return nil
-			}
-			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
-				owner, gen, parentIDBody.Err)
-		default:
-			// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
-			// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
-			panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
-		}
+// TreeParentID implements the 'Tree' interface.
+func (tree *RawTree) TreeParentID(ctx context.Context) (btrfsprim.ObjID, btrfsprim.Generation, error) {
+	if tree.ParentUUID == (btrfsprim.UUID{}) {
+		return 0, 0, nil
+	}
+	uuidTree, err := tree.Forrest.RawTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+	if err != nil {
+		return 0, 0, err
+	}
+	parentIDItem, err := uuidTree.TreeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
+	if err != nil {
+		return 0, 0, err
+	}
+	switch parentIDBody := parentIDItem.Body.(type) {
+	case *btrfsitem.UUIDMap:
+		return parentIDBody.ObjID, tree.ParentGen, nil
+	case *btrfsitem.Error:
+		return 0, 0, parentIDBody.Err
+	default:
+		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
+		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
+		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", parentIDBody))
 	}
 }

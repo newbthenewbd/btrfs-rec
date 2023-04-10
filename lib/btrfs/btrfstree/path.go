@@ -69,7 +69,7 @@ type PathElem interface {
 }
 
 type PathRoot struct {
-	Tree Tree
+	Forrest Forrest
 	// It should be no surprise that these 4 members mimic the 4
 	// members of a 'RawTree'.
 	TreeID       btrfsprim.ObjID
@@ -133,6 +133,45 @@ func (path Path) String() string {
 	return ret.String()
 }
 
+func checkOwner(
+	ctx context.Context, forrest Forrest, treeID btrfsprim.ObjID, failOpen bool,
+	ownerToCheck btrfsprim.ObjID, genToCheck btrfsprim.Generation,
+) error {
+	for {
+		if ownerToCheck == treeID {
+			return nil
+		}
+
+		tree, err := forrest.ForrestLookup(ctx, treeID)
+		if err != nil {
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				ownerToCheck, genToCheck, err)
+		}
+
+		parentID, parentGen, err := tree.TreeParentID(ctx)
+		if err != nil {
+			if failOpen {
+				return nil
+			}
+			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
+				ownerToCheck, genToCheck, err)
+		}
+
+		if parentID == 0 && parentGen == 0 {
+			return fmt.Errorf("owner=%v is not acceptable in this tree",
+				ownerToCheck)
+		}
+		if genToCheck > parentGen {
+			return fmt.Errorf("claimed owner=%v might be acceptable in this tree (if generation<=%v) but not with claimed generation=%v",
+				ownerToCheck, parentGen, genToCheck)
+		}
+		treeID = parentID
+	}
+}
+
 // NodeExpectations returns the address to read and the expectations
 // to have when reading the node pointed to by this Path.
 //
@@ -153,7 +192,8 @@ func (path Path) NodeExpectations(ctx context.Context, failOpen bool) (_ btrfsvo
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return firstElem.Tree.TreeCheckOwner(ctx, failOpen, owner, gen)
+				return checkOwner(ctx, firstElem.Forrest, lastElem.TreeID, failOpen,
+					owner, gen)
 			},
 			MinItem: containers.OptionalValue(btrfsprim.Key{}),
 			MaxItem: containers.OptionalValue(btrfsprim.MaxKey),
@@ -164,7 +204,8 @@ func (path Path) NodeExpectations(ctx context.Context, failOpen bool) (_ btrfsvo
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return firstElem.Tree.TreeCheckOwner(ctx, failOpen, owner, gen)
+				return checkOwner(ctx, firstElem.Forrest, lastElem.FromTree, failOpen,
+					owner, gen)
 			},
 			MinItem: containers.OptionalValue(lastElem.ToMinKey),
 			MaxItem: containers.OptionalValue(lastElem.ToMaxKey),

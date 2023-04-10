@@ -504,9 +504,12 @@ func (c *arCache[K, V]) Acquire(ctx context.Context, k K) *V {
 	switch {
 	case c.liveByName[k] != nil: // cache-hit
 		entry = c.liveByName[k]
-		if entry.List != &c.frequentPinned {
-			// Move to frequentPinned (unless it's already
-			// there; in which case, don't bother).
+		// Move to frequentPinned, unless:
+		//
+		//  - it's already there; in which case, don't bother
+		//  - it's in recentPinned; don't count "nested" uses
+		//    as "frequent" uses.
+		if entry.List != &c.frequentPinned && entry.List != &c.recentPinned {
 			entry.List.Delete(entry)
 			c.frequentPinned.Store(entry)
 		}
