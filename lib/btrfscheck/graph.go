@@ -258,7 +258,7 @@ func HandleItem(ctx context.Context, o GraphCallbacks, treeID btrfsprim.ObjID, i
 			case nil:
 				// nothing
 			case *btrfsitem.ExtentDataRef:
-				o.WantOff(ctx, "referencing INode",
+				o.WantOff(ctx, "referencing Inode",
 					refBody.Root,
 					refBody.ObjectID,
 					btrfsitem.INODE_ITEM_KEY,
