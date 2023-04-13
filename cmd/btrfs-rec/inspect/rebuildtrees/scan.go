@@ -73,6 +73,7 @@ func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 	progressWriter.Set(stats)
 	for _, laddr := range nodeList {
 		if err := ctx.Err(); err != nil {
+			progressWriter.Done()
 			return ScanDevicesResult{}, err
 		}
 		node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
@@ -80,6 +81,7 @@ func ScanDevices(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 		})
 		if err != nil {
 			fs.ReleaseNode(node)
+			progressWriter.Done()
 			return ScanDevicesResult{}, err
 		}
 		ret.insertNode(node)

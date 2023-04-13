@@ -259,11 +259,9 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 			progressWriter.Set(stats)
 		}
 	}
-	if stats.Leafs.N > 0 {
-		stats.Leafs.N = stats.Leafs.D
-		progressWriter.Set(stats)
-		progressWriter.Done()
-	}
+	stats.Leafs.N = stats.Leafs.D
+	progressWriter.Set(stats)
+	progressWriter.Done()
 
 	return index
 }
