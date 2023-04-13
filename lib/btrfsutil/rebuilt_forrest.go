@@ -6,88 +6,15 @@ package btrfsutil
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/datawire/dlib/dlog"
 
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
-	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
-
-type RebuiltForrestCallbacks interface {
-	AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
-	AddedRoot(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
-	LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
-	LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
-}
-
-type noopRebuiltForrestCallbacks struct {
-	forrest *RebuiltForrest
-}
-
-func (noopRebuiltForrestCallbacks) AddedItem(context.Context, btrfsprim.ObjID, btrfsprim.Key) {}
-func (noopRebuiltForrestCallbacks) AddedRoot(context.Context, btrfsprim.ObjID, btrfsvol.LogicalAddr) {
-}
-
-func (cb noopRebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, _item btrfsitem.Root, ok bool) {
-	rootTree := cb.forrest.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
-	if rootTree == nil {
-		return 0, btrfsitem.Root{}, false
-	}
-	tgt := btrfsprim.Key{
-		ObjectID: tree,
-		ItemType: btrfsprim.ROOT_ITEM_KEY,
-	}
-	itemKey, itemPtr, ok := rootTree.RebuiltAcquireItems(ctx).Search(func(key btrfsprim.Key, _ ItemPtr) int {
-		key.Offset = 0
-		return tgt.Compare(key)
-	})
-	rootTree.RebuiltReleaseItems()
-	if !ok {
-		return 0, btrfsitem.Root{}, false
-	}
-	itemBody := cb.forrest.readItem(ctx, itemPtr)
-	defer itemBody.Free()
-	switch itemBody := itemBody.(type) {
-	case *btrfsitem.Root:
-		return btrfsprim.Generation(itemKey.Offset), *itemBody, true
-	case *btrfsitem.Error:
-		return 0, btrfsitem.Root{}, false
-	default:
-		// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
-		// btrfsitem.Root or btrfsitem.Error without this code also being updated.
-		panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
-	}
-}
-
-func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
-	uuidTree := cb.forrest.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
-	if uuidTree == nil {
-		return 0, false
-	}
-	tgt := btrfsitem.UUIDToKey(uuid)
-	itemPtr, ok := uuidTree.RebuiltAcquireItems(ctx).Load(tgt)
-	uuidTree.RebuiltReleaseItems()
-	if !ok {
-		return 0, false
-	}
-	itemBody := cb.forrest.readItem(ctx, itemPtr)
-	defer itemBody.Free()
-	switch itemBody := itemBody.(type) {
-	case *btrfsitem.UUIDMap:
-		return itemBody.ObjID, true
-	case *btrfsitem.Error:
-		return 0, false
-	default:
-		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
-		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
-		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
-	}
-}
 
 // RebuiltForrest is an abstraction for rebuilding and accessing
 // potentially broken btrees.
@@ -134,8 +61,7 @@ func (cb noopRebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfs
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
-	file  btrfstree.NodeSource
-	sb    btrfstree.Superblock
+	inner btrfs.ReadableFS
 	graph Graph
 	cb    RebuiltForrestCallbacks
 
@@ -147,12 +73,14 @@ type RebuiltForrest struct {
 	rebuiltSharedCache
 }
 
-// NewRebuiltForrest returns a new RebuiltForrest instance.  The
-// RebuiltForrestCallbacks may be nil.
-func NewRebuiltForrest(file btrfstree.NodeSource, sb btrfstree.Superblock, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+// NewRebuiltForrest returns a new RebuiltForrest instance.
+//
+// The `cb` RebuiltForrestCallbacks may be nil.  If `cb` also
+// implements RebuiltForrestExtendedCallbacks, then a series of
+// .AddedItem() calls will be made before each call to .AddedRoot().
+func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
 	ret := &RebuiltForrest{
-		file:  file,
-		sb:    sb,
+		inner: fs,
 		graph: graph,
 		cb:    cb,
 
@@ -213,13 +141,17 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 	var root btrfsvol.LogicalAddr
 	switch treeID {
 	case btrfsprim.ROOT_TREE_OBJECTID:
-		root = ts.sb.RootTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.RootTree
 	case btrfsprim.CHUNK_TREE_OBJECTID:
-		root = ts.sb.ChunkTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.ChunkTree
 	case btrfsprim.TREE_LOG_OBJECTID:
-		root = ts.sb.LogTree
+		sb, _ := ts.inner.Superblock()
+		root = sb.LogTree
 	case btrfsprim.BLOCK_GROUP_TREE_OBJECTID:
-		root = ts.sb.BlockGroupRoot
+		sb, _ := ts.inner.Superblock()
+		root = sb.BlockGroupRoot
 	default:
 		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
 			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")

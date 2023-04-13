@@ -85,7 +85,7 @@ func NewRebuilder(ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.Logical
 	o := &rebuilder{
 		scan: scanData,
 	}
-	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Superblock, scanData.Graph, forrestCallbacks{o})
+	o.rebuilt = btrfsutil.NewRebuiltForrest(fs, scanData.Graph, forrestCallbacks{o})
 	return o, nil
 }
 
@@ -224,6 +224,153 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 	return nil
 }
 
+type itemToVisit struct {
+	SortTreeID btrfsprim.ObjID // Use this tree ID for sorting, but not lookups
+	keyAndTree
+	RefNum int // Only for EXTENT_ITEM and METADATA_ITEM
+}
+
+func (k itemToVisit) String() string {
+	if k.TreeID == btrfsprim.EXTENT_TREE_OBJECTID &&
+		(k.ItemType == btrfsprim.EXTENT_ITEM_KEY || k.ItemType == btrfsprim.METADATA_ITEM_KEY) {
+		return textui.Sprintf("%v#%d", k.keyAndTree, k.RefNum)
+	}
+	return textui.Sprintf("%v", k.keyAndTree)
+}
+
+func (a itemToVisit) Compare(b itemToVisit) int {
+	if d := containers.NativeCompare(a.SortTreeID, b.SortTreeID); d != 0 {
+		return d
+	}
+	if d := a.keyAndTree.Compare(b.keyAndTree); d != 0 {
+		return d
+	}
+	return containers.NativeCompare(a.RefNum, b.RefNum)
+}
+
+// sortSettledItemQueue is like a the usual simple by-key sort; but
+// applies a different sort-order to members of the EXTENT_TREE.  It
+// sorts those members by the FS trees of the referencing inodes,
+// rather than by the laddr of the extent being referenced.  This
+// greatly reduces the number of .RebuiltAcquireItems() cache-misses.
+func (o *rebuilder) sortSettledItemQueue(ctx context.Context, unorderedQueue containers.Set[keyAndTree]) []itemToVisit {
+	// Like many problems, the trick isn't answering the question,
+	// it's asking the right question.
+	//
+	// "Naively", the problem might be stated as:
+	//
+	//   Definitions:
+	//
+	//     An "item" contains a set of 0 or more (`uint64`) "tree
+	//     IDs".  "Processing" an item does a cache-load operation
+	//     (from a replacement cache) for each tree ID.
+	//
+	//   Problem:
+	//
+	//     Given a list of items, sort the list in a manor that
+	//     minimizes cache-misses when processing the items in the
+	//     list in order.  Does the cache size or cache
+	//     replacement policy affect what the optimal order is?
+	//
+	//   Discussion:
+	//
+	//     Put another way, sort the list such that items
+	//     containing the same tree IDs are near to eachother.  If
+	//     each item only contained 1 tree ID, this would be
+	//     simple: sort by that tree ID.  The difficulty of the
+	//     question is how to weight each tree ID when items
+	//     contain multiple; if an item contains tree IDs 'A' and
+	//     'B', and putting it near other items with 'A' if that
+	//     means putting it farther from other items with 'B',
+	//     when is it worth it to do so?
+	//
+	// The most obvious approach that is independent of the cache
+	// size/policy is to minimize the total distance between items
+	// within the same set.  It turns out that this is the
+	// "Minimum Linear Arrangement" problem ("MinLA"), which is
+	// NP-hard.  But, if you were paying attention, it's not quite
+	// MinLA; in our once two items are far enough apart that a
+	// cache eviction happens between them, there's no cost to
+	// moving them farther apart.  And continuing to try to keep
+	// them close (instead of giving up on them) results in
+	// sub-optimal arrangements.  So not only is MinLA
+	// computationally expensive for us to try to approximate a
+	// solution for, it won't actually give us a very good
+	// solution!
+	//
+	// So you might think "Ah, the trick is to not ask MinLA, the
+	// trick is to ask this MinLA-with-capped-cost question!"  But
+	// we can find an even better question!
+	//
+	// Some concrete numbers to help with thinking about this: In
+	// my test trees, the maximum number of trees per item is 33,
+	// and slowdown from areas of the queue with few cache misses
+	// to areas where the MinLA approximation does poorly is
+	// around ~300×.  And I don't think it's possible to come up
+	// with a better solution without going O(n^2), which is
+	// prohibitive when there are 4 million items in the
+	// EXTENT_TREE.
+	//
+	// The *right* question involves backing up and revisiting the
+	// assumption that it's *items* that we're sorting.
+	//
+	// Instead, let's allow items in the EXTENT_TREE to be visited
+	// more than once; have an entry in the queue for each
+	// ExtentDataRef within an item.  Sure, that'll cause some
+	// inefficiency because EXTENT_ITEMs and METADATA_ITEMs will
+	// need to be read more than once.  But that's a ~30×
+	// slowdown, and allows us to just sort those queue-entries
+	// near the trees being back-referenced.  A ~30× slowdown is a
+	// heck of a lot better than a ~300× slowdown.  And we don't
+	// have to try to solve a problem that's NP-hard.
+
+	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.substep", "sort")
+	dlog.Info(ctx, "building ordered queue...")
+
+	dlog.Infof(ctx, "... walking %d items...", len(unorderedQueue))
+
+	// Don't worry about bailing if there is a failure to get the
+	// EXTENT_TREE; if that fails, then there can't be any items
+	// in the EXTENT_TREE for us to have to handle special, and
+	// all of the following code will fall through common-path.
+	extentTree := o.rebuilt.RebuiltTree(ctx, btrfsprim.EXTENT_TREE_OBJECTID)
+	var extentItems *containers.SortedMap[btrfsprim.Key, btrfsutil.ItemPtr]
+	if extentTree != nil {
+		extentItems = extentTree.RebuiltAcquireItems(ctx)
+		defer extentTree.RebuiltReleaseItems()
+	}
+
+	orderedQueue := make([]itemToVisit, 0, len(unorderedQueue))
+	for itemKey := range unorderedQueue {
+		if itemKey.TreeID == btrfsprim.EXTENT_TREE_OBJECTID && (itemKey.ItemType == btrfsprim.EXTENT_ITEM_KEY ||
+			itemKey.ItemType == btrfsprim.METADATA_ITEM_KEY ||
+			itemKey.ItemType == btrfsprim.EXTENT_DATA_REF_KEY) {
+			ptr, _ := extentItems.Load(itemKey.Key)
+			for i, treeID := range o.scan.DataBackrefs[ptr] {
+				orderedQueue = append(orderedQueue, itemToVisit{
+					keyAndTree: itemKey,
+					SortTreeID: treeID,
+					RefNum:     i,
+				})
+			}
+		} else {
+			orderedQueue = append(orderedQueue, itemToVisit{
+				keyAndTree: itemKey,
+				SortTreeID: itemKey.TreeID,
+			})
+		}
+	}
+
+	dlog.Infof(ctx, "... sorting %d queue entries...", len(orderedQueue))
+	sort.Slice(orderedQueue, func(i, j int) bool {
+		return orderedQueue[i].Compare(orderedQueue[j]) < 0
+	})
+
+	dlog.Info(ctx, "... done")
+
+	return orderedQueue
+}
+
 type processItemStats struct {
 	textui.Portion[int]
 	NumAugments     int
@@ -241,11 +388,8 @@ func (s processItemStats) String() string {
 func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.substep", "process-items")
 
-	queue := maps.Keys(o.settledItemQueue)
+	queue := o.sortSettledItemQueue(ctx, o.settledItemQueue)
 	o.settledItemQueue = make(containers.Set[keyAndTree])
-	sort.Slice(queue, func(i, j int) bool {
-		return queue[i].Compare(queue[j]) < 0
-	})
 
 	var progress processItemStats
 	progress.D = len(queue)
@@ -254,23 +398,46 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 	defer progressWriter.Done()
 
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.substep.progress", &progress)
+	progressWriter.Set(progress)
 
 	type keyAndBody struct {
-		keyAndTree
+		itemToVisit
 		Body btrfsitem.Item
 	}
 	itemChan := make(chan keyAndBody, textui.Tunable(300)) // average items-per-node≈100; let's have a buffer of ~3 nodes
 	grp := dgroup.NewGroup(ctx, dgroup.GroupConfig{})
 	grp.Go("io", func(ctx context.Context) error {
 		defer close(itemChan)
+	nextKey:
 		for _, key := range queue {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", key)
 			item := keyAndBody{
-				keyAndTree: key,
-				Body:       o.rebuilt.RebuiltTree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+				itemToVisit: key,
+				Body:        o.rebuilt.RebuiltTree(ctx, key.TreeID).ReadItem(ctx, key.Key),
+			}
+			if key.TreeID == btrfsprim.EXTENT_TREE_OBJECTID &&
+				(key.ItemType == btrfsprim.EXTENT_ITEM_KEY || key.ItemType == btrfsprim.METADATA_ITEM_KEY) {
+				switch itemBody := item.Body.(type) {
+				case *btrfsitem.Extent:
+					item.Body = itemBody.Refs[key.RefNum].Body
+					if item.Body == nil {
+						continue nextKey
+					}
+				case *btrfsitem.Metadata:
+					item.Body = itemBody.Refs[key.RefNum].Body
+					if item.Body == nil {
+						continue nextKey
+					}
+				case *btrfsitem.Error:
+					// do nothing
+				default:
+					// This is a panic because the item decoder should not emit a new
+					// type to ref.Body without this code also being updated.
+					panic(fmt.Errorf("should not happen: unexpected type %T for %v", itemBody, key.ItemType))
+				}
 			}
 			select {
 			case itemChan <- item:

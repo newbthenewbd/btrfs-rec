@@ -37,24 +37,24 @@ type RebuiltTree struct {
 	// derived from tree.Roots, which is why it's OK if they get
 	// evicted.
 	//
-	//  1. tree.acquireLeafToRoots()           = tree.forrest.leafs.Acquire(tree.ID)
+	//  1. tree.acquireNodeIndex()             = tree.forrest.nodeIndex.Acquire(tree.ID)
 	//  2. tree.RebuiltAcquireItems()          = tree.forrest.incItems.Acquire(tree.ID)
 	//  3. tree.RebuiltAcquirePotentialItems() = tree.forrest.excItems.Acquire(tree.ID)
 }
 
 type rebuiltSharedCache struct {
-	leafs    containers.Cache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]]
-	incItems containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
-	excItems containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
+	nodeIndex containers.Cache[btrfsprim.ObjID, rebuiltNodeIndex]
+	incItems  containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
+	excItems  containers.Cache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]]
 }
 
 func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 	var ret rebuiltSharedCache
-	ret.leafs = containers.NewARCache[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
+	ret.nodeIndex = containers.NewARCache[btrfsprim.ObjID, rebuiltNodeIndex](
 		textui.Tunable(8),
-		containers.SourceFunc[btrfsprim.ObjID, map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]](
-			func(ctx context.Context, treeID btrfsprim.ObjID, leafs *map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr]) {
-				*leafs = forrest.trees[treeID].uncachedLeafToRoots(ctx)
+		containers.SourceFunc[btrfsprim.ObjID, rebuiltNodeIndex](
+			func(ctx context.Context, treeID btrfsprim.ObjID, index *rebuiltNodeIndex) {
+				*index = forrest.trees[treeID].uncachedNodeIndex(ctx)
 			}))
 	ret.incItems = containers.NewARCache[btrfsprim.ObjID, containers.SortedMap[btrfsprim.Key, ItemPtr]](
 		textui.Tunable(8),
@@ -71,52 +71,88 @@ func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 	return ret
 }
 
-// evictable member 1: .acquireLeafToRoots() ///////////////////////////////////////////////////////////////////////////
+// evictable member 1: .acquireNodeIndex() /////////////////////////////////////////////////////////////////////////////
 
-// acquireLeafToRoots returns all leafs (lvl=0) in the filesystem that
-// pass .isOwnerOK, whether or not they're in the tree.
-func (tree *RebuiltTree) acquireLeafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
-	return *tree.forrest.leafs.Acquire(ctx, tree.ID)
+type rebuiltRoots = map[btrfsvol.LogicalAddr]rebuiltPathInfo
+
+type rebuiltPathInfo struct {
+	loMaxItem btrfsprim.Key
+	hiMaxItem btrfsprim.Key
 }
 
-func (tree *RebuiltTree) releaseLeafToRoots() {
-	tree.forrest.leafs.Release(tree.ID)
+type rebuiltNodeIndex struct {
+	// leafToRoots contains all leafs (lvl=0) in the filesystem
+	// that pass .isOwnerOK, whether or not they're in the tree.
+	leafToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
 }
 
-func (tree *RebuiltTree) uncachedLeafToRoots(ctx context.Context) map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr] {
+func (tree *RebuiltTree) acquireNodeIndex(ctx context.Context) rebuiltNodeIndex {
+	return *tree.forrest.nodeIndex.Acquire(ctx, tree.ID)
+}
+
+func (tree *RebuiltTree) releaseNodeIndex() {
+	tree.forrest.nodeIndex.Release(tree.ID)
+}
+
+func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-nodes", fmt.Sprintf("tree=%v", tree.ID))
 
-	nodeToRoots := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
+	indexer := &rebuiltNodeIndexer{
+		tree:     tree,
+		idToTree: make(map[btrfsprim.ObjID]*RebuiltTree),
 
-	var stats textui.Portion[int]
-	stats.D = len(tree.forrest.graph.Nodes)
-	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	progress := func() {
-		stats.N = len(nodeToRoots)
-		progressWriter.Set(stats)
+		nodeToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
+	}
+	for ancestor := tree; ancestor != nil; ancestor = ancestor.Parent {
+		indexer.idToTree[ancestor.ID] = ancestor
 	}
 
-	progress()
-	for _, node := range maps.SortedKeys(tree.forrest.graph.Nodes) {
-		tree.indexNode(ctx, node, nodeToRoots, progress, nil)
+	ret := rebuiltNodeIndex{
+		leafToRoots: make(map[btrfsvol.LogicalAddr]rebuiltRoots),
 	}
-	progressWriter.Done()
-
-	ret := make(map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr])
-	for node, roots := range nodeToRoots {
+	for node, roots := range indexer.run(ctx) {
 		if tree.forrest.graph.Nodes[node].Level == 0 && len(roots) > 0 {
-			ret[node] = roots
+			ret.leafToRoots[node] = roots
 		}
 	}
 	return ret
 }
 
-func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAddr, index map[btrfsvol.LogicalAddr]containers.Set[btrfsvol.LogicalAddr], progress func(), stack []btrfsvol.LogicalAddr) {
-	defer progress()
+type rebuiltNodeIndexer struct {
+	// Input
+	tree     *RebuiltTree
+	idToTree map[btrfsprim.ObjID]*RebuiltTree
+
+	// Output
+	nodeToRoots map[btrfsvol.LogicalAddr]rebuiltRoots
+
+	// State
+	stats          textui.Portion[int]
+	progressWriter *textui.Progress[textui.Portion[int]]
+}
+
+func (indexer *rebuiltNodeIndexer) run(ctx context.Context) map[btrfsvol.LogicalAddr]rebuiltRoots {
+	indexer.stats.D = len(indexer.tree.forrest.graph.Nodes)
+	indexer.progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	indexer.updateProgress()
+	for _, node := range maps.SortedKeys(indexer.tree.forrest.graph.Nodes) {
+		indexer.node(ctx, node, nil)
+	}
+	indexer.progressWriter.Done()
+	return indexer.nodeToRoots
+}
+
+func (indexer *rebuiltNodeIndexer) updateProgress() {
+	indexer.stats.N = len(indexer.nodeToRoots)
+	indexer.progressWriter.Set(indexer.stats)
+}
+
+func (indexer *rebuiltNodeIndexer) node(ctx context.Context, node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr) {
+	defer indexer.updateProgress()
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if maps.HasKey(index, node) {
+	if maps.HasKey(indexer.nodeToRoots, node) {
 		return
 	}
 	if slices.Contains(node, stack) {
@@ -124,35 +160,86 @@ func (tree *RebuiltTree) indexNode(ctx context.Context, node btrfsvol.LogicalAdd
 		// have already checked for loops.
 		panic("loop")
 	}
-	if !tree.isOwnerOK(tree.forrest.graph.Nodes[node].Owner, tree.forrest.graph.Nodes[node].Generation) {
-		index[node] = nil
+	nodeInfo := indexer.tree.forrest.graph.Nodes[node]
+	if !indexer.tree.isOwnerOK(nodeInfo.Owner, nodeInfo.Generation) {
+		indexer.nodeToRoots[node] = nil
 		return
 	}
 
-	// tree.leafToRoots
 	stack = append(stack, node)
-	var roots containers.Set[btrfsvol.LogicalAddr]
-	for _, kp := range tree.forrest.graph.EdgesTo[node] {
-		if !tree.isOwnerOK(tree.forrest.graph.Nodes[kp.FromNode].Owner, tree.forrest.graph.Nodes[kp.FromNode].Generation) {
-			continue
+	var roots rebuiltRoots
+nextKP:
+	for _, kp := range indexer.tree.forrest.graph.EdgesTo[node] {
+		// The cheap expectations to check.
+		if kp.ToLevel != nodeInfo.Level ||
+			kp.ToKey.Compare(nodeInfo.MinItem(indexer.tree.forrest.graph)) > 0 ||
+			kp.ToGeneration != nodeInfo.Generation {
+			continue nextKP
 		}
-		tree.indexNode(ctx, kp.FromNode, index, progress, stack)
-		if len(index[kp.FromNode]) > 0 {
-			if roots == nil {
-				roots = make(containers.Set[btrfsvol.LogicalAddr])
+		// The MaxItem expectation is only cheap to check if
+		// the KP isn't in the last slot.  If it isn't in the
+		// last slot, we'll wait to check it until after we've
+		// indexed kp.FromNode.
+		if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+			kpMaxItem := indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+			if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+				continue nextKP
 			}
-			roots.InsertFrom(index[kp.FromNode])
+		}
+		// isOwnerOK is O(n) on the number of parents, so
+		// avoid doing it if possible.
+		if fromTree := indexer.idToTree[kp.FromTree]; fromTree == nil || !fromTree.isOwnerOK(nodeInfo.Owner, nodeInfo.Generation) {
+			continue nextKP
+		}
+
+		indexer.node(ctx, kp.FromNode, stack)
+		if len(indexer.nodeToRoots[kp.FromNode]) > 0 {
+			for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
+				if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+					rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+					rootInfo.hiMaxItem = rootInfo.loMaxItem
+				} else {
+					// OK, now check the MaxItem expectation.
+					//
+					// We'll use the hiMaxItem, because it only needs to be
+					// valid in *one* of the paths to this node.
+					kpMaxItem := rootInfo.hiMaxItem
+					if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+						continue nextKP
+					}
+				}
+				oldRootInfo, ok := roots[root]
+				if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
+					rootInfo.loMaxItem = oldRootInfo.loMaxItem
+				}
+				if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
+					rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
+				}
+				if roots == nil {
+					roots = make(rebuiltRoots)
+				}
+				roots[root] = rootInfo
+			}
 		}
 	}
 	if roots == nil {
-		roots = containers.NewSet[btrfsvol.LogicalAddr](node)
+		roots = rebuiltRoots{
+			node: rebuiltPathInfo{
+				loMaxItem: btrfsprim.MaxKey,
+				hiMaxItem: btrfsprim.MaxKey,
+			},
+		}
 	}
-	index[node] = roots
+	indexer.nodeToRoots[node] = roots
 }
 
 // isOwnerOK returns whether it is permissible for a node with
 // .Head.Owner=owner and .Head.Generation=gen to be in this tree.
 func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generation) bool {
+	// It is important that this not perform allocations, even in
+	// the "false"/failure case.  It will be called lots of times
+	// in a tight loop for both values that pass and values that
+	// fail.
 	for {
 		if owner == tree.ID {
 			return true
@@ -226,12 +313,12 @@ func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedM
 	defer tree.mu.RUnlock()
 
 	var leafs []btrfsvol.LogicalAddr
-	for leaf, roots := range tree.acquireLeafToRoots(ctx) {
-		if tree.Roots.HasAny(roots) == inc {
+	for leaf, roots := range tree.acquireNodeIndex(ctx).leafToRoots {
+		if maps.HaveAnyKeysInCommon(tree.Roots, roots) == inc {
 			leafs = append(leafs, leaf)
 		}
 	}
-	tree.releaseLeafToRoots()
+	tree.releaseNodeIndex()
 	slices.Sort(leafs)
 
 	var stats rebuiltItemStats
@@ -320,37 +407,45 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
-	var stats rebuiltRootStats
-	leafToRoots := tree.acquireLeafToRoots(ctx)
-	stats.Leafs.D = len(leafToRoots)
-	progressWriter := textui.NewProgress[rebuiltRootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	for i, leaf := range maps.SortedKeys(leafToRoots) {
-		stats.Leafs.N = i
-		progressWriter.Set(stats)
+	shouldFlush := tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID
 
-		if tree.Roots.HasAny(leafToRoots[leaf]) || !leafToRoots[leaf].Has(rootNode) {
-			continue
-		}
-
-		stats.AddedLeafs++
-		progressWriter.Set(stats)
-
-		for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
-			tree.forrest.cb.AddedItem(ctx, tree.ID, itemKey)
-			stats.AddedItems++
+	if extCB, ok := tree.forrest.cb.(RebuiltForrestExtendedCallbacks); ok {
+		var stats rebuiltRootStats
+		leafToRoots := tree.acquireNodeIndex(ctx).leafToRoots
+		stats.Leafs.D = len(leafToRoots)
+		progressWriter := textui.NewProgress[rebuiltRootStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+		for i, leaf := range maps.SortedKeys(leafToRoots) {
+			stats.Leafs.N = i
 			progressWriter.Set(stats)
+
+			if maps.HaveAnyKeysInCommon(tree.Roots, leafToRoots[leaf]) || !maps.HasKey(leafToRoots[leaf], rootNode) {
+				continue
+			}
+
+			stats.AddedLeafs++
+			progressWriter.Set(stats)
+
+			for _, itemKey := range tree.forrest.graph.Nodes[leaf].Items {
+				extCB.AddedItem(ctx, tree.ID, itemKey)
+				stats.AddedItems++
+				progressWriter.Set(stats)
+			}
+		}
+		stats.Leafs.N = len(leafToRoots)
+		tree.releaseNodeIndex()
+		progressWriter.Set(stats)
+		progressWriter.Done()
+
+		if stats.AddedItems == 0 {
+			shouldFlush = false
 		}
 	}
-	stats.Leafs.N = len(leafToRoots)
-	tree.releaseLeafToRoots()
-	progressWriter.Set(stats)
-	progressWriter.Done()
 
 	tree.Roots.Insert(rootNode)
 	tree.forrest.incItems.Delete(tree.ID) // force re-gen
 	tree.forrest.excItems.Delete(tree.ID) // force re-gen
 
-	if (tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID) && stats.AddedItems > 0 {
+	if shouldFlush {
 		tree.forrest.flushNegativeCache(ctx)
 	}
 	tree.forrest.cb.AddedRoot(ctx, tree.ID, rootNode)
@@ -391,14 +486,14 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
-	for root := range tree.acquireLeafToRoots(ctx)[leaf] {
+	for root := range tree.acquireNodeIndex(ctx).leafToRoots[leaf] {
 		if tree.Roots.Has(root) {
 			panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): tree contains root=%v but not leaf",
 				tree.ID, leaf, root))
 		}
 		ret.Insert(root)
 	}
-	tree.releaseLeafToRoots()
+	tree.releaseNodeIndex()
 	if len(ret) == 0 {
 		return nil
 	}

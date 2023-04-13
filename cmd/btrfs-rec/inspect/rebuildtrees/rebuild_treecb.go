@@ -11,13 +11,16 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 )
 
 type forrestCallbacks struct {
 	*rebuilder
 }
 
-// AddedItem implements btrfsutil.RebuiltForrestCallbacks.
+var _ btrfsutil.RebuiltForrestExtendedCallbacks = forrestCallbacks{}
+
+// AddedItem implements btrfsutil.RebuiltForrestExtendedCallbacks.
 func (o forrestCallbacks) AddedItem(_ context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
 	o.addedItemQueue.Insert(keyAndTree{
 		TreeID: tree,
