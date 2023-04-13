@@ -46,7 +46,9 @@ func (o Metadata) Clone() Metadata {
 	ret.Refs = extentInlineRefPool.Get(len(o.Refs))
 	copy(ret.Refs, o.Refs)
 	for i := range ret.Refs {
-		ret.Refs[i].Body = o.Refs[i].Body.CloneItem()
+		if o.Refs[i].Body != nil {
+			ret.Refs[i].Body = o.Refs[i].Body.CloneItem()
+		}
 	}
 	return ret
 }

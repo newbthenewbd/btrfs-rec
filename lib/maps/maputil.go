@@ -31,13 +31,20 @@ func HasKey[K comparable, V any](m map[K]V, k K) bool {
 	return has
 }
 
-func HaveAnyKeysInCommon[K comparable, V1, V2 any](small map[K]V1, big map[K]V2) bool {
-	if len(big) < len(small) {
-		return HaveAnyKeysInCommon(big, small)
-	}
-	for v := range small {
-		if _, ok := big[v]; ok {
-			return true
+func HaveAnyKeysInCommon[K comparable, V1, V2 any](a map[K]V1, b map[K]V2) bool {
+	if len(a) < len(b) {
+		small, big := a, b
+		for v := range small {
+			if _, ok := big[v]; ok {
+				return true
+			}
+		}
+	} else {
+		small, big := b, a
+		for v := range small {
+			if _, ok := big[v]; ok {
+				return true
+			}
 		}
 	}
 	return false

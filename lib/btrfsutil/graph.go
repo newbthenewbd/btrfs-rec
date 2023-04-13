@@ -261,68 +261,75 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 }
 
 func (g Graph) FinalCheck(ctx context.Context, fs btrfstree.NodeSource) error {
-	var stats textui.Portion[int]
+	{
+		dlog.Info(ctx, "Checking keypointers for dead-ends...")
 
-	dlog.Info(ctx, "Checking keypointers for dead-ends...")
-	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	stats.D = len(g.EdgesTo)
-	progressWriter.Set(stats)
-	for laddr := range g.EdgesTo {
-		if !maps.HasKey(g.Nodes, laddr) {
-			node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
-				LAddr: containers.OptionalValue(laddr),
-			})
-			fs.ReleaseNode(node)
-			if err == nil {
-				progressWriter.Done()
-				return fmt.Errorf("node@%v exists but was not in node scan results", laddr)
-			}
-			g.BadNodes[laddr] = err
-		}
-		stats.N++
+		var stats textui.Portion[int]
+		stats.D = len(g.EdgesTo)
+		progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
 		progressWriter.Set(stats)
-	}
-	progressWriter.Done()
-	dlog.Info(ctx, "... done checking keypointers")
 
-	dlog.Info(ctx, "Checking for btree loops...")
-	stats.D = len(g.Nodes)
-	stats.N = 0
-	progressWriter = textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
-	progressWriter.Set(stats)
-	visited := make(containers.Set[btrfsvol.LogicalAddr], len(g.Nodes))
-	numLoops := 0
-	var checkNode func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr)
-	checkNode = func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr) {
-		defer func() {
-			stats.N = len(visited)
-			progressWriter.Set(stats)
-		}()
-		if visited.Has(node) {
-			return
-		}
-		if slices.Contains(node, stack) {
-			numLoops++
-			dlog.Error(ctx, "loop:")
-			for _, line := range g.renderLoop(append(stack, node)) {
-				dlog.Errorf(ctx, "    %s", line)
+		for laddr := range g.EdgesTo {
+			if !maps.HasKey(g.Nodes, laddr) {
+				node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
+					LAddr: containers.OptionalValue(laddr),
+				})
+				fs.ReleaseNode(node)
+				if err == nil {
+					progressWriter.Done()
+					return fmt.Errorf("node@%v exists but was not in node scan results", laddr)
+				}
+				g.BadNodes[laddr] = err
 			}
-			return
+			stats.N++
+			progressWriter.Set(stats)
 		}
-		stack = append(stack, node)
-		for _, kp := range g.EdgesTo[node] {
-			checkNode(kp.FromNode, stack)
+		progressWriter.Done()
+		dlog.Info(ctx, "... done checking keypointers")
+	}
+
+	{
+		dlog.Info(ctx, "Checking for btree loops...")
+
+		var stats textui.Portion[int]
+		stats.D = len(g.Nodes)
+		progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+		progressWriter.Set(stats)
+
+		visited := make(containers.Set[btrfsvol.LogicalAddr], len(g.Nodes))
+		numLoops := 0
+		var checkNode func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr)
+		checkNode = func(node btrfsvol.LogicalAddr, stack []btrfsvol.LogicalAddr) {
+			defer func() {
+				stats.N = len(visited)
+				progressWriter.Set(stats)
+			}()
+			if visited.Has(node) {
+				return
+			}
+			if slices.Contains(node, stack) {
+				numLoops++
+				dlog.Error(ctx, "loop:")
+				for _, line := range g.renderLoop(append(stack, node)) {
+					dlog.Errorf(ctx, "    %s", line)
+				}
+				return
+			}
+			stack = append(stack, node)
+			for _, kp := range g.EdgesTo[node] {
+				checkNode(kp.FromNode, stack)
+			}
+			visited.Insert(node)
 		}
-		visited.Insert(node)
+		for _, node := range maps.SortedKeys(g.Nodes) {
+			checkNode(node, nil)
+		}
+		progressWriter.Done()
+		if numLoops > 0 {
+			return fmt.Errorf("%d btree loops", numLoops)
+		}
+		dlog.Info(ctx, "... done checking for loops")
 	}
-	for _, node := range maps.SortedKeys(g.Nodes) {
-		checkNode(node, nil)
-	}
-	progressWriter.Done()
-	if numLoops > 0 {
-		return fmt.Errorf("%d btree loops", numLoops)
-	}
-	dlog.Info(ctx, "... done checking for loops")
 
 	return nil
 }
@@ -352,6 +359,7 @@ func ReadGraph(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAd
 	progressWriter.Set(stats)
 	for _, laddr := range nodeList {
 		if err := ctx.Err(); err != nil {
+			progressWriter.Done()
 			return Graph{}, err
 		}
 		node, err := fs.AcquireNode(ctx, laddr, btrfstree.NodeExpectations{
@@ -359,6 +367,7 @@ func ReadGraph(_ctx context.Context, fs *btrfs.FS, nodeList []btrfsvol.LogicalAd
 		})
 		if err != nil {
 			fs.ReleaseNode(node)
+			progressWriter.Done()
 			return Graph{}, err
 		}
 		graph.InsertNode(node)

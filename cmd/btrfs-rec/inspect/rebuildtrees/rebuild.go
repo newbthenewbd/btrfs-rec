@@ -190,12 +190,12 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 	var progress settleItemStats
 	progress.D = len(queue)
 	progressWriter := textui.NewProgress[settleItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter.Set(progress)
+	defer progressWriter.Done()
+
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.substep.progress", &progress)
 
-	for i, key := range queue {
-		progress.N = i
-		progressWriter.Set(progress)
-
+	for _, key := range queue {
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.settle.item", key)
 		tree := o.rebuilt.RebuiltTree(ctx, key.TreeID)
 		incPtr, ok := tree.RebuiltAcquireItems(ctx).Load(key.Key)
@@ -213,15 +213,14 @@ func (o *rebuilder) processAddedItemQueue(ctx context.Context) error {
 			o.wantAugment(ctx, wantKey, tree.RebuiltLeafToRoots(ctx, excPtr.Node))
 			progress.NumAugments = o.numAugments
 			progress.NumAugmentTrees = len(o.augmentQueue)
-			progressWriter.Set(progress)
 		} else if !btrfscheck.HandleItemWouldBeNoOp(key.ItemType) {
 			o.settledItemQueue.Insert(key)
 		}
+
+		progress.N++
+		progressWriter.Set(progress)
 	}
 
-	progress.N = len(queue)
-	progressWriter.Set(progress)
-	progressWriter.Done()
 	return nil
 }
 
@@ -251,6 +250,9 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 	var progress processItemStats
 	progress.D = len(queue)
 	progressWriter := textui.NewProgress[processItemStats](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter.Set(progress)
+	defer progressWriter.Done()
+
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.substep.progress", &progress)
 
 	type keyAndBody struct {
@@ -278,7 +280,6 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 		return nil
 	})
 	grp.Go("cpu", func(ctx context.Context) error {
-		defer progressWriter.Done()
 		o.curKey.Key.OK = true
 		for item := range itemChan {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", item.keyAndTree)
@@ -323,24 +324,23 @@ func (o *rebuilder) processAugmentQueue(ctx context.Context) error {
 	runtime.GC()
 
 	progressWriter := textui.NewProgress[textui.Portion[int]](ctx, dlog.LogLevelInfo, textui.Tunable(1*time.Second))
+	progressWriter.Set(progress)
+	defer progressWriter.Done()
+
 	ctx = dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.substep.progress", &progress)
 	for _, treeID := range maps.SortedKeys(resolvedAugments) {
 		ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.augment.tree", treeID)
 		for _, nodeAddr := range maps.SortedKeys(resolvedAugments[treeID]) {
 			if err := ctx.Err(); err != nil {
-				progressWriter.Set(progress)
-				progressWriter.Done()
 				return err
 			}
-			progressWriter.Set(progress)
 			// This will call o.AddedItem as nescessary, which
 			// inserts to o.addedItemQueue.
 			o.rebuilt.RebuiltTree(ctx, treeID).RebuiltAddRoot(ctx, nodeAddr)
 			progress.N++
+			progressWriter.Set(progress)
 		}
 	}
-	progressWriter.Set(progress)
-	progressWriter.Done()
 
 	return nil
 }

@@ -103,6 +103,7 @@ func (rs *runeScanner) UnreadRune() error {
 
 // ReadRune implements io.Closer.
 func (rs *runeScanner) Close() error {
+	rs.progressWriter.Set(rs.progress)
 	rs.progressWriter.Done()
 	return rs.closer.Close()
 }
