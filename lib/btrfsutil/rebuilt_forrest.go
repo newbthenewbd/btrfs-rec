@@ -6,13 +6,16 @@ package btrfsutil
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/datawire/dlib/dlog"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/maps"
 	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
@@ -98,42 +101,57 @@ func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallba
 }
 
 // RebuiltTree returns a given tree, initializing it if nescessary.
-// If it is unable to initialize the tree, then nil is returned, and
-// nothing is done to the forrest.
 //
 // The tree is initialized with the normal root node of the tree.
 //
 // This is identical to .ForrestLookup(), but returns a concrete type
 // rather than an interface.
-func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) *RebuiltTree {
+func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjID) (*RebuiltTree, error) {
 	ctx = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
-	if !ts.addTree(ctx, treeID, nil) {
-		return nil
+	ts.rebuildTree(ctx, treeID, nil)
+	tree := ts.trees[treeID]
+	if tree.ancestorLoop && tree.rootErr == nil {
+		var loop []btrfsprim.ObjID
+		for ancestor := tree; true; ancestor = ancestor.Parent {
+			loop = append(loop, ancestor.ID)
+			if slices.Contains(ancestor.ID, loop[:len(loop)-1]) {
+				break
+			}
+		}
+		tree.rootErr = fmt.Errorf("loop detected: %v", loop)
 	}
-	return ts.trees[treeID]
+	if tree.rootErr != nil {
+		return nil, tree.rootErr
+	}
+	return tree, nil
 }
 
-func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, stack []btrfsprim.ObjID) (ok bool) {
-	if tree, ok := ts.trees[treeID]; ok {
-		return tree != nil
-	}
-	defer func() {
-		if !ok {
-			// Store a negative cache of this.  tree.RebuiltAddRoot() for the ROOT or
-			// UUID trees will call .flushNegativeCache().
-			ts.trees[treeID] = nil
+func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjID, stack []btrfsprim.ObjID) {
+	loop := false
+	if maps.HasKey(ts.trees, treeID) {
+		loop = slices.Contains(treeID, stack)
+		if !loop {
+			return
 		}
-	}()
-	stack = append(stack, treeID)
-	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-forrest.add-tree", stack)
-	dlog.Info(ctx, "adding tree...")
-	if slices.Contains(treeID, stack[:len(stack)-1]) {
-		dlog.Errorf(ctx, "failed to add tree: loop detected: %v", stack)
-		return false
 	}
 
-	tree := &RebuiltTree{
+	stack = append(stack, treeID)
+	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-forrest.add-tree", stack)
+	defer func() {
+		if ts.trees[treeID].rootErr != nil {
+			dlog.Errorf(ctx, "failed to add tree: %v", ts.trees[treeID].rootErr)
+		}
+	}()
+	dlog.Info(ctx, "adding tree...")
+
+	if loop {
+		ts.trees[treeID].ancestorLoop = true
+		dlog.Error(ctx, "loop detected")
+		return
+	}
+
+	ts.trees[treeID] = &RebuiltTree{
 		ID:      treeID,
 		Roots:   make(containers.Set[btrfsvol.LogicalAddr]),
 		forrest: ts,
@@ -153,48 +171,43 @@ func (ts *RebuiltForrest) addTree(ctx context.Context, treeID btrfsprim.ObjID, s
 		sb, _ := ts.inner.Superblock()
 		root = sb.BlockGroupRoot
 	default:
-		if !ts.addTree(ctx, btrfsprim.ROOT_TREE_OBJECTID, stack) {
-			dlog.Error(ctx, "failed to add tree: add ROOT_TREE")
-			return false
-		}
 		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
 		if !ok {
-			dlog.Error(ctx, "failed to add tree: lookup ROOT_ITEM")
-			return false
+			ts.trees[treeID].rootErr = btrfstree.ErrNoTree
+			return
 		}
 		root = rootItem.ByteNr
-		tree.UUID = rootItem.UUID
+		ts.trees[treeID].UUID = rootItem.UUID
 		if rootItem.ParentUUID != (btrfsprim.UUID{}) {
-			tree.ParentGen = rootOff
-			if !ts.addTree(ctx, btrfsprim.UUID_TREE_OBJECTID, stack) {
-				return false
-			}
+			ts.trees[treeID].ParentGen = rootOff
 			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
-				dlog.Errorf(ctx, "failed to add tree: lookup UUID %v", rootItem.ParentUUID)
-				return false
+				ts.trees[treeID].rootErr = fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+				return
 			}
-			if !ts.addTree(ctx, parentID, stack) {
-				dlog.Errorf(ctx, "failed to add tree: add parent tree %v", parentID)
-				return false
+			ts.rebuildTree(ctx, parentID, stack)
+			ts.trees[treeID].Parent = ts.trees[parentID]
+			switch {
+			case ts.trees[treeID].Parent.ancestorLoop:
+				ts.trees[treeID].ancestorLoop = true
+				return
+			case ts.trees[treeID].Parent.rootErr != nil:
+				ts.trees[treeID].rootErr = fmt.Errorf("failed to rebuild parent tree: %v: %w", parentID, ts.trees[treeID].Parent.rootErr)
+				return
 			}
-			tree.Parent = ts.trees[parentID]
 		}
 	}
 
-	ts.trees[treeID] = tree
 	if root != 0 {
-		tree.RebuiltAddRoot(ctx, root)
+		ts.trees[treeID].RebuiltAddRoot(ctx, root)
 	}
-
-	return true
 }
 
 func (ts *RebuiltForrest) flushNegativeCache(ctx context.Context) {
 	_ = ts.treesMu.Lock(ctx)
 	defer ts.treesMu.Unlock()
 	for treeID, tree := range ts.trees {
-		if tree == nil {
+		if tree.rootErr != nil || tree.ancestorLoop {
 			delete(ts.trees, treeID)
 		}
 	}
@@ -210,9 +223,46 @@ func (ts *RebuiltForrest) RebuiltListRoots(ctx context.Context) map[btrfsprim.Ob
 	defer ts.treesMu.Unlock()
 	ret := make(map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr])
 	for treeID, tree := range ts.trees {
-		if tree != nil && len(tree.Roots) > 0 {
+		if len(tree.Roots) > 0 {
 			ret[treeID] = tree.Roots
 		}
 	}
 	return ret
+}
+
+// btrfs.ReadableFS interface //////////////////////////////////////////////////////////////////////////////////////////
+
+var _ btrfs.ReadableFS = (*RebuiltForrest)(nil)
+
+// Name implements btrfs.ReadableFS.
+func (ts *RebuiltForrest) Name() string {
+	return ts.inner.Name()
+}
+
+// ForrestLookup implements btrfstree.Forrest (and btrfs.ReadableFS).
+//
+// It is identical to .RebuiltTree(), but returns an interface rather
+// than a concrete type.
+func (ts *RebuiltForrest) ForrestLookup(ctx context.Context, treeID btrfsprim.ObjID) (btrfstree.Tree, error) {
+	return ts.RebuiltTree(ctx, treeID)
+}
+
+// Superblock implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) Superblock() (*btrfstree.Superblock, error) {
+	return ts.inner.Superblock()
+}
+
+// AcquireNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp btrfstree.NodeExpectations) (*btrfstree.Node, error) {
+	return ts.inner.AcquireNode(ctx, addr, exp)
+}
+
+// ReleaseNode implements btrfstree.NodeSource (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) ReleaseNode(node *btrfstree.Node) {
+	ts.inner.ReleaseNode(node)
+}
+
+// ReadAt implements diskio.ReaderAt[btrfsvol.LogicalAddr] (and btrfs.ReadableFS).
+func (ts *RebuiltForrest) ReadAt(p []byte, off btrfsvol.LogicalAddr) (int, error) {
+	return ts.inner.ReadAt(p, off)
 }

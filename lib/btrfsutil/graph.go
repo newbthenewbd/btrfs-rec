@@ -24,12 +24,17 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
+type KeyAndSize struct {
+	Key  btrfsprim.Key
+	Size uint32
+}
+
 type GraphNode struct {
 	Addr       btrfsvol.LogicalAddr
 	Level      uint8
 	Generation btrfsprim.Generation
 	Owner      btrfsprim.ObjID
-	Items      []btrfsprim.Key
+	Items      []KeyAndSize
 }
 
 func (n GraphNode) NumItems(g Graph) int {
@@ -47,7 +52,7 @@ func (n GraphNode) MinItem(g Graph) btrfsprim.Key {
 	}
 	switch n.Level {
 	case 0:
-		return n.Items[0]
+		return n.Items[0].Key
 	default:
 		return g.EdgesFrom[n.Addr][0].ToKey
 	}
@@ -59,7 +64,7 @@ func (n GraphNode) MaxItem(g Graph) btrfsprim.Key {
 	}
 	switch n.Level {
 	case 0:
-		return n.Items[len(n.Items)-1]
+		return n.Items[len(n.Items)-1].Key
 	default:
 		return g.EdgesFrom[n.Addr][len(g.EdgesFrom[n.Addr])-1].ToKey
 	}
@@ -225,11 +230,13 @@ func (g Graph) InsertNode(node *btrfstree.Node) {
 			}
 		}
 		kps := make([]GraphEdge, 0, cnt)
-		keys := make([]btrfsprim.Key, len(node.BodyLeaf))
-		nodeData.Items = keys
+		nodeData.Items = make([]KeyAndSize, len(node.BodyLeaf))
 		g.Nodes[node.Head.Addr] = nodeData
 		for i, item := range node.BodyLeaf {
-			keys[i] = item.Key
+			nodeData.Items[i] = KeyAndSize{
+				Key:  item.Key,
+				Size: item.BodySize,
+			}
 			if itemBody, ok := item.Body.(*btrfsitem.Root); ok {
 				kps = append(kps, GraphEdge{
 					FromRoot:     node.Head.Addr,

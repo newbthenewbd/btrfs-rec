@@ -49,9 +49,10 @@ var globalFlags struct {
 	logLevel textui.LogLevelFlag
 	pvs      []string
 
-	mappings string
-	nodeList string
-	rebuild  bool
+	mappings  string
+	nodeList  string
+	rebuildV1 bool
+	rebuildV2 bool
 
 	stopProfiling profile.StopFunc
 
@@ -101,8 +102,11 @@ func main() {
 		"load node list (output of 'btrfs-recs inspect [rebuild-mappings] list-nodes') from external JSON file `nodes.json`")
 	noError(argparser.MarkPersistentFlagFilename("node-list"))
 
-	argparser.PersistentFlags().BoolVar(&globalFlags.rebuild, "rebuild", false,
-		"attempt to rebuild broken btrees when reading")
+	argparser.PersistentFlags().BoolVar(&globalFlags.rebuildV1, "rebuild", false,
+		"attempt to rebuild broken btrees when reading (v1)")
+
+	argparser.PersistentFlags().BoolVar(&globalFlags.rebuildV2, "rebuild-v2", false,
+		"attempt to rebuild broken btrees when reading (v2)")
 
 	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
@@ -210,15 +214,24 @@ func runWithRawFSAndNodeList(runE func(*btrfs.FS, []btrfsvol.LogicalAddr, *cobra
 func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	inner := func(fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, args []string) error {
 		var rfs btrfs.ReadableFS = fs
-		if globalFlags.rebuild {
+		if globalFlags.rebuildV1 {
 			rfs = btrfsutil.NewOldRebuiltForrest(fs)
+		} else if globalFlags.rebuildV2 {
+			ctx := cmd.Context()
+
+			graph, err := btrfsutil.ReadGraph(ctx, fs, nodeList)
+			if err != nil {
+				return err
+			}
+
+			rfs = btrfsutil.NewRebuiltForrest(fs, graph, nil)
 		}
 
 		return runE(rfs, nodeList, cmd, args)
 	}
 
 	return func(cmd *cobra.Command, args []string) error {
-		if wantNodeList {
+		if wantNodeList || globalFlags.rebuildV2 {
 			return runWithRawFSAndNodeList(inner)(cmd, args)
 		}
 		return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {

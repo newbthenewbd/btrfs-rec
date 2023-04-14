@@ -80,7 +80,18 @@ run-btrfs-rec $gendir/4.ls-files.txt \
     --mappings=$gendir/2.mappings.json \
     --rebuild \
     inspect ls-files
+run-btrfs-rec $gendir/4.ls-files.v2.txt \
+    --mappings=$gendir/2.mappings.json \
+    --node-list=$gendir/0.nodes.json \
+    --rebuild-v2 \
+    inspect ls-files
+
 run-btrfs-rec $gendir/4.ls-trees.txt \
     --mappings=$gendir/2.mappings.json \
     --node-list=$gendir/0.nodes.json \
+    inspect ls-trees
+run-btrfs-rec $gendir/4.ls-trees.v2.txt \
+    --mappings=$gendir/2.mappings.json \
+    --node-list=$gendir/0.nodes.json \
+    --rebuild-v2 \
     inspect ls-trees
