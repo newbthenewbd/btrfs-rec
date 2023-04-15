@@ -12,6 +12,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 // Path is a path from the superblock or a ROOT_ITEM to a node or
@@ -137,6 +138,7 @@ func checkOwner(
 	ctx context.Context, forrest Forrest, treeID btrfsprim.ObjID,
 	ownerToCheck btrfsprim.ObjID, genToCheck btrfsprim.Generation,
 ) error {
+	var stack []btrfsprim.ObjID
 	for {
 		if ownerToCheck == treeID {
 			return nil
@@ -152,6 +154,12 @@ func checkOwner(
 		if err != nil {
 			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
 				ownerToCheck, genToCheck, err)
+		}
+
+		stack = append(stack, treeID)
+		if slices.Contains(parentID, stack) {
+			// Don't get stuck in an infinite loop if there's a cycle.
+			parentID = 0
 		}
 
 		if parentID == 0 && parentGen == 0 {
