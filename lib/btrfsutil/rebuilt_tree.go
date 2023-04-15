@@ -216,33 +216,31 @@ nextKP:
 		}
 
 		indexer.node(ctx, kp.FromNode, stack)
-		if len(indexer.nodeToRoots[kp.FromNode]) > 0 {
-			for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
-				if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
-					rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
-					rootInfo.hiMaxItem = rootInfo.loMaxItem
-				} else {
-					// OK, now check the MaxItem expectation.
-					//
-					// We'll use the hiMaxItem, because it only needs to be
-					// valid in *one* of the paths to this node.
-					kpMaxItem := rootInfo.hiMaxItem
-					if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
-						continue nextKP
-					}
+		for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
+			if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+				rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+				rootInfo.hiMaxItem = rootInfo.loMaxItem
+			} else {
+				// OK, now check the MaxItem expectation.
+				//
+				// We'll use the hiMaxItem, because it only needs to be
+				// valid in *one* of the paths to this node.
+				kpMaxItem := rootInfo.hiMaxItem
+				if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+					continue nextKP
 				}
-				oldRootInfo, ok := roots[root]
-				if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
-					rootInfo.loMaxItem = oldRootInfo.loMaxItem
-				}
-				if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
-					rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
-				}
-				if roots == nil {
-					roots = make(rebuiltRoots)
-				}
-				roots[root] = rootInfo
 			}
+			oldRootInfo, ok := roots[root]
+			if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
+				rootInfo.loMaxItem = oldRootInfo.loMaxItem
+			}
+			if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
+				rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
+			}
+			if roots == nil {
+				roots = make(rebuiltRoots)
+			}
+			roots[root] = rootInfo
 		}
 	}
 	if roots == nil {
