@@ -660,7 +660,7 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, true)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, false)
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.rebuiltWalker.walk called with non-node path: %v",
 			path))
@@ -685,6 +685,10 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 			_ = walker.cbs.BadNode(path, node, err)
 		}
 		return
+	}
+	if !maps.HaveAnyKeysInCommon(walker.tree.Roots, walker.nodeIndex.nodeToRoots[nodeAddr]) {
+		panic(fmt.Errorf("should not happen: node@%v is not in the tree, but did not error: path=%#v exp=%#v",
+			nodeAddr, path, nodeExp))
 	}
 	if walker.visited.Has(nodeAddr) {
 		return
