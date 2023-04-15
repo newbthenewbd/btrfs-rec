@@ -273,6 +273,9 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 //
 // When done with the map, call .RebuiltReleaseItems().
 func (tree *RebuiltTree) RebuiltAcquireItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	return tree.forrest.incItems.Acquire(ctx, tree.ID)
 }
 
@@ -290,6 +293,9 @@ func (tree *RebuiltTree) RebuiltReleaseItems() {
 //
 // When done with the map, call .RebuiltReleasePotentialItems().
 func (tree *RebuiltTree) RebuiltAcquirePotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	return tree.forrest.excItems.Acquire(ctx, tree.ID)
 }
 
@@ -301,12 +307,12 @@ func (tree *RebuiltTree) RebuiltReleasePotentialItems() {
 
 func (tree *RebuiltTree) uncachedIncItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, true)
+	return tree.uncachedItems(ctx, true)
 }
 
 func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, false)
+	return tree.uncachedItems(ctx, false)
 }
 
 type rebuiltItemStats struct {
@@ -320,10 +326,7 @@ func (s rebuiltItemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	tree.mu.RLock()
-	defer tree.mu.RUnlock()
-
+func (tree *RebuiltTree) uncachedItems(ctx context.Context, inc bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	var leafs []btrfsvol.LogicalAddr
 	for node, roots := range tree.acquireNodeIndex(ctx).nodeToRoots {
 		if tree.forrest.graph.Nodes[node].Level == 0 && maps.HaveAnyKeysInCommon(tree.Roots, roots) == inc {
@@ -416,6 +419,7 @@ func (s rebuiltRootStats) String() string {
 func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
+
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
@@ -485,8 +489,10 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 		panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): not a leaf",
 			tree.ID, leaf))
 	}
+
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
+
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for root := range tree.acquireNodeIndex(ctx).nodeToRoots[leaf] {
 		if tree.Roots.Has(root) {
