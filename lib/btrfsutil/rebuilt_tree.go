@@ -30,11 +30,14 @@ type RebuiltTree struct {
 
 	ID        btrfsprim.ObjID
 	UUID      btrfsprim.UUID
+	Root      btrfsvol.LogicalAddr
 	Parent    *RebuiltTree
 	ParentGen btrfsprim.Generation // offset of this tree's root item
 	forrest   *RebuiltForrest
 
 	// mutable
+
+	initRootsOnce sync.Once
 
 	mu sync.RWMutex
 
@@ -77,6 +80,14 @@ func makeRebuiltSharedCache(forrest *RebuiltForrest) rebuiltSharedCache {
 				*excItems = forrest.trees[treeID].uncachedExcItems(ctx)
 			}))
 	return ret
+}
+
+func (tree *RebuiltTree) initRoots(ctx context.Context) {
+	tree.initRootsOnce.Do(func() {
+		if tree.Root != 0 {
+			tree.RebuiltAddRoot(ctx, tree.Root)
+		}
+	})
 }
 
 // evictable member 1: .acquireNodeIndex() /////////////////////////////////////////////////////////////////////////////
@@ -205,33 +216,31 @@ nextKP:
 		}
 
 		indexer.node(ctx, kp.FromNode, stack)
-		if len(indexer.nodeToRoots[kp.FromNode]) > 0 {
-			for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
-				if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
-					rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
-					rootInfo.hiMaxItem = rootInfo.loMaxItem
-				} else {
-					// OK, now check the MaxItem expectation.
-					//
-					// We'll use the hiMaxItem, because it only needs to be
-					// valid in *one* of the paths to this node.
-					kpMaxItem := rootInfo.hiMaxItem
-					if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
-						continue nextKP
-					}
+		for root, rootInfo := range indexer.nodeToRoots[kp.FromNode] {
+			if kp.FromSlot+1 < len(indexer.tree.forrest.graph.EdgesFrom[kp.FromNode]) {
+				rootInfo.loMaxItem = indexer.tree.forrest.graph.EdgesFrom[kp.FromNode][kp.FromSlot+1].ToKey.Mm()
+				rootInfo.hiMaxItem = rootInfo.loMaxItem
+			} else {
+				// OK, now check the MaxItem expectation.
+				//
+				// We'll use the hiMaxItem, because it only needs to be
+				// valid in *one* of the paths to this node.
+				kpMaxItem := rootInfo.hiMaxItem
+				if kpMaxItem.Compare(nodeInfo.MaxItem(indexer.tree.forrest.graph)) < 0 {
+					continue nextKP
 				}
-				oldRootInfo, ok := roots[root]
-				if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
-					rootInfo.loMaxItem = oldRootInfo.loMaxItem
-				}
-				if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
-					rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
-				}
-				if roots == nil {
-					roots = make(rebuiltRoots)
-				}
-				roots[root] = rootInfo
 			}
+			oldRootInfo, ok := roots[root]
+			if ok && rootInfo.loMaxItem.Compare(oldRootInfo.loMaxItem) > 0 {
+				rootInfo.loMaxItem = oldRootInfo.loMaxItem
+			}
+			if ok && rootInfo.hiMaxItem.Compare(oldRootInfo.hiMaxItem) < 0 {
+				rootInfo.hiMaxItem = oldRootInfo.hiMaxItem
+			}
+			if roots == nil {
+				roots = make(rebuiltRoots)
+			}
+			roots[root] = rootInfo
 		}
 	}
 	if roots == nil {
@@ -273,6 +282,10 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 //
 // When done with the map, call .RebuiltReleaseItems().
 func (tree *RebuiltTree) RebuiltAcquireItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.initRoots(ctx)
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	return tree.forrest.incItems.Acquire(ctx, tree.ID)
 }
 
@@ -290,6 +303,10 @@ func (tree *RebuiltTree) RebuiltReleaseItems() {
 //
 // When done with the map, call .RebuiltReleasePotentialItems().
 func (tree *RebuiltTree) RebuiltAcquirePotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.initRoots(ctx)
+	tree.mu.RLock()
+	defer tree.mu.RUnlock()
+
 	return tree.forrest.excItems.Acquire(ctx, tree.ID)
 }
 
@@ -301,12 +318,12 @@ func (tree *RebuiltTree) RebuiltReleasePotentialItems() {
 
 func (tree *RebuiltTree) uncachedIncItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-inc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, true)
+	return tree.uncachedItems(ctx, true)
 }
 
 func (tree *RebuiltTree) uncachedExcItems(ctx context.Context) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.index-exc-items", fmt.Sprintf("tree=%v", tree.ID))
-	return tree.items(ctx, false)
+	return tree.uncachedItems(ctx, false)
 }
 
 type rebuiltItemStats struct {
@@ -320,10 +337,7 @@ func (s rebuiltItemStats) String() string {
 		s.Leafs, s.NumItems, s.NumDups)
 }
 
-func (tree *RebuiltTree) items(ctx context.Context, inc bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
-	tree.mu.RLock()
-	defer tree.mu.RUnlock()
-
+func (tree *RebuiltTree) uncachedItems(ctx context.Context, inc bool) containers.SortedMap[btrfsprim.Key, ItemPtr] {
 	var leafs []btrfsvol.LogicalAddr
 	for node, roots := range tree.acquireNodeIndex(ctx).nodeToRoots {
 		if tree.forrest.graph.Nodes[node].Level == 0 && maps.HaveAnyKeysInCommon(tree.Roots, roots) == inc {
@@ -416,6 +430,7 @@ func (s rebuiltRootStats) String() string {
 func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
+
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
@@ -478,16 +493,6 @@ func (tree *RebuiltTree) RebuiltCOWDistance(parentID btrfsprim.ObjID) (dist int,
 	}
 }
 
-// ReadItem reads an item from a tree.
-func (tree *RebuiltTree) ReadItem(ctx context.Context, key btrfsprim.Key) btrfsitem.Item {
-	ptr, ok := tree.RebuiltAcquireItems(ctx).Load(key)
-	tree.RebuiltReleaseItems()
-	if !ok {
-		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltTree.ReadItem called for not-included key: %v", key))
-	}
-	return tree.forrest.readItem(ctx, ptr).Body
-}
-
 // RebuiltLeafToRoots returns the list of potential roots (to pass to
 // .RebuiltAddRoot) that include a given leaf-node.
 func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.LogicalAddr) containers.Set[btrfsvol.LogicalAddr] {
@@ -495,8 +500,11 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 		panic(fmt.Errorf("should not happen: (tree=%v).RebuiltLeafToRoots(leaf=%v): not a leaf",
 			tree.ID, leaf))
 	}
+
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
+
 	ret := make(containers.Set[btrfsvol.LogicalAddr])
 	for root := range tree.acquireNodeIndex(ctx).nodeToRoots[leaf] {
 		if tree.Roots.Has(root) {
@@ -593,6 +601,7 @@ func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
 
 // TreeWalk implements btrfstree.Tree.
 func (tree *RebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
 
@@ -651,7 +660,7 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, true)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, false)
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.rebuiltWalker.walk called with non-node path: %v",
 			path))
@@ -676,6 +685,10 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 			_ = walker.cbs.BadNode(path, node, err)
 		}
 		return
+	}
+	if !maps.HaveAnyKeysInCommon(walker.tree.Roots, walker.nodeIndex.nodeToRoots[nodeAddr]) {
+		panic(fmt.Errorf("should not happen: node@%v is not in the tree, but did not error: path=%#v exp=%#v",
+			nodeAddr, path, nodeExp))
 	}
 	if walker.visited.Has(nodeAddr) {
 		return

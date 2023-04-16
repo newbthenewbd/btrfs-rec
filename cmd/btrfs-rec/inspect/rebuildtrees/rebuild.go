@@ -159,7 +159,7 @@ func (o *rebuilder) processTreeQueue(ctx context.Context) error {
 		}
 		// This will call o.AddedItem as nescessary, which
 		// inserts to o.addedItemQueue.
-		_, _ = o.rebuilt.RebuiltTree(ctx, o.curKey.TreeID)
+		_, _ = o.rebuilt.ForrestLookup(ctx, o.curKey.TreeID)
 	}
 
 	return nil
@@ -415,7 +415,7 @@ func (o *rebuilder) processSettledItemQueue(ctx context.Context) error {
 			ctx := dlog.WithField(ctx, "btrfs.inspect.rebuild-trees.rebuild.process.item", key)
 			item := keyAndBody{
 				itemToVisit: key,
-				Body:        discardErr(o.rebuilt.RebuiltTree(ctx, key.TreeID)).ReadItem(ctx, key.Key),
+				Body:        discardErr(discardErr(o.rebuilt.RebuiltTree(ctx, key.TreeID)).TreeLookup(ctx, key.Key)).Body,
 			}
 			if key.TreeID == btrfsprim.EXTENT_TREE_OBJECTID &&
 				(key.ItemType == btrfsprim.EXTENT_ITEM_KEY || key.ItemType == btrfsprim.METADATA_ITEM_KEY) {

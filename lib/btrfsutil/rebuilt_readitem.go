@@ -35,7 +35,7 @@ func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfstree.I
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltForrest.readItem called for negative item slot: %v", ptr.Slot))
 	}
 
-	node, err := ts.inner.AcquireNode(ctx, ptr.Node, btrfstree.NodeExpectations{
+	node, err := ts.AcquireNode(ctx, ptr.Node, btrfstree.NodeExpectations{
 		LAddr:      containers.OptionalValue(ptr.Node),
 		Level:      containers.OptionalValue(graphInfo.Level),
 		Generation: containers.OptionalValue(graphInfo.Generation),
@@ -50,13 +50,12 @@ func (ts *RebuiltForrest) readItem(ctx context.Context, ptr ItemPtr) btrfstree.I
 		MinItem: containers.OptionalValue(graphInfo.MinItem(ts.graph)),
 		MaxItem: containers.OptionalValue(graphInfo.MaxItem(ts.graph)),
 	})
-	defer ts.inner.ReleaseNode(node)
+	defer ts.ReleaseNode(node)
 	if err != nil {
 		panic(fmt.Errorf("should not happen: i/o error: %w", err))
 	}
 
 	items := node.BodyLeaf
-
 	if ptr.Slot >= len(items) {
 		panic(fmt.Errorf("should not happen: btrfsutil.RebuiltForrest.readItem called for out-of-bounds item slot: slot=%v len=%v",
 			ptr.Slot, len(items)))
