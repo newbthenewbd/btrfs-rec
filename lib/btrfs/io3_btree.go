@@ -6,7 +6,6 @@ package btrfs
 
 import (
 	"context"
-	"fmt"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
@@ -44,7 +43,7 @@ func (fs *FS) AcquireNode(ctx context.Context, addr btrfsvol.LogicalAddr, exp bt
 	if nodeEntry.node != nil {
 		if err := exp.Check(nodeEntry.node); err != nil {
 			fs.cacheNodes.Release(addr)
-			return nil, fmt.Errorf("btrfs.FS.AcquireNode: node@%v: %w", addr, err)
+			return nil, err
 		}
 	}
 
