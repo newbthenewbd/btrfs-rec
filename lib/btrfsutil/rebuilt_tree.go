@@ -506,11 +506,12 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 // RebuiltCOWDistance returns how many COW-snapshots down the 'tree'
 // is from the 'parent'.
 func (tree *RebuiltTree) RebuiltCOWDistance(parentID btrfsprim.ObjID) (dist int, ok bool) {
+	root := tree.ancestorRoot
 	for {
 		if parentID == tree.ID {
 			return dist, true
 		}
-		if tree.Parent == nil {
+		if tree.Parent == nil || tree.ID == root {
 			return 0, false
 		}
 		tree = tree.Parent
