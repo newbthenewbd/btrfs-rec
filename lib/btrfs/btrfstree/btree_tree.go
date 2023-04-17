@@ -328,7 +328,8 @@ func (tree *RawTree) TreeParentID(ctx context.Context) (btrfsprim.ObjID, btrfspr
 	}
 	parentIDItem, err := uuidTree.TreeLookup(ctx, btrfsitem.UUIDToKey(tree.ParentUUID))
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("tree %s: failed to look up UUID: %v: %w",
+			tree.ID.Format(btrfsprim.ROOT_TREE_OBJECTID), tree.ParentUUID, err)
 	}
 	switch parentIDBody := parentIDItem.Body.(type) {
 	case *btrfsitem.UUIDMap:
