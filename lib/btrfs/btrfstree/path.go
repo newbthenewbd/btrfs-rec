@@ -12,6 +12,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/slices"
 )
 
 // Path is a path from the superblock or a ROOT_ITEM to a node or
@@ -134,9 +135,10 @@ func (path Path) String() string {
 }
 
 func checkOwner(
-	ctx context.Context, forrest Forrest, treeID btrfsprim.ObjID, failOpen bool,
+	ctx context.Context, forrest Forrest, treeID btrfsprim.ObjID,
 	ownerToCheck btrfsprim.ObjID, genToCheck btrfsprim.Generation,
 ) error {
+	var stack []btrfsprim.ObjID
 	for {
 		if ownerToCheck == treeID {
 			return nil
@@ -144,20 +146,20 @@ func checkOwner(
 
 		tree, err := forrest.ForrestLookup(ctx, treeID)
 		if err != nil {
-			if failOpen {
-				return nil
-			}
 			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
 				ownerToCheck, genToCheck, err)
 		}
 
 		parentID, parentGen, err := tree.TreeParentID(ctx)
 		if err != nil {
-			if failOpen {
-				return nil
-			}
 			return fmt.Errorf("unable to determine whether owner=%v generation=%v is acceptable: %w",
 				ownerToCheck, genToCheck, err)
+		}
+
+		stack = append(stack, treeID)
+		if slices.Contains(parentID, stack) {
+			// Don't get stuck in an infinite loop if there's a cycle.
+			parentID = 0
 		}
 
 		if parentID == 0 && parentGen == 0 {
@@ -177,7 +179,7 @@ func checkOwner(
 //
 // `ok` is false if the path is empty or if this Path points to an
 // item rather than a node.
-func (path Path) NodeExpectations(ctx context.Context, failOpen bool) (_ btrfsvol.LogicalAddr, _ NodeExpectations, ok bool) {
+func (path Path) NodeExpectations(ctx context.Context) (_ btrfsvol.LogicalAddr, _ NodeExpectations, ok bool) {
 	if len(path) == 0 {
 		return 0, NodeExpectations{}, false
 	}
@@ -192,7 +194,7 @@ func (path Path) NodeExpectations(ctx context.Context, failOpen bool) (_ btrfsvo
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return checkOwner(ctx, firstElem.Forrest, lastElem.TreeID, failOpen,
+				return checkOwner(ctx, firstElem.Forrest, lastElem.TreeID,
 					owner, gen)
 			},
 			MinItem: containers.OptionalValue(btrfsprim.Key{}),
@@ -204,7 +206,7 @@ func (path Path) NodeExpectations(ctx context.Context, failOpen bool) (_ btrfsvo
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return checkOwner(ctx, firstElem.Forrest, lastElem.FromTree, failOpen,
+				return checkOwner(ctx, firstElem.Forrest, lastElem.FromTree,
 					owner, gen)
 			},
 			MinItem: containers.OptionalValue(lastElem.ToMinKey),

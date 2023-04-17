@@ -106,26 +106,60 @@ func TestRebuiltTreeCycles(t *testing.T) {
 		},
 	}
 
-	rfs := NewRebuiltForrest(nil, Graph{}, cbs)
+	t.Run("strict", func(t *testing.T) {
+		t.Parallel()
+		rfs := NewRebuiltForrest(nil, Graph{}, cbs, false)
 
-	tree, err := rfs.RebuiltTree(ctx, 306)
-	assert.EqualError(t, err, `loop detected: [306 305 304 303 305]`)
-	assert.Nil(t, tree)
+		tree, err := rfs.RebuiltTree(ctx, 306)
+		assert.EqualError(t, err, `loop detected: [306 305 304 303 305]`)
+		assert.Nil(t, tree)
 
-	assert.NotNil(t, rfs.trees[305])
-	tree, err = rfs.RebuiltTree(ctx, 305)
-	assert.EqualError(t, err, `loop detected: [305 304 303 305]`)
-	assert.Nil(t, tree)
+		assert.NotNil(t, rfs.trees[305])
+		tree, err = rfs.RebuiltTree(ctx, 305)
+		assert.EqualError(t, err, `loop detected: [305 304 303 305]`)
+		assert.Nil(t, tree)
 
-	assert.NotNil(t, rfs.trees[304])
-	tree, err = rfs.RebuiltTree(ctx, 304)
-	assert.EqualError(t, err, `loop detected: [304 303 305 304]`)
-	assert.Nil(t, tree)
+		assert.NotNil(t, rfs.trees[304])
+		tree, err = rfs.RebuiltTree(ctx, 304)
+		assert.EqualError(t, err, `loop detected: [304 303 305 304]`)
+		assert.Nil(t, tree)
 
-	assert.NotNil(t, rfs.trees[303])
-	tree, err = rfs.RebuiltTree(ctx, 303)
-	assert.EqualError(t, err, `loop detected: [303 305 304 303]`)
-	assert.Nil(t, tree)
+		assert.NotNil(t, rfs.trees[303])
+		tree, err = rfs.RebuiltTree(ctx, 303)
+		assert.EqualError(t, err, `loop detected: [303 305 304 303]`)
+		assert.Nil(t, tree)
+	})
+	t.Run("lax", func(t *testing.T) {
+		t.Parallel()
+		rfs := NewRebuiltForrest(nil, Graph{}, cbs, true)
+
+		tree, err := rfs.RebuiltTree(ctx, 306)
+		assert.NoError(t, err)
+		assert.NotNil(t, tree)
+		assert.True(t, tree.ancestorLoop)
+		assert.Equal(t, btrfsprim.ObjID(303), tree.ancestorRoot)
+
+		assert.NotNil(t, rfs.trees[305])
+		tree, err = rfs.RebuiltTree(ctx, 305)
+		assert.NoError(t, err)
+		assert.NotNil(t, tree)
+		assert.True(t, tree.ancestorLoop)
+		assert.Equal(t, btrfsprim.ObjID(303), tree.ancestorRoot)
+
+		assert.NotNil(t, rfs.trees[304])
+		tree, err = rfs.RebuiltTree(ctx, 304)
+		assert.NoError(t, err)
+		assert.NotNil(t, tree)
+		assert.True(t, tree.ancestorLoop)
+		assert.Equal(t, btrfsprim.ObjID(305), tree.ancestorRoot)
+
+		assert.NotNil(t, rfs.trees[303])
+		tree, err = rfs.RebuiltTree(ctx, 303)
+		assert.NoError(t, err)
+		assert.NotNil(t, tree)
+		assert.True(t, tree.ancestorLoop)
+		assert.Equal(t, btrfsprim.ObjID(304), tree.ancestorRoot)
+	})
 }
 
 func TestRebuiltTreeParentErr(t *testing.T) {
@@ -185,9 +219,21 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 		},
 	}
 
-	rfs := NewRebuiltForrest(nil, Graph{}, cbs)
+	t.Run("strict", func(t *testing.T) {
+		t.Parallel()
+		rfs := NewRebuiltForrest(nil, Graph{}, cbs, false)
 
-	tree, err := rfs.RebuiltTree(ctx, 305)
-	assert.EqualError(t, err, `failed to rebuild parent tree: 304: tree does not exist`)
-	assert.Nil(t, tree)
+		tree, err := rfs.RebuiltTree(ctx, 305)
+		assert.EqualError(t, err, `failed to rebuild parent tree: 304: tree does not exist`)
+		assert.Nil(t, tree)
+	})
+
+	t.Run("lax", func(t *testing.T) {
+		t.Parallel()
+		rfs := NewRebuiltForrest(nil, Graph{}, cbs, true)
+
+		tree, err := rfs.RebuiltTree(ctx, 305)
+		assert.NoError(t, err)
+		assert.NotNil(t, tree)
+	})
 }

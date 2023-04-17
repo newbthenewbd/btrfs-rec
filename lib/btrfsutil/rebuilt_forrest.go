@@ -7,6 +7,7 @@ package btrfsutil
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/datawire/dlib/dlog"
 
@@ -64,14 +65,18 @@ import (
 // NewRebuiltForrest().
 type RebuiltForrest struct {
 	// static
-	inner btrfs.ReadableFS
-	graph Graph
-	cb    RebuiltForrestCallbacks
+	inner        btrfs.ReadableFS
+	graph        Graph
+	cb           RebuiltForrestCallbacks
+	laxAncestors bool
 
 	// mutable
 
-	treesMu nestedMutex
-	trees   map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
+	treesMu         nestedMutex
+	trees           map[btrfsprim.ObjID]*RebuiltTree // must hold .treesMu to access
+	commitTreesOnce sync.Once
+	treesCommitted  bool // must hold .treesMu to access
+	treesCommitter  btrfsprim.ObjID
 
 	rebuiltSharedCache
 }
@@ -81,11 +86,23 @@ type RebuiltForrest struct {
 // The `cb` RebuiltForrestCallbacks may be nil.  If `cb` also
 // implements RebuiltForrestExtendedCallbacks, then a series of
 // .AddedItem() calls will be made before each call to .AddedRoot().
-func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallbacks) *RebuiltForrest {
+//
+// `laxAncestors` is whether or not an error instantiating an ancestor
+// tree should prevent instantiating an descendant tree (lax=false
+// prevents it, lax=true allows it).
+//
+//   - `laxAncestors` inhibits calls to
+//     RebuiltForrestExtendedCallbacks.AddedItem().
+//
+//   - `laxAncestors` causes a call to RebuiltTree.RebuiltAddRoot on
+//     the ROOT_TREE or the UUID_TREE to panic if a tree other than the
+//     ROOT_TREE or the UUID_TREE has been read from.
+func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallbacks, laxAncestors bool) *RebuiltForrest {
 	ret := &RebuiltForrest{
-		inner: fs,
-		graph: graph,
-		cb:    cb,
+		inner:        fs,
+		graph:        graph,
+		cb:           cb,
+		laxAncestors: laxAncestors,
 
 		trees: make(map[btrfsprim.ObjID]*RebuiltTree),
 	}
@@ -100,6 +117,26 @@ func NewRebuiltForrest(fs btrfs.ReadableFS, graph Graph, cb RebuiltForrestCallba
 	return ret
 }
 
+func (ts *RebuiltForrest) commitTrees(ctx context.Context, treeID btrfsprim.ObjID) {
+	if treeID == btrfsprim.ROOT_TREE_OBJECTID || treeID == btrfsprim.UUID_TREE_OBJECTID {
+		return
+	}
+	ts.commitTreesOnce.Do(func() {
+		if !ts.laxAncestors {
+			return
+		}
+		ctx = ts.treesMu.Lock(ctx)
+		if !ts.treesCommitted {
+			// Make sure ROOT_TREE and UUID_TREE are ready for reading.
+			_, _ = ts.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+			_, _ = ts.RebuiltTree(ctx, btrfsprim.UUID_TREE_OBJECTID)
+			ts.treesCommitted = true
+			ts.treesCommitter = treeID
+		}
+		ts.treesMu.Unlock()
+	})
+}
+
 // RebuiltTree returns a given tree, initializing it if nescessary.
 //
 // The tree is initialized with the normal root node of the tree.
@@ -111,7 +148,7 @@ func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjI
 	defer ts.treesMu.Unlock()
 	ts.rebuildTree(ctx, treeID, nil)
 	tree := ts.trees[treeID]
-	if tree.ancestorLoop && tree.rootErr == nil {
+	if tree.ancestorLoop && tree.rootErr == nil && tree.ancestorRoot == 0 {
 		var loop []btrfsprim.ObjID
 		for ancestor := tree; true; ancestor = ancestor.Parent {
 			loop = append(loop, ancestor.ID)
@@ -119,7 +156,11 @@ func (ts *RebuiltForrest) RebuiltTree(ctx context.Context, treeID btrfsprim.ObjI
 				break
 			}
 		}
-		tree.rootErr = fmt.Errorf("loop detected: %v", loop)
+		if ts.laxAncestors {
+			tree.ancestorRoot = loop[len(loop)-2]
+		} else {
+			tree.rootErr = fmt.Errorf("loop detected: %v", loop)
+		}
 	}
 	if tree.rootErr != nil {
 		return nil, tree.rootErr
@@ -182,7 +223,9 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 			ts.trees[treeID].ParentGen = rootOff
 			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
-				ts.trees[treeID].rootErr = fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+				if !ts.laxAncestors {
+					ts.trees[treeID].rootErr = fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+				}
 				return
 			}
 			ts.rebuildTree(ctx, parentID, stack)
@@ -191,7 +234,7 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 			case ts.trees[treeID].Parent.ancestorLoop:
 				ts.trees[treeID].ancestorLoop = true
 				return
-			case ts.trees[treeID].Parent.rootErr != nil:
+			case !ts.laxAncestors && ts.trees[treeID].Parent.rootErr != nil:
 				ts.trees[treeID].rootErr = fmt.Errorf("failed to rebuild parent tree: %v: %w", parentID, ts.trees[treeID].Parent.rootErr)
 				return
 			}

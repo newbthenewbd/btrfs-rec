@@ -190,7 +190,7 @@ func (bt *OldRebuiltForrest) rawTreeWalk(ctx context.Context, treeID btrfsprim.O
 	var curNode oldRebuiltNodeInfo
 	cbs := btrfstree.TreeWalkHandler{
 		BadNode: func(path btrfstree.Path, node *btrfstree.Node, err error) bool {
-			nodeAddr, nodeExp, _ := path.NodeExpectations(ctx, false)
+			nodeAddr, nodeExp, _ := path.NodeExpectations(ctx)
 			cacheEntry.Errors.Insert(oldRebuiltTreeError{
 				Min:  nodeExp.MinItem.Val,
 				Max:  nodeExp.MaxItem.Val,

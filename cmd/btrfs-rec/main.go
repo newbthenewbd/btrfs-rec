@@ -224,7 +224,7 @@ func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvo
 				return err
 			}
 
-			rfs = btrfsutil.NewRebuiltForrest(fs, graph, nil)
+			rfs = btrfsutil.NewRebuiltForrest(fs, graph, nil, true)
 		}
 
 		return runE(rfs, nodeList, cmd, args)

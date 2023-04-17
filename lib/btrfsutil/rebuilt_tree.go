@@ -27,6 +27,7 @@ type RebuiltTree struct {
 
 	rootErr      error
 	ancestorLoop bool
+	ancestorRoot btrfsprim.ObjID
 
 	ID        btrfsprim.ObjID
 	UUID      btrfsprim.UUID
@@ -127,6 +128,9 @@ func (tree *RebuiltTree) uncachedNodeIndex(ctx context.Context) rebuiltNodeIndex
 	}
 	for ancestor := tree; ancestor != nil; ancestor = ancestor.Parent {
 		indexer.idToTree[ancestor.ID] = ancestor
+		if ancestor.ID == tree.ancestorRoot {
+			break
+		}
 	}
 
 	ret := rebuiltNodeIndex{
@@ -261,11 +265,12 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 	// the "false"/failure case.  It will be called lots of times
 	// in a tight loop for both values that pass and values that
 	// fail.
+	root := tree.ancestorRoot
 	for {
 		if owner == tree.ID {
 			return true
 		}
-		if tree.Parent == nil || gen > tree.ParentGen {
+		if tree.Parent == nil || gen > tree.ParentGen || tree.ID == root {
 			return false
 		}
 		tree = tree.Parent
@@ -282,6 +287,7 @@ func (tree *RebuiltTree) isOwnerOK(owner btrfsprim.ObjID, gen btrfsprim.Generati
 //
 // When done with the map, call .RebuiltReleaseItems().
 func (tree *RebuiltTree) RebuiltAcquireItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.forrest.commitTrees(ctx, tree.ID)
 	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
@@ -303,6 +309,7 @@ func (tree *RebuiltTree) RebuiltReleaseItems() {
 //
 // When done with the map, call .RebuiltReleasePotentialItems().
 func (tree *RebuiltTree) RebuiltAcquirePotentialItems(ctx context.Context) *containers.SortedMap[btrfsprim.Key, ItemPtr] {
+	tree.forrest.commitTrees(ctx, tree.ID)
 	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
@@ -427,6 +434,15 @@ func (s rebuiltRootStats) String() string {
 // RebuiltAddRoot adds an additional root node to the tree.  It is
 // useful to call .RebuiltAddRoot() to re-attach part of the tree that
 // has been broken off.
+//
+// If the RebuiltForrest has laxAncestors=false, then:
+//
+//   - calls to RebuiltForrestExtendedCallbacks.AddedItem() are
+//     inhibited.
+//
+//   - calling RebuiltAddRoot on the ROOT_TREE or the UUID_TREE will
+//     panic if a tree other than the ROOT_TREE or UUID_TREE has been
+//     read from.
 func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.LogicalAddr) {
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
@@ -436,7 +452,16 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 
 	shouldFlush := tree.ID == btrfsprim.ROOT_TREE_OBJECTID || tree.ID == btrfsprim.UUID_TREE_OBJECTID
 
-	if extCB, ok := tree.forrest.cb.(RebuiltForrestExtendedCallbacks); ok {
+	if tree.forrest.laxAncestors && shouldFlush {
+		_ = tree.forrest.treesMu.Lock(ctx)
+		if tree.forrest.treesCommitted {
+			panic(fmt.Errorf("RebuiltTree(%v).RebuiltAddRoot called after a non-ROOT, non-UUID tree (%v) has been read from",
+				tree.ID, tree.forrest.treesCommitter))
+		}
+		tree.forrest.treesMu.Unlock()
+	}
+
+	if extCB, ok := tree.forrest.cb.(RebuiltForrestExtendedCallbacks); ok && !tree.forrest.laxAncestors {
 		var stats rebuiltRootStats
 		nodeToRoots := tree.acquireNodeIndex(ctx).nodeToRoots
 		stats.Nodes.D = len(nodeToRoots)
@@ -501,6 +526,7 @@ func (tree *RebuiltTree) RebuiltLeafToRoots(ctx context.Context, leaf btrfsvol.L
 			tree.ID, leaf))
 	}
 
+	tree.forrest.commitTrees(ctx, tree.ID)
 	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
@@ -601,6 +627,7 @@ func (tree *RebuiltTree) TreeSubrange(ctx context.Context,
 
 // TreeWalk implements btrfstree.Tree.
 func (tree *RebuiltTree) TreeWalk(ctx context.Context, cbs btrfstree.TreeWalkHandler) {
+	tree.forrest.commitTrees(ctx, tree.ID)
 	tree.initRoots(ctx)
 	tree.mu.RLock()
 	defer tree.mu.RUnlock()
@@ -660,7 +687,7 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, false)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx)
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.rebuiltWalker.walk called with non-node path: %v",
 			path))
