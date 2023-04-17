@@ -34,6 +34,7 @@ type RebuiltTree struct {
 	Root      btrfsvol.LogicalAddr
 	Parent    *RebuiltTree
 	ParentGen btrfsprim.Generation // offset of this tree's root item
+	parentErr error
 	forrest   *RebuiltForrest
 
 	// mutable
@@ -553,10 +554,14 @@ var _ btrfstree.Tree = (*RebuiltTree)(nil)
 
 // TreeParentID implements btrfstree.Tree.
 func (tree *RebuiltTree) TreeParentID(_ context.Context) (btrfsprim.ObjID, btrfsprim.Generation, error) {
-	if tree.Parent == nil {
+	switch {
+	case tree.parentErr != nil:
+		return 0, 0, tree.parentErr
+	case tree.Parent == nil:
 		return 0, 0, nil
+	default:
+		return tree.Parent.ID, tree.ParentGen, nil
 	}
-	return tree.Parent.ID, tree.ParentGen, nil
 }
 
 // TreeLookup implements btrfstree.Tree.

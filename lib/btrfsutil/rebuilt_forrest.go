@@ -223,8 +223,11 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 			ts.trees[treeID].ParentGen = rootOff
 			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
 			if !ok {
-				if !ts.laxAncestors {
-					ts.trees[treeID].rootErr = fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+				err := fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+				if ts.laxAncestors {
+					ts.trees[treeID].parentErr = err
+				} else {
+					ts.trees[treeID].rootErr = err
 				}
 				return
 			}
