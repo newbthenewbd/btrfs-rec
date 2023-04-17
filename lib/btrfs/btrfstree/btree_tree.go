@@ -54,7 +54,7 @@ func (tree *RawTree) walk(ctx context.Context, sb Superblock, path Path, cbs Tre
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, true) // TODO(lukeshu): Consider whether failing open is the right thing here
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx)
 	if !ok {
 		return
 	}

@@ -660,7 +660,7 @@ func (walker *rebuiltWalker) walk(ctx context.Context, path btrfstree.Path) {
 	}
 
 	// 001
-	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx, false)
+	nodeAddr, nodeExp, ok := path.NodeExpectations(ctx)
 	if !ok {
 		panic(fmt.Errorf("should not happen: btrfsutil.rebuiltWalker.walk called with non-node path: %v",
 			path))
