@@ -13,6 +13,7 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
@@ -20,7 +21,7 @@ type rebuiltForrestCallbacks struct {
 	addedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
 	addedRoot  func(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
 	lookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
-	lookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+	lookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error)
 }
 
 func (cbs rebuiltForrestCallbacks) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
@@ -35,7 +36,7 @@ func (cbs rebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfspri
 	return cbs.lookupRoot(ctx, tree)
 }
 
-func (cbs rebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+func (cbs rebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 	return cbs.lookupUUID(ctx, uuid)
 }
 
@@ -96,13 +97,13 @@ func TestRebuiltTreeCycles(t *testing.T) {
 			}
 			return 0, btrfsitem.Root{}, false
 		},
-		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 			for _, root := range roots {
 				if root.UUID == uuid {
-					return root.ID, true
+					return root.ID, nil
 				}
 			}
-			return 0, false
+			return 0, btrfstree.ErrNoItem
 		},
 	}
 
@@ -209,13 +210,13 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 			}
 			return 0, btrfsitem.Root{}, false
 		},
-		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 			for _, root := range roots {
 				if root.UUID == uuid {
-					return root.ID, true
+					return root.ID, nil
 				}
 			}
-			return 0, false
+			return 0, btrfstree.ErrNoItem
 		},
 	}
 
