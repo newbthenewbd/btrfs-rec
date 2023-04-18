@@ -13,14 +13,15 @@ import (
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsitem"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfstree"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 )
 
 type rebuiltForrestCallbacks struct {
 	addedItem  func(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key)
 	addedRoot  func(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr)
-	lookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool)
-	lookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool)
+	lookupRoot func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, err error)
+	lookupUUID func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error)
 }
 
 func (cbs rebuiltForrestCallbacks) AddedItem(ctx context.Context, tree btrfsprim.ObjID, key btrfsprim.Key) {
@@ -31,11 +32,11 @@ func (cbs rebuiltForrestCallbacks) AddedRoot(ctx context.Context, tree btrfsprim
 	cbs.addedRoot(ctx, tree, root)
 }
 
-func (cbs rebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
+func (cbs rebuiltForrestCallbacks) LookupRoot(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, err error) {
 	return cbs.lookupRoot(ctx, tree)
 }
 
-func (cbs rebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+func (cbs rebuiltForrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 	return cbs.lookupUUID(ctx, uuid)
 }
 
@@ -84,25 +85,25 @@ func TestRebuiltTreeCycles(t *testing.T) {
 		addedRoot: func(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr) {
 			// do nothing
 		},
-		lookupRoot: func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
+		lookupRoot: func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, err error) {
 			for _, root := range roots {
 				if root.ID == tree {
 					return root.ParentGen, btrfsitem.Root{
 						Generation: 2000,
 						UUID:       root.UUID,
 						ParentUUID: root.ParentUUID,
-					}, true
+					}, nil
 				}
 			}
-			return 0, btrfsitem.Root{}, false
+			return 0, btrfsitem.Root{}, btrfstree.ErrNoItem
 		},
-		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 			for _, root := range roots {
 				if root.UUID == uuid {
-					return root.ID, true
+					return root.ID, nil
 				}
 			}
-			return 0, false
+			return 0, btrfstree.ErrNoItem
 		},
 	}
 
@@ -193,10 +194,10 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 		addedRoot: func(ctx context.Context, tree btrfsprim.ObjID, root btrfsvol.LogicalAddr) {
 			// do nothing
 		},
-		lookupRoot: func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, ok bool) {
+		lookupRoot: func(ctx context.Context, tree btrfsprim.ObjID) (offset btrfsprim.Generation, item btrfsitem.Root, err error) {
 			if tree == 304 {
 				// Force a fault.
-				return 0, btrfsitem.Root{}, false
+				return 0, btrfsitem.Root{}, btrfstree.ErrNoItem
 			}
 			for _, root := range roots {
 				if root.ID == tree {
@@ -204,18 +205,18 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 						Generation: 2000,
 						UUID:       root.UUID,
 						ParentUUID: root.ParentUUID,
-					}, true
+					}, nil
 				}
 			}
-			return 0, btrfsitem.Root{}, false
+			return 0, btrfsitem.Root{}, btrfstree.ErrNoItem
 		},
-		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+		lookupUUID: func(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, err error) {
 			for _, root := range roots {
 				if root.UUID == uuid {
-					return root.ID, true
+					return root.ID, nil
 				}
 			}
-			return 0, false
+			return 0, btrfstree.ErrNoItem
 		},
 	}
 
@@ -224,7 +225,7 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 		rfs := NewRebuiltForrest(nil, Graph{}, cbs, false)
 
 		tree, err := rfs.RebuiltTree(ctx, 305)
-		assert.EqualError(t, err, `failed to rebuild parent tree: 304: tree does not exist`)
+		assert.EqualError(t, err, `tree 305: failed to rebuild parent: tree 304: tree does not exist: item does not exist`)
 		assert.Nil(t, tree)
 	})
 

@@ -212,19 +212,24 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 		sb, _ := ts.Superblock()
 		ts.trees[treeID].Root = sb.BlockGroupRoot
 	default:
-		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
-		if !ok {
-			ts.trees[treeID].rootErr = btrfstree.ErrNoTree
+		rootOff, rootItem, err := ts.cb.LookupRoot(ctx, treeID)
+		if err != nil {
+			ts.trees[treeID].rootErr = fmt.Errorf("tree %s: %w: %s",
+				treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), btrfstree.ErrNoTree, err)
 			return
 		}
 		ts.trees[treeID].Root = rootItem.ByteNr
 		ts.trees[treeID].UUID = rootItem.UUID
 		if rootItem.ParentUUID != (btrfsprim.UUID{}) {
 			ts.trees[treeID].ParentGen = rootOff
-			parentID, ok := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
-			if !ok {
-				if !ts.laxAncestors {
-					ts.trees[treeID].rootErr = fmt.Errorf("failed to look up UUID: %v", rootItem.ParentUUID)
+			parentID, err := ts.cb.LookupUUID(ctx, rootItem.ParentUUID)
+			if err != nil {
+				err := fmt.Errorf("tree %s: failed to look up UUID: %v: %w",
+					treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), rootItem.ParentUUID, err)
+				if ts.laxAncestors {
+					ts.trees[treeID].parentErr = err
+				} else {
+					ts.trees[treeID].rootErr = err
 				}
 				return
 			}
@@ -235,7 +240,8 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 				ts.trees[treeID].ancestorLoop = true
 				return
 			case !ts.laxAncestors && ts.trees[treeID].Parent.rootErr != nil:
-				ts.trees[treeID].rootErr = fmt.Errorf("failed to rebuild parent tree: %v: %w", parentID, ts.trees[treeID].Parent.rootErr)
+				ts.trees[treeID].rootErr = fmt.Errorf("tree %s: failed to rebuild parent: %w",
+					treeID.Format(btrfsprim.ROOT_TREE_OBJECTID), ts.trees[treeID].Parent.rootErr)
 				return
 			}
 		}

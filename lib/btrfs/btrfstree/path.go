@@ -134,7 +134,7 @@ func (path Path) String() string {
 	return ret.String()
 }
 
-func checkOwner(
+func CheckOwner(
 	ctx context.Context, forrest Forrest, treeID btrfsprim.ObjID,
 	ownerToCheck btrfsprim.ObjID, genToCheck btrfsprim.Generation,
 ) error {
@@ -194,7 +194,7 @@ func (path Path) NodeExpectations(ctx context.Context) (_ btrfsvol.LogicalAddr, 
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return checkOwner(ctx, firstElem.Forrest, lastElem.TreeID,
+				return CheckOwner(ctx, firstElem.Forrest, lastElem.TreeID,
 					owner, gen)
 			},
 			MinItem: containers.OptionalValue(btrfsprim.Key{}),
@@ -206,7 +206,7 @@ func (path Path) NodeExpectations(ctx context.Context) (_ btrfsvol.LogicalAddr, 
 			Level:      containers.OptionalValue(lastElem.ToLevel),
 			Generation: containers.OptionalValue(lastElem.ToGeneration),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				return checkOwner(ctx, firstElem.Forrest, lastElem.FromTree,
+				return CheckOwner(ctx, firstElem.Forrest, lastElem.FromTree,
 					owner, gen)
 			},
 			MinItem: containers.OptionalValue(lastElem.ToMinKey),

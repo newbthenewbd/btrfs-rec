@@ -423,7 +423,7 @@ func (sv *Subvolume) loadFile(_ context.Context, inode btrfsprim.ObjID, file *Fi
 		if err != nil {
 			file.Errs = append(file.Errs, fmt.Errorf("extent %v: %w", extent.OffsetWithinFile, err))
 		}
-		pos += size
+		pos = extent.OffsetWithinFile + size
 	}
 	if file.InodeItem != nil && pos != file.InodeItem.NumBytes {
 		if file.InodeItem.NumBytes > pos {
