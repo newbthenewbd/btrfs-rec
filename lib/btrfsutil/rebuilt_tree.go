@@ -552,14 +552,18 @@ func (tree *RebuiltTree) uncachedErrors(ctx context.Context) containers.Interval
 			MinItem: containers.OptionalValue(hiMinItem),
 			MaxItem: containers.OptionalValue(loMaxItem),
 			Owner: func(owner btrfsprim.ObjID, gen btrfsprim.Generation) error {
-				var ownerErrs derror.MultiError
+				byStr := make(map[string]error)
 				for _, kpTree := range maps.SortedKeys(expTree) {
 					if err := btrfstree.CheckOwner(ctx, tree.forrest, kpTree, owner, gen); err != nil {
-						ownerErrs = append(ownerErrs, err)
+						byStr[err.Error()] = err
 					}
 				}
-				if len(ownerErrs) > 0 {
-					return ownerErrs
+				if len(byStr) > 0 {
+					byPos := make(derror.MultiError, 0, len(byStr))
+					for _, str := range maps.SortedKeys(byStr) {
+						byPos = append(byPos, byStr[str])
+					}
+					return byPos
 				}
 				return nil
 			},
