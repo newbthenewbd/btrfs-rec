@@ -225,7 +225,7 @@ func TestRebuiltTreeParentErr(t *testing.T) {
 		rfs := NewRebuiltForrest(nil, Graph{}, cbs, false)
 
 		tree, err := rfs.RebuiltTree(ctx, 305)
-		assert.EqualError(t, err, `failed to rebuild parent tree: 304: tree does not exist: item does not exist`)
+		assert.EqualError(t, err, `tree 305: failed to rebuild parent: tree 304: tree does not exist: item does not exist`)
 		assert.Nil(t, tree)
 	})
 
