@@ -17,8 +17,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs"
+	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsprim"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
+	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 	"git.lukeshu.com/btrfs-progs-ng/lib/profile"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -51,8 +53,8 @@ var globalFlags struct {
 
 	mappings  string
 	nodeList  string
-	rebuildV1 bool
-	rebuildV2 bool
+	rebuild   bool
+	treeRoots string
 
 	stopProfiling profile.StopFunc
 
@@ -102,11 +104,12 @@ func main() {
 		"load node list (output of 'btrfs-recs inspect [rebuild-mappings] list-nodes') from external JSON file `nodes.json`")
 	noError(argparser.MarkPersistentFlagFilename("node-list"))
 
-	argparser.PersistentFlags().BoolVar(&globalFlags.rebuildV1, "rebuild", false,
-		"attempt to rebuild broken btrees when reading (v1)")
+	argparser.PersistentFlags().BoolVar(&globalFlags.rebuild, "rebuild", false,
+		"attempt to rebuild broken btrees when reading")
 
-	argparser.PersistentFlags().BoolVar(&globalFlags.rebuildV2, "rebuild-v2", false,
-		"attempt to rebuild broken btrees when reading (v2)")
+	argparser.PersistentFlags().StringVar(&globalFlags.treeRoots, "trees", "",
+		"load list of tree roots (output of 'btrfs-recs inspect rebuild-trees') from external JSON file `trees.json`; implies --rebuild")
+	noError(argparser.MarkPersistentFlagFilename("trees"))
 
 	globalFlags.stopProfiling = profile.AddProfileFlags(argparser.PersistentFlags(), "profile.")
 
@@ -214,9 +217,7 @@ func runWithRawFSAndNodeList(runE func(*btrfs.FS, []btrfsvol.LogicalAddr, *cobra
 func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	inner := func(fs *btrfs.FS, nodeList []btrfsvol.LogicalAddr, cmd *cobra.Command, args []string) error {
 		var rfs btrfs.ReadableFS = fs
-		if globalFlags.rebuildV1 {
-			rfs = btrfsutil.NewOldRebuiltForrest(fs)
-		} else if globalFlags.rebuildV2 {
+		if globalFlags.rebuild || globalFlags.treeRoots != "" {
 			ctx := cmd.Context()
 
 			graph, err := btrfsutil.ReadGraph(ctx, fs, nodeList)
@@ -224,14 +225,24 @@ func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvo
 				return err
 			}
 
-			rfs = btrfsutil.NewRebuiltForrest(fs, graph, nil, true)
+			_rfs := btrfsutil.NewRebuiltForrest(fs, graph, nil, true)
+
+			if globalFlags.treeRoots != "" {
+				roots, err := readJSONFile[map[btrfsprim.ObjID]containers.Set[btrfsvol.LogicalAddr]](ctx, globalFlags.treeRoots)
+				if err != nil {
+					return err
+				}
+				_rfs.RebuiltAddRoots(ctx, roots)
+			}
+
+			rfs = _rfs
 		}
 
 		return runE(rfs, nodeList, cmd, args)
 	}
 
 	return func(cmd *cobra.Command, args []string) error {
-		if wantNodeList || globalFlags.rebuildV2 {
+		if wantNodeList || globalFlags.rebuild || globalFlags.treeRoots != "" {
 			return runWithRawFSAndNodeList(inner)(cmd, args)
 		}
 		return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {

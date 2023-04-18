@@ -75,7 +75,9 @@ func (o forrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (
 	}
 	ctx = withWant(ctx, logFieldTreeWant, "resolve parent UUID", wantKey)
 	if !o._wantOff(ctx, wantKey) {
-		o.enqueueRetry(btrfsprim.UUID_TREE_OBJECTID)
+		if id, ok := o.slowLookupUUID(ctx, uuid); ok {
+			return id, nil
+		}
 		return 0, btrfstree.ErrNoItem
 	}
 	item, _ := discardErr(o.rebuilt.RebuiltTree(ctx, wantKey.TreeID)).TreeLookup(ctx, wantKey.Key.Key())
@@ -85,10 +87,46 @@ func (o forrestCallbacks) LookupUUID(ctx context.Context, uuid btrfsprim.UUID) (
 		return itemBody.ObjID, nil
 	case *btrfsitem.Error:
 		graphCallbacks(o).FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", wantKey, itemBody.Err))
+		if id, ok := o.slowLookupUUID(ctx, uuid); ok {
+			return id, nil
+		}
 		return 0, itemBody.Err
 	default:
 		// This is a panic because the item decoder should not emit UUID_SUBVOL items as anything but
 		// btrfsitem.UUIDMap or btrfsitem.Error without this code also being updated.
 		panic(fmt.Errorf("should not happen: UUID_SUBVOL item has unexpected type: %T", itemBody))
 	}
+}
+
+func (o forrestCallbacks) slowLookupUUID(ctx context.Context, uuid btrfsprim.UUID) (id btrfsprim.ObjID, ok bool) {
+	rootTree, err := o.rebuilt.RebuiltTree(ctx, btrfsprim.ROOT_TREE_OBJECTID)
+	if err != nil {
+		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
+		return 0, false
+	}
+	var ret btrfsprim.ObjID
+	_ = rootTree.TreeRange(ctx, func(item btrfstree.Item) bool {
+		if item.Key.ItemType != btrfsprim.ROOT_ITEM_KEY {
+			return true
+		}
+		switch itemBody := item.Body.(type) {
+		case *btrfsitem.Root:
+			if itemBody.UUID == uuid {
+				ret = item.Key.ObjectID
+				return false
+			}
+		case *btrfsitem.Error:
+			graphCallbacks(o).FSErr(ctx, fmt.Errorf("error decoding item: %v: %w", item.Key, itemBody.Err))
+		default:
+			// This is a panic because the item decoder should not emit ROOT_ITEM items as anything but
+			// btrfsitem.Root or btrfsitem.Error without this code also being updated.
+			panic(fmt.Errorf("should not happen: ROOT_ITEM item has unexpected type: %T", itemBody))
+		}
+		return true
+	})
+	if ret == 0 {
+		o.enqueueRetry(btrfsprim.ROOT_TREE_OBJECTID)
+		return 0, false
+	}
+	return ret, true
 }

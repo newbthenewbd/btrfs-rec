@@ -700,6 +700,10 @@ func (tree *RebuiltTree) RebuiltAddRoot(ctx context.Context, rootNode btrfsvol.L
 	tree.mu.Lock()
 	defer tree.mu.Unlock()
 
+	if tree.Roots.Has(rootNode) {
+		return
+	}
+
 	ctx = dlog.WithField(ctx, "btrfs.util.rebuilt-tree.add-root", fmt.Sprintf("tree=%v rootNode=%v", tree.ID, rootNode))
 	dlog.Info(ctx, "adding root...")
 
