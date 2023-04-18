@@ -212,9 +212,9 @@ func (ts *RebuiltForrest) rebuildTree(ctx context.Context, treeID btrfsprim.ObjI
 		sb, _ := ts.Superblock()
 		ts.trees[treeID].Root = sb.BlockGroupRoot
 	default:
-		rootOff, rootItem, ok := ts.cb.LookupRoot(ctx, treeID)
-		if !ok {
-			ts.trees[treeID].rootErr = btrfstree.ErrNoTree
+		rootOff, rootItem, err := ts.cb.LookupRoot(ctx, treeID)
+		if err != nil {
+			ts.trees[treeID].rootErr = fmt.Errorf("%w: %s", btrfstree.ErrNoTree, err)
 			return
 		}
 		ts.trees[treeID].Root = rootItem.ByteNr
