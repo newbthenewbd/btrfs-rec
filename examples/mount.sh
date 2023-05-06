@@ -13,9 +13,10 @@ mountpoint="${image%.img}.mnt"
 mkdir -p "$mountpoint"
 
 sudo ./bin/btrfs-rec \
-     --pv="$image"
+     --pv="$image" \
      --mappings="$gendir/2.mappings.json" \
-     --rebuild \
+     --node-list="$gendir/0.nodes.json" \
+     --trees="$gendir/3.trees.json" \
      inspect mount \
      --skip-filesums \
      "$mountpoint"
