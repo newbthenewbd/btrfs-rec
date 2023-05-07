@@ -21,7 +21,7 @@ func init() {
 		Short: "A clone of `btrfs inspect-internal dump-tree`",
 		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
 		RunE: runWithReadableFS(func(fs btrfs.ReadableFS, cmd *cobra.Command, _ []string) error {
-			const version = "6.1.3"
+			const version = "6.3"
 			out := os.Stdout
 			textui.Fprintf(out, "btrfs-progs v%v\n", version)
 			dumptrees.DumpTrees(cmd.Context(), out, fs)
