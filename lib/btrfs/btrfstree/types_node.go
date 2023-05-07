@@ -267,7 +267,8 @@ func (node *Node) unmarshalInterior(bodyBuf []byte) (int, error) {
 			return n, fmt.Errorf("item %v: %w", i, err)
 		}
 	}
-	node.Padding = bodyBuf[n:]
+	node.Padding = bytePool.Get(len(bodyBuf[n:]))
+	copy(node.Padding, bodyBuf[n:])
 	return len(bodyBuf), nil
 }
 
@@ -304,23 +305,6 @@ type ItemHeader struct {
 	DataOffset    uint32        `bin:"off=0x11, siz=0x4"` // [ignored-when-writing] relative to the end of the header (0x65)
 	DataSize      uint32        `bin:"off=0x15, siz=0x4"` // [ignored-when-writing]
 	binstruct.End `bin:"off=0x19"`
-}
-
-var itemPool containers.SlicePool[Item]
-
-// RawFree is for low-level use by caches; don't use .RawFree, use
-// ReleaseNode.
-func (node *Node) RawFree() {
-	if node == nil {
-		return
-	}
-	for i := range node.BodyLeaf {
-		node.BodyLeaf[i].Body.Free()
-		node.BodyLeaf[i] = Item{}
-	}
-	itemPool.Put(node.BodyLeaf)
-	*node = Node{}
-	nodePool.Put(node)
 }
 
 func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
@@ -360,7 +344,8 @@ func (node *Node) unmarshalLeaf(bodyBuf []byte) (int, error) {
 		}
 	}
 
-	node.Padding = bodyBuf[head:tail]
+	node.Padding = bytePool.Get(len(bodyBuf[head:tail]))
+	copy(node.Padding, bodyBuf[head:tail])
 	return len(bodyBuf), nil
 }
 
@@ -434,12 +419,30 @@ type IOError struct {
 func (e *IOError) Error() string { return "i/o error: " + e.Err.Error() }
 func (e *IOError) Unwrap() error { return e.Err }
 
-var bytePool containers.SlicePool[byte]
+var (
+	bytePool containers.SlicePool[byte]
+	itemPool containers.SlicePool[Item]
+	nodePool = typedsync.Pool[*Node]{
+		New: func() *Node {
+			return new(Node)
+		},
+	}
+)
 
-var nodePool = typedsync.Pool[*Node]{
-	New: func() *Node {
-		return new(Node)
-	},
+// RawFree is for low-level use by caches; don't use .RawFree, use
+// ReleaseNode.
+func (node *Node) RawFree() {
+	if node == nil {
+		return
+	}
+	for i := range node.BodyLeaf {
+		node.BodyLeaf[i].Body.Free()
+		node.BodyLeaf[i] = Item{}
+	}
+	itemPool.Put(node.BodyLeaf)
+	bytePool.Put(node.Padding)
+	*node = Node{}
+	nodePool.Put(node)
 }
 
 // ReadNode reads a node from the given file.
