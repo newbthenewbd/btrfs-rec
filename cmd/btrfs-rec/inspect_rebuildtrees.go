@@ -26,8 +26,8 @@ func init() {
 		Long: "" +
 			"Rebuild broken btrees based on missing items that are implied " +
 			"by present items.  This requires functioning " +
-			"chunk/dev-extent/blockgroup trees, which can be rebuilt " +
-			"separately with `btrfs-rec inspect rebuild-mappings`.\n" +
+			"chunk/dev/blockgroup trees, which can be rebuilt separately" +
+			"with `btrfs-rec inspect rebuild-mappings`.\n" +
 			"\n" +
 			"If no --node-list is given, then a slow sector-by-sector scan " +
 			"will be used to find all nodes.",

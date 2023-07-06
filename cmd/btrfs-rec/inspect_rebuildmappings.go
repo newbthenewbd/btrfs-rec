@@ -22,7 +22,7 @@ import (
 func init() {
 	cmd := &cobra.Command{
 		Use:   "rebuild-mappings",
-		Short: "Rebuild broken chunk/dev-extent/blockgroup trees",
+		Short: "Rebuild broken chunk/dev/blockgroup trees",
 		Long: "" +
 			"The rebuilt information is printed as JSON on stdout, and can " +
 			"be loaded by the --mappings flag.\n" +
