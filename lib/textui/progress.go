@@ -42,7 +42,8 @@ type Progress[T Stats] struct {
 
 	// This isn't a functional part, but is useful for helping us
 	// to detect misuse.
-	last time.Time
+	lastTick  time.Time
+	lastWrite time.Time
 }
 
 func NewProgress[T Stats](ctx context.Context, lvl dlog.LogLevel, interval time.Duration) *Progress[T] {
@@ -65,7 +66,7 @@ func NewProgress[T Stats](ctx context.Context, lvl dlog.LogLevel, interval time.
 // It is safe to call Set concurrently.
 func (p *Progress[T]) Set(val T) {
 	if _, hadOld := p.cur.Swap(val); !hadOld {
-		go p.run()
+		go p.run(val)
 	}
 }
 
@@ -84,21 +85,24 @@ func (p *Progress[T]) Done() {
 	<-p.done
 }
 
-func (p *Progress[T]) flush(force bool) {
+func (p *Progress[T]) flush(now time.Time, cur T) {
 	// Check how long it's been since we last printed something.
 	// If this grows too big, it probably means that either the
 	// program deadlocked or that we forgot to call .Done().
-	now := time.Now()
-	if !p.last.IsZero() && now.Sub(p.last) > Tunable(2*time.Minute) {
-		dlog.Error(p.ctx, "stale Progress")
-		panic("stale Progress")
+	if !p.lastTick.IsZero() && !p.lastWrite.IsZero() {
+		tickTimeout := Tunable(1 * time.Minute)
+		writeTimeout := Tunable(2 * time.Minute)
+		if now.Sub(p.lastTick) < tickTimeout && now.Sub(p.lastWrite) > writeTimeout {
+			err := fmt.Errorf("textui.Progress: hang detected: no updates for %v (from %v to %v)",
+				writeTimeout, p.lastWrite, now)
+			dlog.Error(p.ctx, err)
+			panic(err)
+		}
 	}
+	force := p.lastTick.IsZero()
+	p.lastTick = now
 
 	// Load the data to print.
-	cur, ok := p.cur.Load()
-	if !ok {
-		panic("should not happen")
-	}
 	if !force && cur == p.oldStat {
 		return
 	}
@@ -113,21 +117,29 @@ func (p *Progress[T]) flush(force bool) {
 
 	// Print.
 	dlog.Log(p.ctx, p.lvl, line)
-	p.last = now
+	p.lastWrite = now
 }
 
-func (p *Progress[T]) run() {
-	p.flush(true)
+func (p *Progress[T]) run(initVal T) {
+	p.flush(time.Now(), initVal)
 	ticker := time.NewTicker(p.interval)
 	for {
 		select {
 		case <-p.ctx.Done():
 			ticker.Stop()
-			p.flush(false)
+			val, ok := p.cur.Load()
+			if !ok {
+				panic("should not happen")
+			}
+			p.flush(time.Now(), val)
 			close(p.done)
 			return
-		case <-ticker.C:
-			p.flush(false)
+		case now := <-ticker.C:
+			val, ok := p.cur.Load()
+			if !ok {
+				panic("should not happen")
+			}
+			p.flush(now, val)
 		}
 	}
 }
