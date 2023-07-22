@@ -621,17 +621,6 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 	// algorithm should be defined in a way that makes it easy to adjust the
 	// relative priorities.
 
-	ret := make(containers.Set[btrfsvol.LogicalAddr])
-	illegal := make(containers.Set[btrfsvol.LogicalAddr]) // cannot-be-accepted and already-accepted
-	accept := func(item btrfsvol.LogicalAddr) {
-		ret.Insert(item)
-		for _, list := range o.augmentQueue[treeID].multi {
-			if list.Has(item) {
-				illegal.InsertFrom(list)
-			}
-		}
-	}
-
 	sortedItems := maps.Keys(choices)
 	sort.Slice(sortedItems, func(i, j int) bool {
 		iItem, jItem := sortedItems[i], sortedItems[j]
@@ -646,6 +635,17 @@ func (o *rebuilder) resolveTreeAugments(ctx context.Context, treeID btrfsprim.Ob
 		}
 		return iItem < jItem // laddr is as good a tiebreaker as anything
 	})
+
+	ret := make(containers.Set[btrfsvol.LogicalAddr])
+	illegal := make(containers.Set[btrfsvol.LogicalAddr]) // cannot-be-accepted and already-accepted
+	accept := func(item btrfsvol.LogicalAddr) {
+		ret.Insert(item)
+		for _, list := range o.augmentQueue[treeID].multi {
+			if list.Has(item) {
+				illegal.InsertFrom(list)
+			}
+		}
+	}
 	for _, item := range sortedItems {
 		if !illegal.Has(item) {
 			accept(item)
