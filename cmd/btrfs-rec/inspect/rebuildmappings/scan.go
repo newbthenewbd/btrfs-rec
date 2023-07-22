@@ -133,7 +133,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 					addr, i)
 				scanner.result.FoundChunks = append(scanner.result.FoundChunks, FoundChunk{
 					Key:   item.Key,
-					Chunk: *itemBody,
+					Chunk: itemBody.Clone(),
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed CHUNK_ITEM: %v",
@@ -148,7 +148,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 					addr, i)
 				scanner.result.FoundBlockGroups = append(scanner.result.FoundBlockGroups, FoundBlockGroup{
 					Key: item.Key,
-					BG:  *itemBody,
+					BG:  itemBody.Clone(),
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed BLOCK_GROUP_ITEM: %v",
@@ -163,7 +163,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 					addr, i)
 				scanner.result.FoundDevExtents = append(scanner.result.FoundDevExtents, FoundDevExtent{
 					Key:    item.Key,
-					DevExt: *itemBody,
+					DevExt: itemBody.Clone(),
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed DEV_EXTENT: %v",
@@ -178,7 +178,7 @@ func (scanner *deviceScanner) ScanNode(ctx context.Context, addr btrfsvol.Physic
 					addr, i)
 				scanner.result.FoundExtentCSums = append(scanner.result.FoundExtentCSums, FoundExtentCSum{
 					Generation: node.Head.Generation,
-					Sums:       *itemBody,
+					Sums:       itemBody.Clone(),
 				})
 			case *btrfsitem.Error:
 				dlog.Errorf(ctx, "node@%v: item %v: error: malformed is EXTENT_CSUM: %v",
