@@ -70,9 +70,14 @@ func init() {
 		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			ctx := cmd.Context()
 
-			scanResults, err := rebuildmappings.ScanDevices(ctx, fs)
+			devResults, err := rebuildmappings.ScanDevices(ctx, fs)
 			if err != nil {
 				return err
+			}
+
+			scanResults := rebuildmappings.ScanResult{
+				Mappings: fs.LV.Mappings(),
+				Devices:  devResults,
 			}
 
 			dlog.Info(ctx, "Writing scan results to stdout...")
@@ -97,13 +102,13 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			scanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
+			scanResults, err := readJSONFile[rebuildmappings.ScanResult](ctx, args[0])
 			if err != nil {
 				return err
 			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
 
-			if err := rebuildmappings.RebuildMappings(ctx, fs, scanResults); err != nil {
+			if err := rebuildmappings.RebuildMappings(ctx, fs, scanResults.Devices); err != nil {
 				return err
 			}
 
@@ -132,17 +137,17 @@ func init() {
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			scanResults, err := readJSONFile[rebuildmappings.ScanDevicesResult](ctx, args[0])
+			scanResults, err := readJSONFile[rebuildmappings.ScanResult](ctx, args[0])
 			if err != nil {
 				return err
 			}
 
 			var cnt int
-			for _, devResults := range scanResults {
+			for _, devResults := range scanResults.Devices {
 				cnt += len(devResults.FoundNodes)
 			}
 			set := make(containers.Set[btrfsvol.LogicalAddr], cnt)
-			for _, devResults := range scanResults {
+			for _, devResults := range scanResults.Devices {
 				for laddr := range devResults.FoundNodes {
 					set.Insert(laddr)
 				}

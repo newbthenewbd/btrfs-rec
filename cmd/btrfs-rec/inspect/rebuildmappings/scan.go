@@ -25,6 +25,11 @@ import (
 
 // Result types ////////////////////////////////////////////////////////////////
 
+type ScanResult struct {
+	Mappings []btrfsvol.Mapping
+	Devices  ScanDevicesResult
+}
+
 type ScanDevicesResult = map[btrfsvol.DeviceID]ScanOneDeviceResult
 
 type ScanOneDeviceResult struct {
