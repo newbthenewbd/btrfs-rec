@@ -78,11 +78,11 @@ var _ fmt.Stringer = Portion[int]{}
 
 // String implements fmt.Stringer.
 func (p Portion[T]) String() string {
-	pct := float64(1)
+	pct := uint64(100)
 	if p.D > 0 {
-		pct = float64(p.N) / float64(p.D)
+		pct = (uint64(p.N) * 100) / uint64(p.D)
 	}
-	return printer.Sprintf("%v (%v/%v)", number.Percent(pct), uint64(p.N), uint64(p.D))
+	return printer.Sprintf("%d%% (%v/%v)", pct, uint64(p.N), uint64(p.D))
 }
 
 type metric[T constraints.Integer | constraints.Float] struct {

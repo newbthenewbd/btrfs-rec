@@ -68,6 +68,7 @@ linters-settings:
   gomnd:
     ignored-numbers:
       - '2'
+      - '100'
     ignored-functions:
       - 'binutil.NeedNBytes'
       - 'textui.Tunable'
