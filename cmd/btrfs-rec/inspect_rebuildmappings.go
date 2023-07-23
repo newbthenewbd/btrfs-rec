@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"git.lukeshu.com/go/lowmemjson"
@@ -37,7 +38,7 @@ func init() {
 			"\tbtrfs-rec inspect rebuild-mappings scan > SCAN.json   # read\n" +
 			"\tbtrfs-rec inspect rebuild-mappings process SCAN.json  # CPU\n",
 		Args: cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		RunE: runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			scanResults, err := rebuildmappings.ScanDevices(ctx, fs)
@@ -67,7 +68,7 @@ func init() {
 		Use:   "scan",
 		Short: "Read from the filesystem all data nescessary to rebuild the mappings",
 		Args:  cliutil.WrapPositionalArgs(cobra.NoArgs),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
+		RunE: runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, _ []string) (err error) {
 			ctx := cmd.Context()
 
 			devResults, err := rebuildmappings.ScanDevices(ctx, fs)
@@ -94,6 +95,7 @@ func init() {
 		}),
 	})
 
+	var scanResults rebuildmappings.ScanResult
 	cmd.AddCommand(&cobra.Command{
 		Use:   "process",
 		Short: "Rebuild the mappings based on previously read data",
@@ -102,11 +104,35 @@ func init() {
 			ctx := cmd.Context()
 
 			dlog.Infof(ctx, "Reading %q...", args[0])
-			scanResults, err := readJSONFile[rebuildmappings.ScanResult](ctx, args[0])
+			var err error
+			scanResults, err = readJSONFile[rebuildmappings.ScanResult](ctx, args[0])
 			if err != nil {
 				return err
 			}
 			dlog.Infof(ctx, "... done reading %q", args[0])
+
+			pvDevices := fs.LV.PhysicalVolumes()
+			for _, devID := range maps.SortedKeys(scanResults.Devices) {
+				if maps.HasKey(pvDevices, devID) {
+					continue
+				}
+				devFile := &btrfs.Device{
+					File: rebuildmappings.NewPhonyFile(
+						scanResults.Devices[devID].Size,
+						scanResults.Devices[devID].Superblock.Val),
+				}
+				if err := fs.AddDevice(ctx, devFile); err != nil {
+					return fmt.Errorf("device file: %q: %w", devFile.Name(), err)
+				}
+			}
+			for _, mapping := range scanResults.Mappings {
+				if err := fs.LV.AddMapping(mapping); err != nil {
+					return err
+				}
+			}
+			return nil
+		}, func(fs *btrfs.FS, cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 
 			if err := rebuildmappings.RebuildMappings(ctx, fs, scanResults.Devices); err != nil {
 				return err
