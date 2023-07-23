@@ -19,6 +19,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/jsonutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
 
@@ -27,6 +28,8 @@ import (
 type ScanDevicesResult = map[btrfsvol.DeviceID]ScanOneDeviceResult
 
 type ScanOneDeviceResult struct {
+	Size             btrfsvol.PhysicalAddr
+	Superblock       jsonutil.Binary[btrfstree.Superblock]
 	Checksums        btrfssum.SumRun[btrfsvol.PhysicalAddr]
 	FoundNodes       map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr
 	FoundChunks      []FoundChunk
@@ -72,7 +75,6 @@ func ScanOneDevice(ctx context.Context, dev *btrfs.Device) (ScanOneDeviceResult,
 // scanner implementation //////////////////////////////////////////////////////
 
 type deviceScanner struct {
-	alg    btrfssum.CSumType
 	sums   strings.Builder
 	result ScanOneDeviceResult
 }
@@ -104,17 +106,18 @@ func (scanner *deviceScanner) ScanStats() scanStats {
 	}
 }
 
-func newDeviceScanner(_ context.Context, sb btrfstree.Superblock, _ btrfsvol.PhysicalAddr, numSectors int) btrfsutil.DeviceScanner[scanStats, ScanOneDeviceResult] {
+func newDeviceScanner(_ context.Context, sb btrfstree.Superblock, numBytes btrfsvol.PhysicalAddr, numSectors int) btrfsutil.DeviceScanner[scanStats, ScanOneDeviceResult] {
 	scanner := new(deviceScanner)
-	scanner.alg = sb.ChecksumType
+	scanner.result.Size = numBytes
+	scanner.result.Superblock.Val = sb
 	scanner.result.FoundNodes = make(map[btrfsvol.LogicalAddr][]btrfsvol.PhysicalAddr)
-	scanner.result.Checksums.ChecksumSize = scanner.alg.Size()
+	scanner.result.Checksums.ChecksumSize = scanner.result.Superblock.Val.ChecksumType.Size()
 	scanner.sums.Grow(scanner.result.Checksums.ChecksumSize * numSectors)
 	return scanner
 }
 
 func (scanner *deviceScanner) ScanSector(_ context.Context, dev *btrfs.Device, paddr btrfsvol.PhysicalAddr) error {
-	sum, err := btrfs.ChecksumPhysical(dev, scanner.alg, paddr)
+	sum, err := btrfs.ChecksumPhysical(dev, scanner.result.Superblock.Val.ChecksumType, paddr)
 	if err != nil {
 		return err
 	}
