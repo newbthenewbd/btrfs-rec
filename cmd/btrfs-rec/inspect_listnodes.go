@@ -28,7 +28,7 @@ func init() {
 			"to take advantage of the sector-by-sector scan that's already " +
 			"performed by `btrfs-rec inspect rebuild-mappings scan`.",
 		Args: cliutil.WrapPositionalArgs(cobra.ExactArgs(1)),
-		RunE: runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		RunE: runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
 			nodeList, err := btrfsutil.ListNodes(ctx, fs)

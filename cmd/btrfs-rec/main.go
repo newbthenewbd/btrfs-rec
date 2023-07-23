@@ -158,7 +158,10 @@ func run(runE func(*cobra.Command, []string) error) func(*cobra.Command, []strin
 	}
 }
 
-func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+func runWithRawFS(
+	fallbackInit func(*btrfs.FS, *cobra.Command, []string) error,
+	runE func(*btrfs.FS, *cobra.Command, []string) error,
+) func(*cobra.Command, []string) error {
 	return run(func(cmd *cobra.Command, args []string) (err error) {
 		maybeSetErr := func(_err error) {
 			if _err != nil && err == nil {
@@ -166,7 +169,7 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 			}
 		}
 
-		if len(globalFlags.pvs) == 0 {
+		if len(globalFlags.pvs) == 0 && fallbackInit == nil {
 			// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
 			// it doesn't interfere with the `help` sub-command.
 			return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
@@ -178,6 +181,12 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 		defer func() {
 			maybeSetErr(fs.Close())
 		}()
+
+		if fallbackInit != nil {
+			if err := fallbackInit(fs, cmd, args); err != nil {
+				return err
+			}
+		}
 
 		if globalFlags.mappings != "" {
 			mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](cmd.Context(), globalFlags.mappings)
@@ -196,7 +205,7 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 }
 
 func runWithRawFSAndNodeList(runE func(*btrfs.FS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
-	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+	return runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
 		var nodeList []btrfsvol.LogicalAddr
@@ -245,7 +254,7 @@ func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvo
 		if wantNodeList || globalFlags.rebuild || globalFlags.treeRoots != "" {
 			return runWithRawFSAndNodeList(inner)(cmd, args)
 		}
-		return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		return runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			return inner(fs, nil, cmd, args)
 		})(cmd, args)
 	}
