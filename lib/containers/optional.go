@@ -5,7 +5,9 @@
 package containers
 
 import (
-	"encoding/json"
+	"io"
+
+	"git.lukeshu.com/go/lowmemjson"
 )
 
 type Optional[T any] struct {
@@ -27,22 +29,28 @@ func OptionalNil[T any]() Optional[T] {
 }
 
 var (
-	_ json.Marshaler   = Optional[bool]{}
-	_ json.Unmarshaler = (*Optional[bool])(nil)
+	_ lowmemjson.Encodable = Optional[bool]{}
+	_ lowmemjson.Decodable = (*Optional[bool])(nil)
 )
 
-func (o Optional[T]) MarshalJSON() ([]byte, error) {
+func (o Optional[T]) EncodeJSON(w io.Writer) error {
 	if !o.OK {
-		return []byte("null"), nil
+		_, err := io.WriteString(w, "null")
+		return err
 	}
-	return json.Marshal(o.Val)
+	return lowmemjson.NewEncoder(w).Encode(o.Val)
 }
 
-func (o *Optional[T]) UnmarshalJSON(dat []byte) error {
-	if string(dat) == "null" {
+func (o *Optional[T]) DecodeJSON(r io.RuneScanner) error {
+	c, _, _ := r.ReadRune()
+	if c == 'n' {
+		_, _, _ = r.ReadRune() // u
+		_, _, _ = r.ReadRune() // l
+		_, _, _ = r.ReadRune() // l
 		*o = Optional[T]{}
 		return nil
 	}
+	_ = r.UnreadRune()
 	o.OK = true
-	return json.Unmarshal(dat, &o.Val)
+	return lowmemjson.NewDecoder(r).Decode(&o.Val)
 }
