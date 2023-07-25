@@ -43,5 +43,8 @@ func Open(ctx context.Context, flag int, filenames ...string) (*btrfs.FS, error)
 			return nil, fmt.Errorf("device file %q: %w", filename, err)
 		}
 	}
+	if err := fs.InitChunks(ctx); err != nil {
+		dlog.Errorf(ctx, "error: InitChunks: %v", err)
+	}
 	return fs, nil
 }
