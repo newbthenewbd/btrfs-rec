@@ -21,6 +21,7 @@ import (
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfs/btrfsvol"
 	"git.lukeshu.com/btrfs-progs-ng/lib/btrfsutil"
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
+	"git.lukeshu.com/btrfs-progs-ng/lib/diskio"
 	"git.lukeshu.com/btrfs-progs-ng/lib/profile"
 	"git.lukeshu.com/btrfs-progs-ng/lib/textui"
 )
@@ -158,29 +159,63 @@ func run(runE func(*cobra.Command, []string) error) func(*cobra.Command, []strin
 	}
 }
 
-func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+func runWithRawFS(
+	overrideInitChunks func(*btrfs.FS, *cobra.Command, []string) error,
+	runE func(*btrfs.FS, *cobra.Command, []string) error,
+) func(*cobra.Command, []string) error {
 	return run(func(cmd *cobra.Command, args []string) (err error) {
+		ctx := cmd.Context()
+
 		maybeSetErr := func(_err error) {
 			if _err != nil && err == nil {
 				err = _err
 			}
 		}
 
-		if len(globalFlags.pvs) == 0 {
+		if len(globalFlags.pvs) == 0 && overrideInitChunks == nil {
 			// We do this here instead of calling argparser.MarkPersistentFlagRequired("pv") so that
 			// it doesn't interfere with the `help` sub-command.
 			return cliutil.FlagErrorFunc(cmd, fmt.Errorf("must specify 1 or more physical volumes with --pv"))
 		}
-		fs, err := btrfsutil.Open(cmd.Context(), globalFlags.openFlag, globalFlags.pvs...)
-		if err != nil {
-			return err
-		}
+		fs := new(btrfs.FS)
 		defer func() {
 			maybeSetErr(fs.Close())
 		}()
+		for i, filename := range globalFlags.pvs {
+			dlog.Debugf(ctx, "Adding device file %d/%d %q...", i, len(globalFlags.pvs), filename)
+			osFile, err := os.OpenFile(filename, globalFlags.openFlag, 0)
+			if err != nil {
+				return fmt.Errorf("device file %q: %w", filename, err)
+			}
+			typedFile := &diskio.OSFile[btrfsvol.PhysicalAddr]{
+				File: osFile,
+			}
+			bufFile := diskio.NewBufferedFile[btrfsvol.PhysicalAddr](
+				ctx,
+				typedFile,
+				//nolint:gomnd // False positive: gomnd.ignored-functions=[textui.Tunable] doesn't support type params.
+				textui.Tunable[btrfsvol.PhysicalAddr](16*1024), // block size: 16KiB
+				textui.Tunable(1024),                           // number of blocks to buffer; total of 16MiB
+			)
+			devFile := &btrfs.Device{
+				File: bufFile,
+			}
+			if err := fs.AddDevice(ctx, devFile); err != nil {
+				return fmt.Errorf("device file %q: %w", filename, err)
+			}
+		}
+		if overrideInitChunks != nil {
+			if err := overrideInitChunks(fs, cmd, args); err != nil {
+				return err
+			}
+		} else {
+			if err := fs.InitChunks(ctx); err != nil {
+				dlog.Errorf(ctx, "error: InitChunks: %v", err)
+			}
+		}
 
 		if globalFlags.mappings != "" {
-			mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](cmd.Context(), globalFlags.mappings)
+			mappingsJSON, err := readJSONFile[[]btrfsvol.Mapping](ctx, globalFlags.mappings)
 			if err != nil {
 				return err
 			}
@@ -196,7 +231,7 @@ func runWithRawFS(runE func(*btrfs.FS, *cobra.Command, []string) error) func(*co
 }
 
 func runWithRawFSAndNodeList(runE func(*btrfs.FS, []btrfsvol.LogicalAddr, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
-	return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+	return runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
 		var nodeList []btrfsvol.LogicalAddr
@@ -245,7 +280,7 @@ func _runWithReadableFS(wantNodeList bool, runE func(btrfs.ReadableFS, []btrfsvo
 		if wantNodeList || globalFlags.rebuild || globalFlags.treeRoots != "" {
 			return runWithRawFSAndNodeList(inner)(cmd, args)
 		}
-		return runWithRawFS(func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
+		return runWithRawFS(nil, func(fs *btrfs.FS, cmd *cobra.Command, args []string) error {
 			return inner(fs, nil, cmd, args)
 		})(cmd, args)
 	}

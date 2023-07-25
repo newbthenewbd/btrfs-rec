@@ -30,19 +30,18 @@ var SuperblockAddrs = []btrfsvol.PhysicalAddr{
 	0x40_0000_0000, // 256GiB
 }
 
-var superblockSize = binstruct.StaticSize(btrfstree.Superblock{})
+var SuperblockSize = btrfsvol.PhysicalAddr(binstruct.StaticSize(btrfstree.Superblock{}))
 
 func (dev *Device) Superblocks() ([]*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock], error) {
 	if dev.cacheSuperblocks != nil {
 		return dev.cacheSuperblocks, nil
 	}
-	superblockSize := btrfsvol.PhysicalAddr(superblockSize)
 
 	sz := dev.Size()
 
 	var ret []*diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]
 	for i, addr := range SuperblockAddrs {
-		if addr+superblockSize <= sz {
+		if addr+SuperblockSize <= sz {
 			superblock := &diskio.Ref[btrfsvol.PhysicalAddr, btrfstree.Superblock]{
 				File: dev,
 				Addr: addr,

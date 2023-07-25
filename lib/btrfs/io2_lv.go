@@ -43,7 +43,7 @@ func (fs *FS) AddDevice(ctx context.Context, dev *Device) error {
 	}
 	fs.cacheSuperblocks = nil
 	fs.cacheSuperblock = nil
-	if err := fs.initDev(ctx, *sb); err != nil {
+	if err := fs.initDev(*sb); err != nil {
 		dlog.Errorf(ctx, "error: AddDevice: %q: %v", dev.Name(), err)
 	}
 	return nil
@@ -142,14 +142,14 @@ func (fs *FS) ReInit(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
-		if err := fs.initDev(ctx, *sb); err != nil {
+		if err := fs.initDev(*sb); err != nil {
 			return fmt.Errorf("file %q: %w", dev.Name(), err)
 		}
 	}
-	return nil
+	return fs.InitChunks(ctx)
 }
 
-func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
+func (fs *FS) initDev(sb btrfstree.Superblock) error {
 	syschunks, err := sb.ParseSysChunkArray()
 	if err != nil {
 		return err
@@ -161,6 +161,10 @@ func (fs *FS) initDev(ctx context.Context, sb btrfstree.Superblock) error {
 			}
 		}
 	}
+	return nil
+}
+
+func (fs *FS) InitChunks(ctx context.Context) error {
 	chunkTree, err := fs.ForrestLookup(ctx, btrfsprim.CHUNK_TREE_OBJECTID)
 	if err != nil {
 		return err
