@@ -68,10 +68,14 @@ func (src bufferedBlockSource[A]) Load(ctx context.Context, blockAddr A, block *
 
 func (bf *bufferedFile[A]) Name() string { return bf.inner.Name() }
 func (bf *bufferedFile[A]) Size() A      { return bf.inner.Size() }
-func (bf *bufferedFile[A]) Close() error { return bf.inner.Close() }
 
 func (bf *bufferedFile[A]) Flush() {
 	bf.blockCache.Flush(bf.ctx)
+}
+
+func (bf *bufferedFile[A]) Close() error {
+	bf.Flush()
+	return bf.inner.Close()
 }
 
 func (bf *bufferedFile[A]) ReadAt(dat []byte, off A) (n int, err error) {
