@@ -22,7 +22,7 @@ import (
 // Fundamentally, the point of ARC is to combine both recency
 // information and frequency information together to form a cache
 // policy that is better than both least-recently-used eviction (LRU)
-// or least-frequently-used eviction (LFU); and the balance between
+// and least-frequently-used eviction (LFU); and the balance between
 // how much weight is given to recency vs frequency is "adaptive"
 // based on the characteristics of the current workload.
 //
@@ -102,13 +102,13 @@ func NewARCache[K comparable, V any](cap int, src Source[K, V]) Cache[K, V] {
 //   `c` -- is most reasonably understood in terms of an "imaginary"
 //   simpler `DBL(2c)` algorithm.
 //
-//   DBL(2c) is an cache that maintains 2c entries in a set of lists
+//   DBL(2c) is a cache that maintains 2c entries in a set of lists
 //   ordered by LRU/MRU.  These lists are called L₁ or "recent" and L₂
 //   or "frequent"; |L₁| + |L₂| ≤ 2c.  L₁/recent is for entries that
 //   have only been used only once "recently", and L₂/frequent is for
 //   entries that have been used twice or more "recently" (for a
 //   particular definition of "recently" that we don't need to get
-//   into).
+//   into yet).
 //
 //     Aside: Some of the ARC literature calls these lists "MRU" and
 //     "MFU" for "most {recently,frequently} used", but that's wrong.
@@ -182,7 +182,7 @@ type arCache[K comparable, V any] struct {
 	frequentGhost  LinkedList[arcGhostEntry[K]]   // "B₂" for "bottom of L₂"
 
 	// Now, where to draw the split between the "live" part and
-	// "ghost" parts of each list?  We'll use a paramenter
+	// "ghost" parts of each list?  We'll use a parameter
 	// "p"/recentLiveTarget to decide which list to evict
 	// (transition live→ghost) from whenever we need to do an
 	// eviction.
@@ -232,8 +232,8 @@ type arCache[K comparable, V any] struct {
 
 // waitForAvail is called before storing something into the cache.
 // This is nescessary because if the cache is full and all entries are
-// pinned, then we won't have to store the entry until something gets
-// unpinned ("Release()d").
+// pinned, then we won't be able to store the entry until something
+// gets unpinned ("Release()d").
 func (c *arCache[K, V]) waitForAvail() {
 	if !(c.recentLive.IsEmpty() && c.frequentLive.IsEmpty() && c.unusedLive.IsEmpty()) {
 		// There is already an available `arcLiveEntry` that
