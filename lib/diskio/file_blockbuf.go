@@ -8,7 +8,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/datawire/dlib/dlog"
+	"github.com/datawire/dlib/derror"
 
 	"git.lukeshu.com/btrfs-progs-ng/lib/containers"
 )
@@ -27,6 +27,7 @@ type bufferedFile[A ~int64] struct {
 	inner      File[A]
 	blockSize  A
 	blockCache containers.Cache[A, bufferedBlock[A]]
+	flushErrs  derror.MultiError
 }
 
 var _ File[assertAddr] = (*bufferedFile[assertAddr])(nil)
@@ -46,12 +47,12 @@ type bufferedBlockSource[A ~int64] struct {
 }
 
 // Flush implements [containers.Source].
-func (src bufferedBlockSource[A]) Flush(ctx context.Context, block *bufferedBlock[A]) {
+func (src bufferedBlockSource[A]) Flush(_ context.Context, block *bufferedBlock[A]) {
 	if !block.Dirty {
 		return
 	}
 	if _, err := src.bf.inner.WriteAt(block.Dat, block.Addr); err != nil {
-		dlog.Errorf(ctx, "i/o error: write: %v", err)
+		src.bf.flushErrs = append(src.bf.flushErrs, err)
 	}
 	block.Dirty = false
 }
@@ -74,14 +75,21 @@ func (bf *bufferedFile[A]) Name() string { return bf.inner.Name() }
 // Size implements [File].
 func (bf *bufferedFile[A]) Size() A { return bf.inner.Size() }
 
-func (bf *bufferedFile[A]) Flush() {
+func (bf *bufferedFile[A]) Flush() error {
 	bf.blockCache.Flush(bf.ctx)
+	if len(bf.flushErrs) > 0 {
+		return bf.flushErrs
+	}
+	return nil
 }
 
 // Close implements [File] and [io.Closer].
 func (bf *bufferedFile[A]) Close() error {
-	bf.Flush()
-	return bf.inner.Close()
+	flushErr := bf.Flush()
+	if err := bf.inner.Close(); err != nil {
+		return err
+	}
+	return flushErr
 }
 
 // ReadAt implements [File] and [ReaderAt].
