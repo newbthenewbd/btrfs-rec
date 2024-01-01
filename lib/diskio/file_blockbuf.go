@@ -45,6 +45,7 @@ type bufferedBlockSource[A ~int64] struct {
 	bf *bufferedFile[A]
 }
 
+// Flush implements [containers.Source].
 func (src bufferedBlockSource[A]) Flush(ctx context.Context, block *bufferedBlock[A]) {
 	if !block.Dirty {
 		return
@@ -55,6 +56,7 @@ func (src bufferedBlockSource[A]) Flush(ctx context.Context, block *bufferedBloc
 	block.Dirty = false
 }
 
+// Load implements [containers.Source].
 func (src bufferedBlockSource[A]) Load(ctx context.Context, blockAddr A, block *bufferedBlock[A]) {
 	src.Flush(ctx, block)
 	if block.Dat == nil {
@@ -66,18 +68,23 @@ func (src bufferedBlockSource[A]) Load(ctx context.Context, blockAddr A, block *
 	block.Err = err
 }
 
+// Name implements [File].
 func (bf *bufferedFile[A]) Name() string { return bf.inner.Name() }
-func (bf *bufferedFile[A]) Size() A      { return bf.inner.Size() }
+
+// Size implements [File].
+func (bf *bufferedFile[A]) Size() A { return bf.inner.Size() }
 
 func (bf *bufferedFile[A]) Flush() {
 	bf.blockCache.Flush(bf.ctx)
 }
 
+// Close implements [File] and [io.Closer].
 func (bf *bufferedFile[A]) Close() error {
 	bf.Flush()
 	return bf.inner.Close()
 }
 
+// ReadAt implements [File] and [ReaderAt].
 func (bf *bufferedFile[A]) ReadAt(dat []byte, off A) (n int, err error) {
 	done := 0
 	for done < len(dat) {
@@ -106,6 +113,7 @@ func (bf *bufferedFile[A]) maybeShortReadAt(dat []byte, off A) (n int, err error
 	return n, nil
 }
 
+// WriteAt implements [File].
 func (bf *bufferedFile[A]) WriteAt(dat []byte, off A) (n int, err error) {
 	done := 0
 	for done < len(dat) {
