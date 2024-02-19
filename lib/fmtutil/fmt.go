@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2024  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -24,6 +24,28 @@ func FmtStateString(st fmt.State, verb rune) string {
 	if width, ok := st.Width(); ok {
 		fmt.Fprintf(&ret, "%v", width)
 	}
+	if prec, ok := st.Precision(); ok {
+		if prec == 0 {
+			ret.WriteByte('.')
+		} else {
+			fmt.Fprintf(&ret, ".%v", prec)
+		}
+	}
+	ret.WriteRune(verb)
+	return ret.String()
+}
+
+// FmtStateStringWidth is like [FmtStateString], but overrides
+// st.Width().
+func FmtStateStringWidth(st fmt.State, verb rune, width int) string {
+	var ret strings.Builder
+	ret.WriteByte('%')
+	for _, flag := range []int{'-', '+', '#', ' ', '0'} {
+		if st.Flag(flag) {
+			ret.WriteByte(byte(flag))
+		}
+	}
+		fmt.Fprintf(&ret, "%v", width)
 	if prec, ok := st.Precision(); ok {
 		if prec == 0 {
 			ret.WriteByte('.')

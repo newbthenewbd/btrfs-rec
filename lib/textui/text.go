@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2023  Luke Shumaker <lukeshu@lukeshu.com>
+// Copyright (C) 2022-2024  Luke Shumaker <lukeshu@lukeshu.com>
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
+	"unicode/utf8"
 
 	"golang.org/x/exp/constraints"
 	"golang.org/x/text/language"
@@ -37,6 +39,8 @@ func Sprintf(key string, a ...any) string {
 	return printer.Sprintf(key, a...)
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 // Humanized wraps a value such that formatting of it can make use of
 // the `golang.org/x/text/message.Printer` extensions even when used
 // with plain-old `fmt`.
@@ -63,6 +67,8 @@ func (h humanized) String() string {
 	return fmt.Sprint(h)
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 // Portion renders a fraction N/D as both a percentage and
 // parenthetically as the exact fractional value, rendered with
 // human-friendly commas.
@@ -85,19 +91,101 @@ func (p Portion[T]) String() string {
 	return printer.Sprintf("%d%% (%v/%v)", pct, uint64(p.N), uint64(p.D))
 }
 
-type metric[T constraints.Integer | constraints.Float] struct {
-	Val  T
+////////////////////////////////////////////////////////////////////////////////
+
+// toRat(x) returns `x` as a [*big.Rat], or `nil` if `x` is NaN.
+func toRat[T constraints.Integer | constraints.Float | *big.Int | *big.Float | *big.Rat](x T) *big.Rat {
+	var y *big.Rat
+	switch x := any(x).(type) {
+	case *big.Rat:
+		y = new(big.Rat).Set(x)
+	case *big.Float:
+		y, _ = x.Rat(nil)
+	case *big.Int:
+		y = new(big.Rat).SetInt(x)
+
+	case uint:
+		y = new(big.Rat).SetUint64(uint64(x))
+	case uint8:
+		y = new(big.Rat).SetUint64(uint64(x))
+	case uint16:
+		y = new(big.Rat).SetUint64(uint64(x))
+	case uint32:
+		y = new(big.Rat).SetUint64(uint64(x))
+	case uint64:
+		y = new(big.Rat).SetUint64(x)
+	case uintptr:
+		y = new(big.Rat).SetUint64(uint64(x))
+
+	case int:
+		y = new(big.Rat).SetInt64(int64(x))
+	case int8:
+		y = new(big.Rat).SetInt64(int64(x))
+	case int16:
+		y = new(big.Rat).SetInt64(int64(x))
+	case int32:
+		y = new(big.Rat).SetInt64(int64(x))
+	case int64:
+		y = new(big.Rat).SetInt64(x)
+
+	case float32:
+		if math.IsNaN(float64(x)) {
+			y = nil
+		} else {
+			y, _ = big.NewFloat(float64(x)).Rat(nil)
+		}
+	case float64:
+		if math.IsNaN(x) {
+			y = nil
+		} else {
+			y, _ = big.NewFloat(x).Rat(nil)
+		}
+
+	default:
+		panic(fmt.Errorf("should not happen: unmatched type %T", x))
+	}
+	return y
+}
+
+func formatFloatWithSuffix(f fmt.State, verb rune, val float64, suffix string) {
+	var wrapped any = val // float64 or number.Decimal[float64]
+	if !math.IsNaN(val) {
+		var options []number.Option
+		if width, ok := f.Width(); ok {
+			width -= utf8.RuneCountInString(suffix)
+			options = append(options, number.FormatWidth(width))
+		}
+		if prec, ok := f.Precision(); ok {
+			options = append(options, number.Precision(prec))
+		}
+		wrapped = number.Decimal(val, options...)
+	}
+	var format string
+	if width, ok := f.Width(); ok {
+		width -= utf8.RuneCountInString(suffix)
+		format = fmtutil.FmtStateStringWidth(f, verb, width)
+	} else {
+		format = fmtutil.FmtStateString(f, verb)
+	}
+	_, _ = printer.Fprintf(f, format+"%s",
+		wrapped, suffix)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+type metric struct {
+	Val  *big.Rat
 	Unit string
 }
 
 var (
-	_ fmt.Formatter = metric[int]{}
-	_ fmt.Stringer  = metric[int]{}
+	_ fmt.Formatter = metric{}
+	_ fmt.Stringer  = metric{}
 )
 
-func Metric[T constraints.Integer | constraints.Float](x T, unit string) metric[T] {
-	return metric[T]{
-		Val:  x,
+func Metric[T constraints.Integer | constraints.Float | *big.Int | *big.Float | *big.Rat](x T, unit string) metric {
+	return metric{
+		Val:  toRat(x),
 		Unit: unit,
 	}
 }
@@ -128,46 +216,67 @@ var metricBigPrefixes = []string{
 	"Q",
 }
 
+var (
+	one     = big.NewRat(1, 1)
+	kilo    = big.NewRat(1000, 1)
+	kiloInv = new(big.Rat).Inv(kilo)
+)
+
+func lt(a, b *big.Rat) bool {
+	return a.Cmp(b) < 0
+}
+
+func gte(a, b *big.Rat) bool {
+	return a.Cmp(b) >= 0
+}
+
 // String implements fmt.Formatter.
-func (v metric[T]) Format(f fmt.State, verb rune) {
+func (v metric) Format(f fmt.State, verb rune) {
 	var prefix string
-	y := math.Abs(float64(v.Val))
-	if y < 1 {
-		for i := 0; y < 1 && i <= len(metricSmallPrefixes); i++ {
-			y *= 1000
-			prefix = metricSmallPrefixes[i]
-		}
+	var float float64
+	if v.Val == nil {
+		float = math.NaN()
 	} else {
-		for i := 0; y > 1000 && i <= len(metricBigPrefixes); i++ {
-			y /= 1000
-			prefix = metricBigPrefixes[i]
+		rat := new(big.Rat).Abs(v.Val)
+		if lt(rat, one) {
+			for i := 0; lt(rat, one) && i < len(metricSmallPrefixes); i++ {
+				rat.Mul(rat, kilo)
+				prefix = metricSmallPrefixes[i]
+			}
+		} else {
+			for i := 0; gte(rat, kilo) && i < len(metricBigPrefixes); i++ {
+				rat.Mul(rat, kiloInv)
+				prefix = metricBigPrefixes[i]
+			}
 		}
+		if v.Val.Sign() < 0 {
+			rat.Neg(rat)
+		}
+		float, _ = rat.Float64()
 	}
-	if v.Val < 0 {
-		y = -y
-	}
-	_, _ = printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
-		y, prefix, v.Unit)
+	formatFloatWithSuffix(f, verb, float, prefix+v.Unit)
 }
 
 // String implements fmt.Stringer.
-func (v metric[T]) String() string {
+func (v metric) String() string {
 	return fmt.Sprint(v)
 }
 
-type iec[T constraints.Integer | constraints.Float] struct {
-	Val  T
+////////////////////////////////////////////////////////////////////////////////
+
+type iec struct {
+	Val  *big.Rat
 	Unit string
 }
 
 var (
-	_ fmt.Formatter = iec[int]{}
-	_ fmt.Stringer  = iec[int]{}
+	_ fmt.Formatter = iec{}
+	_ fmt.Stringer  = iec{}
 )
 
-func IEC[T constraints.Integer | constraints.Float](x T, unit string) iec[T] {
-	return iec[T]{
-		Val:  x,
+func IEC[T constraints.Integer | constraints.Float | *big.Int | *big.Float | *big.Rat](x T, unit string) iec {
+	return iec{
+		Val:  toRat(x),
 		Unit: unit,
 	}
 }
@@ -183,22 +292,32 @@ var iecPrefixes = []string{
 	"Yi",
 }
 
+var (
+	kibi    = big.NewRat(1024, 1)
+	kibiInv = new(big.Rat).Inv(kibi)
+)
+
 // String implements fmt.Formatter.
-func (v iec[T]) Format(f fmt.State, verb rune) {
+func (v iec) Format(f fmt.State, verb rune) {
 	var prefix string
-	y := math.Abs(float64(v.Val))
-	for i := 0; y > 1024 && i <= len(iecPrefixes); i++ {
-		y /= 1024
-		prefix = iecPrefixes[i]
+	var float float64
+	if v.Val == nil {
+		float = math.NaN()
+	} else {
+		rat := new(big.Rat).Abs(v.Val)
+		for i := 0; gte(rat, kibi) && i < len(iecPrefixes); i++ {
+			rat.Mul(rat, kibiInv)
+			prefix = iecPrefixes[i]
+		}
+		if v.Val.Sign() < 0 {
+			rat.Neg(rat)
+		}
+		float, _ = rat.Float64()
 	}
-	if v.Val < 0 {
-		y = -y
-	}
-	_, _ = printer.Fprintf(f, fmtutil.FmtStateString(f, verb)+"%s%s",
-		number.Decimal(y), prefix, v.Unit)
+	formatFloatWithSuffix(f, verb, float, prefix+v.Unit)
 }
 
 // String implements fmt.Stringer.
-func (v iec[T]) String() string {
+func (v iec) String() string {
 	return fmt.Sprint(v)
 }
