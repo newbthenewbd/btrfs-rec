@@ -72,7 +72,7 @@ func kmpEq[K ~int64 | ~int, V comparable](aV V, bS kmpPattern[K, V], bI K) bool 
 // Will panic if the length of 'substr' is 0.
 //
 // The 'substr' may include wildcard characters by returning
-// ErrWildcard for a position.
+// (_, false) for a position.
 //
 // Uses the Knuth-Morris-Pratt algorithm.
 func indexAll[K ~int64 | ~int, V comparable](str diskio.Sequence[K, V], substr kmpPattern[K, V]) []K {
