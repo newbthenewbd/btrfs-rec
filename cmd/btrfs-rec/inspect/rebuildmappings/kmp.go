@@ -86,8 +86,7 @@ func indexAll[K ~int64 | ~int, V comparable](str diskio.Sequence[K, V], substr k
 	var curMatchBeg K
 	var curMatchLen K
 
-	strLen := str.SeqLen()
-	for pos := K(0); pos < strLen; pos++ {
+	for pos, strLen := K(0), str.SeqLen(); pos < strLen; pos++ {
 		chr := str.SeqGet(pos)
 
 		// Consider 'chr'
