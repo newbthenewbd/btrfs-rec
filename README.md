@@ -1,3 +1,21 @@
+This is basically a mirror of the btrfs-rec tool by Luke T. Shumaker, available under https://git.lukeshu.com/btrfs-progs-ng/, **along with modifications** that I found necessary to make it work. For my particular case of the Btrfs Messup - your mileage may vary. :)
+
+[I also provide a prebuilt version for Linux.](https://github.com/newbthenewbd/btrfs-rec/releases/tag/v0.1.0)
+
+But if you somehow find yourself in deep btrfs troubles on macOS or anything, building it is easy! Just [get the Go toolchain installed](https://go.dev/doc/install), then run:
+```
+git clone https://github.com/newbthenewbd/btrfs-rec.git
+cd btrfs-rec/cmd/btrfs-rec
+go build
+./btrfs-rec # yay!
+```
+
+---
+
+*Original README follows*
+
+---
+
 To: linux-btrfs@vger.kernel.org
 From: Luke T. Shumaker <lukeshu@lukeshu.com>
 Subject: btrfs-rec: Recover (data from) a broken btrfs filesystem
