@@ -6,6 +6,7 @@ package diskio
 
 import (
 	"os"
+	"io"
 )
 
 type OSFile[A ~int64] struct {
@@ -15,11 +16,11 @@ type OSFile[A ~int64] struct {
 var _ File[assertAddr] = (*OSFile[assertAddr])(nil)
 
 func (f *OSFile[A]) Size() A {
-	fi, err := f.Stat()
+	size, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
 		return 0
 	}
-	return A(fi.Size())
+	return A(size)
 }
 
 func (f *OSFile[A]) ReadAt(dat []byte, paddr A) (int, error) {
