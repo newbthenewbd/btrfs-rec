@@ -1,4 +1,4 @@
-This is basically a mirror of the btrfs-rec tool by Luke T. Shumaker, available under https://git.lukeshu.com/btrfs-progs-ng/, **along with modifications** that I found necessary to make it work. For my particular case of the Btrfs Messup - your mileage may vary. :)
+This is basically an unofficial mirror of the btrfs-rec tool by Luke T. Shumaker, available under https://git.lukeshu.com/btrfs-progs-ng/, **along with modifications** that I found necessary to make it work. For my particular case of the Btrfs Messup - your mileage may vary. :)
 
 [I also provide a prebuilt version for Linux.](https://github.com/newbthenewbd/btrfs-rec/releases/tag/v0.1.0)
 
