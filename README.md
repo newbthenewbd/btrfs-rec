@@ -10,6 +10,12 @@ go build
 ./btrfs-rec # yay!
 ```
 
+What saved my data in the end, though, and might just save yours, was not btrfs-rec (still segfaulted later 😢), but [this comment from @thomas725](https://github.com/cblichmann/btrfscue/issues/12#issuecomment-1851906490):
+```
+mount -t btrfs -o ro,rescue=all /dev/disk /mnt/
+```
+Huge thanks!
+
 ---
 
 *Original README follows*
