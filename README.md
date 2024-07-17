@@ -1,4 +1,4 @@
-This is basically an unofficial mirror of the btrfs-rec tool by Luke T. Shumaker, available under https://git.lukeshu.com/btrfs-progs-ng/, **along with modifications** that I found necessary to make it work. For my particular case of the Btrfs Messup - your mileage may vary. :)
+This is basically an unofficial mirror of the btrfs-rec tool by Luke T. Shumaker, available under https://git.lukeshu.com/btrfs-progs-ng/, **along with a modification** that I found necessary to make it work with /dev/ices.
 
 [I also provide a prebuilt version for Linux.](https://github.com/newbthenewbd/btrfs-rec/releases/tag/v0.1.0)
 
@@ -10,7 +10,8 @@ go build
 ./btrfs-rec # yay!
 ```
 
-What saved my data in the end, though, and might just save yours, was not btrfs-rec (still segfaulted later 😢), but [this comment from @thomas725](https://github.com/cblichmann/btrfscue/issues/12#issuecomment-1851906490):
+## What saved my data in the end
+...and might just save yours, was not btrfs-rec (still segfaulted late into the process 😢), but [this comment from @thomas725](https://github.com/cblichmann/btrfscue/issues/12#issuecomment-1851906490):
 ```
 mount -t btrfs -o ro,rescue=all /dev/disk /mnt/
 ```
